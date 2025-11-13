@@ -1,3 +1,4 @@
+require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits } = require('discord.js');
 require('./server');
 
