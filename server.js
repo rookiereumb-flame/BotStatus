@@ -8,7 +8,18 @@ const commands = [
   { name: '/mute', description: 'Timeout a member (temporary mute)' },
   { name: '/warn', description: 'Warn a member' },
   { name: '/unban', description: 'Unban a user from the server' },
-  { name: '/unmute', description: 'Remove timeout from a member' }
+  { name: '/unmute', description: 'Remove timeout from a member' },
+  { name: '/addrole', description: 'Add a role to a user' },
+  { name: '/removerole', description: 'Remove a role from a user' },
+  { name: '/warns', description: 'Show all warnings for a user' },
+  { name: '/status', description: 'Show all currently timed out users in the server' },
+  { name: '/help', description: 'Show bot information and all commands' },
+  { name: '/setchannel', description: 'Set log channel for moderation actions' },
+  { name: '/enableautomod', description: 'Enable automod system' },
+  { name: '/disableautomod', description: 'Disable automod system' },
+  { name: '/addblacklistword', description: 'Add word to blacklist' },
+  { name: '/removeblacklistword', description: 'Remove word from blacklist' },
+  { name: '/blacklistwords', description: 'List all blacklisted words' }
 ];
 
 app.get('/', (req, res) => {
