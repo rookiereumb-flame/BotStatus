@@ -134,7 +134,7 @@ const commands = [
     ]
   },
   {
-    name: 'addrole',
+    name: 'add-role',
     description: 'Add a role to a user',
     options: [
       {
@@ -152,7 +152,7 @@ const commands = [
     ]
   },
   {
-    name: 'removerole',
+    name: 'remove-role',
     description: 'Remove a role from a user',
     options: [
       {
@@ -182,7 +182,7 @@ const commands = [
     ]
   },
   {
-    name: 'status',
+    name: 'server-timeout-status',
     description: 'Show all currently timed out users in the server'
   },
   {
@@ -190,7 +190,7 @@ const commands = [
     description: 'Show bot information and all commands'
   },
   {
-    name: 'setchannel',
+    name: 'set-channel',
     description: 'Set log channel for moderation actions',
     options: [
       {
@@ -202,15 +202,15 @@ const commands = [
     ]
   },
   {
-    name: 'enableautomod',
+    name: 'enable-automod',
     description: 'Enable automod system'
   },
   {
-    name: 'disableautomod',
+    name: 'disable-automod',
     description: 'Disable automod system'
   },
   {
-    name: 'addblacklistword',
+    name: 'add-blacklist-word',
     description: 'Add word to blacklist',
     options: [
       {
@@ -222,7 +222,7 @@ const commands = [
     ]
   },
   {
-    name: 'removeblacklistword',
+    name: 'remove-blacklist-word',
     description: 'Remove word from blacklist',
     options: [
       {
@@ -234,7 +234,7 @@ const commands = [
     ]
   },
   {
-    name: 'blacklistwords',
+    name: 'blacklist-library',
     description: 'List all blacklisted words'
   },
   {
@@ -314,20 +314,20 @@ client.once('ready', async () => {
     console.log('  /unmute');
     console.log('  /unwarn');
     console.log('\n👥 ROLE MANAGEMENT:');
-    console.log('  /addrole');
-    console.log('  /removerole');
+    console.log('  /add-role');
+    console.log('  /remove-role');
     console.log('  /nick');
     console.log('\n📊 INFORMATION:');
     console.log('  /warns');
-    console.log('  /status');
+    console.log('  /server-timeout-status');
     console.log('  /help');
     console.log('\n🛡️  AUTOMOD:');
-    console.log('  /setchannel');
-    console.log('  /enableautomod');
-    console.log('  /disableautomod');
-    console.log('  /addblacklistword');
-    console.log('  /removeblacklistword');
-    console.log('  /blacklistwords');
+    console.log('  /set-channel');
+    console.log('  /enable-automod');
+    console.log('  /disable-automod');
+    console.log('  /add-blacklist-word');
+    console.log('  /remove-blacklist-word');
+    console.log('  /blacklist-library');
     console.log('\n🔧 UTILITIES:');
     console.log('  /purge');
   } catch (error) {
@@ -684,7 +684,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'addrole': {
+      case 'add-role': {
         if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
           return interaction.reply({ 
             content: '❌ You need the "Manage Roles" permission to use this command.', 
@@ -719,7 +719,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'removerole': {
+      case 'remove-role': {
         if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
           return interaction.reply({ 
             content: '❌ You need the "Manage Roles" permission to use this command.', 
@@ -788,7 +788,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'status': {
+      case 'server-timeout-status': {
         const members = await guild.members.fetch();
         const timedOutMembers = members.filter(m => m.communicationDisabledUntilTimestamp && m.communicationDisabledUntilTimestamp > Date.now());
         
@@ -832,17 +832,17 @@ client.on('interactionCreate', async interaction => {
             },
             {
               name: '👥 Role Management',
-              value: '`/addrole` - Add Role\n`/removerole` - Remove Role\n`/nick` - Change Nickname',
+              value: '`/add-role` - Add Role\n`/remove-role` - Remove Role\n`/nick` - Change Nickname',
               inline: false
             },
             {
               name: '📊 Information',
-              value: '`/warns` - Show Warnings\n`/status` - Show Timed Out Users\n`/help` - Show Help',
+              value: '`/warns` - Show Warnings\n`/server-timeout-status` - Show Timed Out Users\n`/help` - Show Help',
               inline: false
             },
             {
               name: '🛡️ Automod Configuration',
-              value: '`/setchannel` - Set Log Channel\n`/enableautomod` - Enable Automod\n`/disableautomod` - Disable Automod\n`/addblacklistword` - Add Blacklist Word\n`/removeblacklistword` - Remove Blacklist Word\n`/blacklistwords` - List Blacklist Words',
+              value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod\n`/add-blacklist-word` - Add Blacklist Word\n`/remove-blacklist-word` - Remove Blacklist Word\n`/blacklist-library` - List Blacklist Words',
               inline: false
             },
             {
@@ -858,7 +858,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'setchannel': {
+      case 'set-channel': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -884,7 +884,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'enableautomod': {
+      case 'enable-automod': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -901,7 +901,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'disableautomod': {
+      case 'disable-automod': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -918,7 +918,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'addblacklistword': {
+      case 'add-blacklist-word': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -943,7 +943,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'removeblacklistword': {
+      case 'remove-blacklist-word': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -968,7 +968,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'blacklistwords': {
+      case 'blacklist-library': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
