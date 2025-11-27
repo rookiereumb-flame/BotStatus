@@ -73,6 +73,16 @@ const getWarnings = (guildId, userId) => {
   return stmt.all(guildId, userId);
 };
 
+const removeWarning = (guildId, userId, warningIndex) => {
+  const warnings = getWarnings(guildId, userId);
+  if (warningIndex >= 0 && warningIndex < warnings.length) {
+    const stmt = db.prepare('DELETE FROM warnings WHERE id = ?');
+    stmt.run(warnings[warningIndex].id);
+    return true;
+  }
+  return false;
+};
+
 const addBlacklistWord = (guildId, word) => {
   try {
     const stmt = db.prepare('INSERT INTO blacklist_words (guild_id, word) VALUES (?, ?)');
@@ -105,6 +115,7 @@ module.exports = {
   disableAutomod,
   addWarning,
   getWarnings,
+  removeWarning,
   addBlacklistWord,
   removeBlacklistWord,
   getBlacklistWords

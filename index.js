@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 
@@ -236,6 +236,57 @@ const commands = [
   {
     name: 'blacklistwords',
     description: 'List all blacklisted words'
+  },
+  {
+    name: 'nick',
+    description: 'Change a user\'s nickname',
+    options: [
+      {
+        name: 'user',
+        description: 'The user to change nickname for',
+        type: 6,
+        required: true
+      },
+      {
+        name: 'nickname',
+        description: 'The new nickname (leave empty to reset)',
+        type: 3,
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'purge',
+    description: 'Delete messages from a channel',
+    options: [
+      {
+        name: 'amount',
+        description: 'Number of messages to delete (1-100)',
+        type: 4,
+        required: true,
+        min_value: 1,
+        max_value: 100
+      }
+    ]
+  },
+  {
+    name: 'unwarn',
+    description: 'Remove a warning from a user',
+    options: [
+      {
+        name: 'user',
+        description: 'The user to remove warning from',
+        type: 6,
+        required: true
+      },
+      {
+        name: 'warning_number',
+        description: 'The warning number to remove',
+        type: 4,
+        required: true,
+        min_value: 1
+      }
+    ]
   }
 ];
 
@@ -254,16 +305,159 @@ client.once('ready', async () => {
     
     console.log('✅ Successfully reloaded application (/) commands.');
     console.log('\n📋 Registered Commands:');
-    commands.forEach(cmd => {
-      console.log(`  - /${cmd.name}: ${cmd.description}`);
-    });
+    console.log('\n⚖️  MODERATION:');
+    console.log('  /kick   /ban   /mute   /warn   /unban   /unmute   /unwarn');
+    console.log('\n👥 ROLE MANAGEMENT:');
+    console.log('  /addrole   /removerole   /nick');
+    console.log('\n📊 INFORMATION:');
+    console.log('  /warns   /status   /help');
+    console.log('\n🛡️  AUTOMOD:');
+    console.log('  /setchannel   /enableautomod   /disableautomod');
+    console.log('  /addblacklistword   /removeblacklistword   /blacklistwords');
+    console.log('\n🔧 UTILITIES:');
+    console.log('  /purge');
   } catch (error) {
     console.error('❌ Error registering commands:', error);
   }
 });
 
+const PREFIX = 'n?';
+
 client.on('messageCreate', async message => {
+  // Automod check
   await checkMessage(message);
+  
+  // Prefix command handling
+  if (!message.content.startsWith(PREFIX) || message.author.bot) return;
+  
+  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const cmd = args.shift().toLowerCase();
+  
+  try {
+    switch(cmd) {
+      case 'kick': {
+        if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) {
+          return message.reply('❌ You need the "Kick Members" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to kick.');
+        const reason = args.join(' ') || 'No reason provided';
+        const targetMember = await message.guild.members.fetch(user.id);
+        if (!targetMember.kickable) return message.reply('❌ Cannot kick this user.');
+        await targetMember.kick(reason);
+        addWarning(message.guild.id, user.id, message.author.id, `Kicked: ${reason}`);
+        message.reply(`✅ Kicked ${user.tag} - ${reason}`);
+        break;
+      }
+      
+      case 'ban': {
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+          return message.reply('❌ You need the "Ban Members" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to ban.');
+        const reason = args.join(' ') || 'No reason provided';
+        const targetMember = await message.guild.members.fetch(user.id);
+        if (!targetMember.bannable) return message.reply('❌ Cannot ban this user.');
+        await targetMember.ban({ reason });
+        addWarning(message.guild.id, user.id, message.author.id, `Banned: ${reason}`);
+        message.reply(`✅ Banned ${user.tag} - ${reason}`);
+        break;
+      }
+      
+      case 'mute': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return message.reply('❌ You need the "Timeout Members" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to mute.');
+        const duration = parseInt(args[0]);
+        if (!duration || duration > 40320) return message.reply('❌ Duration must be 1-40320 minutes.');
+        const reason = args.slice(1).join(' ') || 'No reason provided';
+        const targetMember = await message.guild.members.fetch(user.id);
+        await targetMember.timeout(duration * 60 * 1000, reason);
+        addWarning(message.guild.id, user.id, message.author.id, `Muted (${duration}m): ${reason}`);
+        message.reply(`✅ Muted ${user.tag} for ${duration} minutes - ${reason}`);
+        break;
+      }
+      
+      case 'warn': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return message.reply('❌ You need the "Moderate Members" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to warn.');
+        const reason = args.join(' ') || 'No reason provided';
+        addWarning(message.guild.id, user.id, message.author.id, reason);
+        message.reply(`✅ Warned ${user.tag} - ${reason}`);
+        break;
+      }
+      
+      case 'unwarn': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return message.reply('❌ You need the "Moderate Members" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user.');
+        const warnNum = parseInt(args[0]);
+        if (!warnNum) return message.reply('❌ Please specify warning number.');
+        if (removeWarning(message.guild.id, user.id, warnNum - 1)) {
+          message.reply(`✅ Removed warning #${warnNum} from ${user.tag}`);
+        } else {
+          message.reply(`❌ Warning #${warnNum} not found for ${user.tag}`);
+        }
+        break;
+      }
+      
+      case 'nick': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageNicknames)) {
+          return message.reply('❌ You need the "Manage Nicknames" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user.');
+        const nickname = args.join(' ') || null;
+        const targetMember = await message.guild.members.fetch(user.id);
+        await targetMember.setNickname(nickname);
+        if (nickname) {
+          message.reply(`✅ Changed ${user.tag}'s nickname to: ${nickname}`);
+        } else {
+          message.reply(`✅ Reset ${user.tag}'s nickname`);
+        }
+        break;
+      }
+      
+      case 'purge': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+          return message.reply('❌ You need the "Manage Messages" permission.');
+        }
+        const amount = parseInt(args[0]);
+        if (!amount || amount < 1 || amount > 100) return message.reply('❌ Please specify 1-100 messages to delete.');
+        const deleted = await message.channel.bulkDelete(amount, true);
+        message.reply(`✅ Deleted ${deleted.size} messages.`).then(msg => setTimeout(() => msg.delete(), 3000));
+        break;
+      }
+      
+      case 'warns': {
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user.');
+        const warnings = getWarnings(message.guild.id, user.id);
+        if (warnings.length === 0) {
+          return message.reply(`✅ ${user.tag} has no warnings.`);
+        }
+        const list = warnings.map((w, i) => `${i + 1}. ${w.reason}`).slice(0, 10).join('\n');
+        message.reply(`⚠️  **Warnings for ${user.tag}** (${warnings.length} total):\n${list}`);
+        break;
+      }
+      
+      case 'help': {
+        message.reply(`🤖 **Discord Moderation Bot**\n\n**Slash Commands:** Use / followed by command\n**Prefix Commands:** Use n? followed by command\n\n⚖️  **Moderation:** kick, ban, mute, warn, unmute, unban, unwarn, nick, purge\n📊 **Info:** warns, status, help\n🛡️  **Automod:** setchannel, enableautomod, disableautomod, addblacklistword, removeblacklistword, blacklistwords`);
+        break;
+      }
+    }
+  } catch (error) {
+    console.error(`Error executing prefix command ${cmd}:`, error);
+    message.reply('❌ An error occurred executing that command.');
+  }
 });
 
 client.on('interactionCreate', async interaction => {
@@ -780,6 +974,90 @@ client.on('interactionCreate', async interaction => {
           .setTimestamp();
         
         await interaction.reply({ embeds: [embed], ephemeral: true });
+        break;
+      }
+
+      case 'nick': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageNicknames)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Nicknames" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        
+        const user = interaction.options.getUser('user');
+        const nickname = interaction.options.getString('nickname');
+        const targetMember = await guild.members.fetch(user.id);
+        
+        if (!targetMember.manageable) {
+          return interaction.reply({ 
+            content: '❌ I cannot manage this user\'s nickname.', 
+            ephemeral: true 
+          });
+        }
+        
+        await targetMember.setNickname(nickname);
+        
+        const embed = new EmbedBuilder()
+          .setColor(0x3498DB)
+          .setTitle('✏️ Nickname Changed')
+          .addFields(
+            { name: 'User', value: `${user.tag}`, inline: true },
+            { name: 'New Nickname', value: nickname || 'Reset to default', inline: true }
+          )
+          .setTimestamp();
+        
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'purge': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Messages" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        
+        const amount = interaction.options.getInteger('amount');
+        
+        try {
+          const deleted = await interaction.channel.bulkDelete(amount, true);
+          await interaction.reply({ 
+            content: `✅ Deleted ${deleted.size} messages.`, 
+            ephemeral: true 
+          });
+        } catch (error) {
+          await interaction.reply({ 
+            content: '❌ Could not delete messages. Messages must be less than 2 weeks old.', 
+            ephemeral: true 
+          });
+        }
+        break;
+      }
+
+      case 'unwarn': {
+        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Moderate Members" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        
+        const user = interaction.options.getUser('user');
+        const warningNum = interaction.options.getInteger('warning_number');
+        
+        if (removeWarning(guild.id, user.id, warningNum - 1)) {
+          await interaction.reply({ 
+            content: `✅ Removed warning #${warningNum} from ${user.tag}`, 
+            ephemeral: true 
+          });
+        } else {
+          await interaction.reply({ 
+            content: `❌ Warning #${warningNum} not found for ${user.tag}`, 
+            ephemeral: true 
+          });
+        }
         break;
       }
     }
