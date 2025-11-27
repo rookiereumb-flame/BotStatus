@@ -464,7 +464,7 @@ client.on('messageCreate', async message => {
       }
       
       case 'help': {
-        message.reply(`🤖 **Discord Moderation Bot**\n\n**Slash Commands:** Use / followed by command\n**Prefix Commands:** Use n? followed by command\n\n⚖️  **Moderation:** kick, ban, mute, warn, unmute, unban, unwarn, nick, purge\n📊 **Info:** warns, status, help\n🛡️  **Automod:** setchannel, enableautomod, disableautomod, addblacklistword, removeblacklistword, blacklistwords`);
+        message.reply(`🤖 **Discord Moderation Bot**\n\n**Slash Commands:** Use / followed by command\n**Prefix Commands:** Use n? followed by command\n\n⚖️ **Moderation:** Kick Member, Ban Member, Mute Member, Warn Member, Unwarn, Unmute Member, Unban User\n👥 **Role Management:** Add Role, Remove Role, Change Nickname\n📊 **Info:** Show Warnings, Show Timed Out Users, Help\n🛡️ **Automod:** Set Log Channel, Enable Automod, Disable Automod, Add Blacklist Word, Remove Blacklist Word, List Blacklist Words\n🔧 **Utilities:** Delete Messages`);
         break;
       }
     }
@@ -827,22 +827,27 @@ client.on('interactionCreate', async interaction => {
           .addFields(
             {
               name: '⚖️ Moderation Commands',
-              value: '`/kick` - Kick a member\n`/ban` - Ban a member\n`/mute` - Timeout a member\n`/warn` - Warn a member\n`/unban` - Unban a user\n`/unmute` - Remove timeout',
+              value: '`/kick` - Kick Member\n`/ban` - Ban Member\n`/mute` - Mute Member\n`/warn` - Warn Member\n`/unwarn` - Remove Warning\n`/unban` - Unban User\n`/unmute` - Unmute Member',
               inline: false
             },
             {
               name: '👥 Role Management',
-              value: '`/addrole` - Add role to user\n`/removerole` - Remove role from user',
+              value: '`/addrole` - Add Role\n`/removerole` - Remove Role\n`/nick` - Change Nickname',
               inline: false
             },
             {
               name: '📊 Information',
-              value: '`/warns` - View user warnings\n`/status` - View timed out users\n`/help` - Show this message',
+              value: '`/warns` - Show Warnings\n`/status` - Show Timed Out Users\n`/help` - Show Help',
               inline: false
             },
             {
               name: '🛡️ Automod Configuration',
-              value: '`/setchannel` - Set log channel\n`/enableautomod` - Enable automod\n`/disableautomod` - Disable automod\n`/addblacklistword` - Add blacklisted word\n`/removeblacklistword` - Remove blacklisted word\n`/blacklistwords` - List blacklisted words',
+              value: '`/setchannel` - Set Log Channel\n`/enableautomod` - Enable Automod\n`/disableautomod` - Disable Automod\n`/addblacklistword` - Add Blacklist Word\n`/removeblacklistword` - Remove Blacklist Word\n`/blacklistwords` - List Blacklist Words',
+              inline: false
+            },
+            {
+              name: '🔧 Utilities',
+              value: '`/purge` - Delete Messages',
               inline: false
             }
           )
