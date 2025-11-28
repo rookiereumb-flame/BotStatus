@@ -1,7 +1,7 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, deleteCase } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 
@@ -1113,7 +1113,27 @@ client.on('interactionCreate', async interaction => {
         const embed = sapphireEmbed(`${actionEmoji} Case #${caseId}`, 
           `**Action:** ${caseData.action.toUpperCase()}\n**User:** ${user.tag}\n**Moderator:** ${moderator.tag}\n**Reason:** ${caseData.reason}\n${caseData.duration ? `**Duration:** ${caseData.duration} minutes\n` : ''}**Status:** ${caseData.status}\n**Date:** <t:${Math.floor(caseData.timestamp / 1000)}>`
         );
-        await interaction.reply({ embeds: [embed] });
+
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`close_case_${caseId}`)
+              .setLabel('Close')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('✅'),
+            new ButtonBuilder()
+              .setCustomId(`edit_case_${caseId}`)
+              .setLabel('Edit')
+              .setStyle(ButtonStyle.Primary)
+              .setEmoji('✏️'),
+            new ButtonBuilder()
+              .setCustomId(`delete_case_${caseId}`)
+              .setLabel('Delete')
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji('🗑️')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1127,17 +1147,40 @@ client.on('interactionCreate', async interaction => {
           return await interaction.reply({ embeds: [embed] });
         }
 
-        let caseList = '';
-        userCases.slice(0, 10).forEach(c => {
-          const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
-          caseList += `${actionEmoji} **Case #${c.case_id}** | ${c.action.toUpperCase()} | ${c.reason.substring(0, 40)}\n`;
-        });
+        const totalPages = Math.ceil(userCases.length / 10);
+        let currentPage = 0;
 
-        const desc = targetUser 
-          ? `Cases for ${targetUser}:\n\n${caseList}` 
-          : `Latest cases:\n\n${caseList}`;
-        const embed = sapphireEmbed('📋 Case History', desc);
-        await interaction.reply({ embeds: [embed] });
+        const buildEmbed = (page) => {
+          let caseList = '';
+          const startIdx = page * 10;
+          const endIdx = startIdx + 10;
+          userCases.slice(startIdx, endIdx).forEach(c => {
+            const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
+            caseList += `${actionEmoji} **Case #${c.case_id}** | ${c.action.toUpperCase()} | ${c.reason.substring(0, 40)}\n`;
+          });
+          const desc = targetUser 
+            ? `Cases for ${targetUser}: (Page ${page + 1}/${totalPages})\n\n${caseList}` 
+            : `Latest cases: (Page ${page + 1}/${totalPages})\n\n${caseList}`;
+          return sapphireEmbed('📋 Case History', desc);
+        };
+
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`cases_prev_${targetUser?.id || 'all'}`)
+              .setLabel('Previous')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⬅️')
+              .setDisabled(currentPage === 0),
+            new ButtonBuilder()
+              .setCustomId(`cases_next_${targetUser?.id || 'all'}`)
+              .setLabel('Next')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('➡️')
+              .setDisabled(currentPage >= totalPages - 1)
+          );
+
+        await interaction.reply({ embeds: [buildEmbed(currentPage)], components: [buttons] });
         break;
       }
 
@@ -1148,6 +1191,198 @@ client.on('interactionCreate', async interaction => {
     console.error('Error in command:', error);
     try {
       await interaction.reply({ content: '❌ An error occurred while executing the command.', ephemeral: true });
+    } catch (e) {}
+  }
+});
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+
+  const guild = client.guilds.cache.get(interaction.guildId);
+  if (!guild) return;
+
+  try {
+    const customId = interaction.customId;
+
+    if (customId.startsWith('close_case_')) {
+      const caseId = parseInt(customId.split('_')[2]);
+      const member = await guild.members.fetch(interaction.user.id);
+      if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ content: '❌ You need moderation permissions.', ephemeral: true });
+      }
+      updateCaseStatus(guild.id, caseId, 'closed');
+      await interaction.reply({ content: `✅ Case #${caseId} has been closed.`, ephemeral: true });
+    }
+
+    else if (customId.startsWith('delete_case_')) {
+      const caseId = parseInt(customId.split('_')[2]);
+      const member = await guild.members.fetch(interaction.user.id);
+      if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need Administrator permissions.', ephemeral: true });
+      }
+      deleteCase(guild.id, caseId);
+      await interaction.reply({ content: `🗑️ Case #${caseId} has been deleted.`, ephemeral: true });
+    }
+
+    else if (customId.startsWith('edit_case_')) {
+      const caseId = parseInt(customId.split('_')[2]);
+      const member = await guild.members.fetch(interaction.user.id);
+      if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ content: '❌ You need moderation permissions.', ephemeral: true });
+      }
+
+      const caseData = getCase(guild.id, caseId);
+      if (!caseData) {
+        return interaction.reply({ content: `❌ Case #${caseId} not found.`, ephemeral: true });
+      }
+
+      const modal = new ModalBuilder()
+        .setCustomId(`edit_modal_${caseId}`)
+        .setTitle(`Edit Case #${caseId}`);
+
+      modal.addComponents(
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('action_input')
+            .setLabel('Action (kick/ban/mute/warn/unmute/unban)')
+            .setValue(caseData.action)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('reason_input')
+            .setLabel('Reason')
+            .setValue(caseData.reason)
+            .setStyle(TextInputStyle.Paragraph)
+            .setRequired(true)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('duration_input')
+            .setLabel('Duration (minutes, leave blank if N/A)')
+            .setValue(caseData.duration ? caseData.duration.toString() : '')
+            .setStyle(TextInputStyle.Short)
+            .setRequired(false)
+        ),
+        new ActionRowBuilder().addComponents(
+          new TextInputBuilder()
+            .setCustomId('status_input')
+            .setLabel('Status (active/closed/resolved)')
+            .setValue(caseData.status)
+            .setStyle(TextInputStyle.Short)
+            .setRequired(true)
+        )
+      );
+
+      await interaction.showModal(modal);
+    }
+
+    else if (customId.startsWith('cases_prev_') || customId.startsWith('cases_next_')) {
+      const userId = customId.split('_')[2];
+      const targetUser = userId === 'all' ? null : userId;
+      const userCases = getCases(guild.id, targetUser);
+
+      if (userCases.length === 0) {
+        return interaction.reply({ content: '❌ No cases found.', ephemeral: true });
+      }
+
+      const totalPages = Math.ceil(userCases.length / 10);
+      let currentPage = 0;
+
+      const msg = await interaction.channel.messages.fetch(interaction.message.id);
+      const embed = msg.embeds[0];
+      const pageMatch = embed.description?.match(/Page (\d+)\/(\d+)/);
+      if (pageMatch) currentPage = parseInt(pageMatch[1]) - 1;
+
+      if (customId.startsWith('cases_next_')) currentPage++;
+      else currentPage--;
+
+      currentPage = Math.max(0, Math.min(currentPage, totalPages - 1));
+
+      const buildEmbed = (page) => {
+        let caseList = '';
+        const startIdx = page * 10;
+        const endIdx = startIdx + 10;
+        userCases.slice(startIdx, endIdx).forEach(c => {
+          const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
+          caseList += `${actionEmoji} **Case #${c.case_id}** | ${c.action.toUpperCase()} | ${c.reason.substring(0, 40)}\n`;
+        });
+        const title = targetUser ? `Cases for <@${targetUser}>: (Page ${page + 1}/${totalPages})` : `Latest cases: (Page ${page + 1}/${totalPages})`;
+        return sapphireEmbed('📋 Case History', `${title}\n\n${caseList}`);
+      };
+
+      const buttons = new ActionRowBuilder()
+        .addComponents(
+          new ButtonBuilder()
+            .setCustomId(`cases_prev_${userId}`)
+            .setLabel('Previous')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('⬅️')
+            .setDisabled(currentPage === 0),
+          new ButtonBuilder()
+            .setCustomId(`cases_next_${userId}`)
+            .setLabel('Next')
+            .setStyle(ButtonStyle.Secondary)
+            .setEmoji('➡️')
+            .setDisabled(currentPage >= totalPages - 1)
+        );
+
+      await interaction.update({ embeds: [buildEmbed(currentPage)], components: [buttons] });
+    }
+  } catch (error) {
+    console.error('Button interaction error:', error);
+    try {
+      await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
+    } catch (e) {}
+  }
+});
+
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isModalSubmit()) return;
+
+  const guild = client.guilds.cache.get(interaction.guildId);
+  if (!guild) return;
+
+  try {
+    if (interaction.customId.startsWith('edit_modal_')) {
+      const caseId = parseInt(interaction.customId.split('_')[2]);
+      const member = await guild.members.fetch(interaction.user.id);
+      if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+        return interaction.reply({ content: '❌ You need moderation permissions.', ephemeral: true });
+      }
+
+      const action = interaction.fields.getTextInputValue('action_input')?.toLowerCase();
+      const reason = interaction.fields.getTextInputValue('reason_input');
+      const durationStr = interaction.fields.getTextInputValue('duration_input');
+      const status = interaction.fields.getTextInputValue('status_input')?.toLowerCase();
+
+      const validActions = ['kick', 'ban', 'mute', 'warn', 'unmute', 'unban'];
+      if (!validActions.includes(action)) {
+        return interaction.reply({ content: '❌ Invalid action. Must be: kick, ban, mute, warn, unmute, unban', ephemeral: true });
+      }
+
+      const validStatuses = ['active', 'closed', 'resolved'];
+      if (!validStatuses.includes(status)) {
+        return interaction.reply({ content: '❌ Invalid status. Must be: active, closed, resolved', ephemeral: true });
+      }
+
+      const updates = { action, reason, status };
+      if (durationStr) {
+        const duration = parseInt(durationStr);
+        if (isNaN(duration) || duration < 1) {
+          return interaction.reply({ content: '❌ Duration must be a positive number.', ephemeral: true });
+        }
+        updates.duration = duration;
+      }
+
+      updateCase(guild.id, caseId, updates);
+      await interaction.reply({ content: `✅ Case #${caseId} has been updated.`, ephemeral: true });
+    }
+  } catch (error) {
+    console.error('Modal interaction error:', error);
+    try {
+      await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
     } catch (e) {}
   }
 });

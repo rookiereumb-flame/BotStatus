@@ -4,17 +4,18 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke and anti-raid), and an intelligent automod system with translation support.
 
 ## Recent Changes
-- **November 28, 2025**: Complete case system implementation + major feature expansion
-  - Implemented Sapphire-style case system with unique case IDs for each moderation action
-  - All moderation commands (kick, ban, mute, warn, unban, unmute) now create cases
-  - Added `/case` and `/cases` commands for viewing case history
-  - Cases include: action type, user, moderator, reason, duration, status, timestamp
+- **November 28, 2025**: Complete case system with interactive management + major feature expansion
+  - Implemented Sapphire-style case system with unique per-server case IDs
+  - All moderation commands (kick, ban, mute, warn, unban, unmute) automatically create cases
+  - Added `/case <case_id>` command with interactive buttons: Close, Edit, Delete
+  - Added `/cases [user]` command with pagination: 10 cases per page with Next/Previous buttons
+  - Edit modal allows mods to update: action, reason, duration, status
+  - Case management requires proper permissions (Moderator for close/edit, Admin for delete)
   - Added 6 new commands: say, change-role-name, lock, unlock, setup-anti-nuke, setup-anti-raid
   - Implemented Sapphire bot-style embeds (blurple color #5865F2) across all commands
   - Added anti-nuke and anti-raid database schemas for server protection
   - Separated manual warnings from automod violations in the database (is_manual flag)
   - Updated all command names to use hyphenated format (add-role, remove-role, etc.)
-  - Removed automod violations from warning records (only manual mod warnings count)
 
 ## Project Architecture
 - **index.js**: Main bot file with all command handlers (26 total commands)
@@ -47,11 +48,11 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/nick` - Change user nickname
 - `/change-role-name` - Rename a role
 
-### Information (4)
+### Information (5)
 - `/warns` - Show manual warnings for user (excludes automod)
 - `/server-timeout-status` - List all timed-out members
-- `/case` - View specific moderation case
-- `/cases` - View case history (all or per-user)
+- `/case <id>` - View case with buttons: Close, Edit, Delete
+- `/cases [user]` - View case history with pagination (10 per page)
 - `/help` - Show all commands
 
 ### Automod (6)
@@ -82,9 +83,13 @@ All commands support `n?` prefix format for text commands
 - SQLite database for persistent storage
 
 ## Database Schema Features
-- **Cases**: Unique case tracking system with auto-incrementing case IDs per server
-  - Records action type, user, moderator, reason, duration, status, timestamp
-  - Integrated into all moderation commands (kick, ban, mute, warn, unban, unmute)
+- **Cases**: Full case management system with Sapphire-style features
+  - Per-server auto-incrementing case IDs (Case #1, #2, #3, etc.)
+  - Records: action, user, moderator, reason, duration, status, timestamp
+  - Status options: active, closed, resolved
+  - Edit functionality to modify action, reason, duration, status
+  - Delete functionality with Admin permissions
+  - Close functionality with Moderator permissions
 - **Warnings**: Manual mod warnings only (automod violations excluded)
 - **Anti-Nuke**: Tracks channel/role deletions and bans with configurable thresholds
 - **Anti-Raid**: Tracks member joins with configurable time windows
@@ -92,8 +97,11 @@ All commands support `n?` prefix format for text commands
 - **Moderation Logs**: All moderation action audit trail
 
 ## User Preferences
-- Sapphire bot-style embed design (blurple theme)
+- Sapphire bot-style embed design (blurple theme #5865F2)
 - Hyphenated command names (add-role vs addrole)
+- Interactive case management with buttons and modals
+- Pagination system for case history (10 per page)
+- Full case editing capability for moderators
 - Manual warnings separate from automod violations
 - 24/7 uptime on Replit platform
 - Comprehensive protection systems (anti-nuke, anti-raid)

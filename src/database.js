@@ -224,6 +224,18 @@ const updateCaseStatus = (guildId, caseId, status) => {
   stmt.run(status, guildId, caseId);
 };
 
+const updateCase = (guildId, caseId, updates) => {
+  const allowedFields = ['action', 'reason', 'duration', 'status'];
+  const setClause = allowedFields.filter(f => f in updates).map(f => `${f} = ?`).join(', ');
+  const values = allowedFields.filter(f => f in updates).map(f => updates[f]);
+  if (!setClause) return false;
+  
+  const stmt = db.prepare(`UPDATE cases SET ${setClause} WHERE guild_id = ? AND case_id = ?`);
+  values.push(guildId, caseId);
+  const info = stmt.run(...values);
+  return info.changes > 0;
+};
+
 const deleteCase = (guildId, caseId) => {
   const stmt = db.prepare('DELETE FROM cases WHERE guild_id = ? AND case_id = ?');
   const info = stmt.run(guildId, caseId);
@@ -251,5 +263,6 @@ module.exports = {
   getCase,
   getCases,
   updateCaseStatus,
+  updateCase,
   deleteCase
 };
