@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, deleteCase } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 
@@ -350,6 +350,30 @@ const commands = [
   {
     name: 'setup-anti-raid',
     description: 'Setup anti-raid protection'
+  },
+  {
+    name: 'case',
+    description: 'View a specific moderation case',
+    options: [
+      {
+        name: 'case_id',
+        description: 'The case ID to view',
+        type: 4,
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'cases',
+    description: 'View all moderation cases or cases for a user',
+    options: [
+      {
+        name: 'user',
+        description: 'Optional: View cases for a specific user',
+        type: 6,
+        required: false
+      }
+    ]
   }
 ];
 
@@ -633,7 +657,8 @@ client.on('interactionCreate', async interaction => {
         if (!targetMember.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
         await targetMember.kick(reason);
         addWarning(guild.id, user.id, member.id, `Kicked: ${reason}`);
-        const embed = sapphireEmbed('👢 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}`);
+        const caseId = createCase(guild.id, user.id, member.id, 'kick', reason);
+        const embed = sapphireEmbed('👢 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -651,7 +676,8 @@ client.on('interactionCreate', async interaction => {
         if (!targetMember.bannable) return interaction.reply({ content: '❌ Cannot ban this user.', ephemeral: true });
         await targetMember.ban({ reason });
         addWarning(guild.id, user.id, member.id, `Banned: ${reason}`);
-        const embed = sapphireEmbed('🔨 Member Banned', `${user} has been banned from the server.\n**Reason:** ${reason}`);
+        const caseId = createCase(guild.id, user.id, member.id, 'ban', reason);
+        const embed = sapphireEmbed('🔨 Member Banned', `${user} has been banned from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -670,7 +696,8 @@ client.on('interactionCreate', async interaction => {
         const targetMember = await guild.members.fetch(user.id);
         await targetMember.timeout(duration * 60 * 1000, reason);
         addWarning(guild.id, user.id, member.id, `Muted (${duration}m): ${reason}`);
-        const embed = sapphireEmbed('🔇 Member Muted', `${user} has been muted for ${duration} minutes.\n**Reason:** ${reason}`);
+        const caseId = createCase(guild.id, user.id, member.id, 'mute', reason, duration);
+        const embed = sapphireEmbed('🔇 Member Muted', `${user} has been muted for ${duration} minutes.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -685,8 +712,9 @@ client.on('interactionCreate', async interaction => {
         const user = options.getUser('user');
         const reason = options.getString('reason');
         addWarning(guild.id, user.id, member.id, reason);
+        const caseId = createCase(guild.id, user.id, member.id, 'warn', reason);
         const warnings = getWarnings(guild.id, user.id);
-        const embed = sapphireEmbed('⚠️ Member Warned', `${user} has been warned.\n**Reason:** ${reason}\n**Total Warnings:** ${warnings.length}`);
+        const embed = sapphireEmbed('⚠️ Member Warned', `${user} has been warned.\n**Reason:** ${reason}\n**Total Warnings:** ${warnings.length}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -720,7 +748,8 @@ client.on('interactionCreate', async interaction => {
         const userId = options.getString('userid');
         const reason = options.getString('reason') || 'No reason provided';
         await guild.bans.remove(userId, reason);
-        const embed = sapphireEmbed('✅ Member Unbanned', `User ${userId} has been unbanned.\n**Reason:** ${reason}`);
+        const caseId = createCase(guild.id, userId, member.id, 'unban', reason);
+        const embed = sapphireEmbed('✅ Member Unbanned', `User ${userId} has been unbanned.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -736,7 +765,8 @@ client.on('interactionCreate', async interaction => {
         const reason = options.getString('reason') || 'No reason provided';
         const targetMember = await guild.members.fetch(user.id);
         await targetMember.timeout(null, reason);
-        const embed = sapphireEmbed('🔊 Member Unmuted', `${user} has been unmuted.`);
+        const caseId = createCase(guild.id, user.id, member.id, 'unmute', reason);
+        const embed = sapphireEmbed('🔊 Member Unmuted', `${user} has been unmuted.\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -1064,6 +1094,49 @@ client.on('interactionCreate', async interaction => {
         setAntiRaidConfig(guild.id, config);
         const embed = sapphireEmbed('🛡️ Anti-Raid Setup Complete', 
           `Anti-Raid protection is now **enabled** for this server!\n\n**Default Settings:**\n• Action: Ban\n• Join Threshold: 5 members\n• Time Window: 1 minute\n\nYou can customize these settings in the database if needed.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'case': {
+        const caseId = options.getInteger('case_id');
+        const caseData = getCase(guild.id, caseId);
+        
+        if (!caseData) {
+          return interaction.reply({ content: `❌ Case #${caseId} not found.`, ephemeral: true });
+        }
+
+        const user = await client.users.fetch(caseData.user_id);
+        const moderator = await client.users.fetch(caseData.moderator_id);
+        const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'delete': '🗑️' }[caseData.action] || '⚙️';
+        
+        const embed = sapphireEmbed(`${actionEmoji} Case #${caseId}`, 
+          `**Action:** ${caseData.action.toUpperCase()}\n**User:** ${user.tag}\n**Moderator:** ${moderator.tag}\n**Reason:** ${caseData.reason}\n${caseData.duration ? `**Duration:** ${caseData.duration} minutes\n` : ''}**Status:** ${caseData.status}\n**Date:** <t:${Math.floor(caseData.timestamp / 1000)}>`
+        );
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'cases': {
+        const targetUser = options.getUser('user');
+        const userCases = getCases(guild.id, targetUser?.id);
+
+        if (userCases.length === 0) {
+          const msg = targetUser ? `${targetUser} has no cases.` : 'No cases found.';
+          const embed = sapphireEmbed('📋 Case History', msg);
+          return await interaction.reply({ embeds: [embed] });
+        }
+
+        let caseList = '';
+        userCases.slice(0, 10).forEach(c => {
+          const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
+          caseList += `${actionEmoji} **Case #${c.case_id}** | ${c.action.toUpperCase()} | ${c.reason.substring(0, 40)}\n`;
+        });
+
+        const desc = targetUser 
+          ? `Cases for ${targetUser}:\n\n${caseList}` 
+          : `Latest cases:\n\n${caseList}`;
+        const embed = sapphireEmbed('📋 Case History', desc);
         await interaction.reply({ embeds: [embed] });
         break;
       }

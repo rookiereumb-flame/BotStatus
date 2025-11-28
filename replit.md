@@ -4,9 +4,13 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke and anti-raid), and an intelligent automod system with translation support.
 
 ## Recent Changes
-- **November 28, 2025**: Major feature expansion
+- **November 28, 2025**: Complete case system implementation + major feature expansion
+  - Implemented Sapphire-style case system with unique case IDs for each moderation action
+  - All moderation commands (kick, ban, mute, warn, unban, unmute) now create cases
+  - Added `/case` and `/cases` commands for viewing case history
+  - Cases include: action type, user, moderator, reason, duration, status, timestamp
   - Added 6 new commands: say, change-role-name, lock, unlock, setup-anti-nuke, setup-anti-raid
-  - Implemented Sapphire bot-style embeds (blurple color #5865F2)
+  - Implemented Sapphire bot-style embeds (blurple color #5865F2) across all commands
   - Added anti-nuke and anti-raid database schemas for server protection
   - Separated manual warnings from automod violations in the database (is_manual flag)
   - Updated all command names to use hyphenated format (add-role, remove-role, etc.)
@@ -26,16 +30,16 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **src/utils/logger.js**: Moderation action logging
 - **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv)
 
-## Commands (26 Total)
+## Commands (30 Total)
 
 ### Moderation (7)
-- `/kick` - Kick member with reason
-- `/ban` - Ban member with reason
-- `/mute` - Timeout member with duration
-- `/warn` - Warn member (manual warnings only)
+- `/kick` - Kick member with reason (creates case)
+- `/ban` - Ban member with reason (creates case)
+- `/mute` - Timeout member with duration (creates case)
+- `/warn` - Warn member (manual warnings only, creates case)
 - `/unwarn` - Remove specific warning
-- `/unban` - Unban user by ID
-- `/unmute` - Remove timeout
+- `/unban` - Unban user by ID (creates case)
+- `/unmute` - Remove timeout (creates case)
 
 ### Role Management (4)
 - `/add-role` - Add role to user
@@ -43,9 +47,11 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/nick` - Change user nickname
 - `/change-role-name` - Rename a role
 
-### Information (3)
+### Information (4)
 - `/warns` - Show manual warnings for user (excludes automod)
 - `/server-timeout-status` - List all timed-out members
+- `/case` - View specific moderation case
+- `/cases` - View case history (all or per-user)
 - `/help` - Show all commands
 
 ### Automod (6)
@@ -56,7 +62,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/remove-blacklist-word` - Remove word from blacklist
 - `/blacklist-library` - View all blacklisted words
 
-### Utilities (3)
+### Utilities (4)
 - `/purge` - Delete messages (1-100)
 - `/say` - Make bot send a message
 - `/lock` - Lock channel (prevent messages)
@@ -76,6 +82,9 @@ All commands support `n?` prefix format for text commands
 - SQLite database for persistent storage
 
 ## Database Schema Features
+- **Cases**: Unique case tracking system with auto-incrementing case IDs per server
+  - Records action type, user, moderator, reason, duration, status, timestamp
+  - Integrated into all moderation commands (kick, ban, mute, warn, unban, unmute)
 - **Warnings**: Manual mod warnings only (automod violations excluded)
 - **Anti-Nuke**: Tracks channel/role deletions and bans with configurable thresholds
 - **Anti-Raid**: Tracks member joins with configurable time windows

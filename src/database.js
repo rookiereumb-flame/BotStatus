@@ -60,6 +60,19 @@ db.exec(`
     action TEXT NOT NULL,
     timestamp INTEGER NOT NULL
   );
+
+  CREATE TABLE IF NOT EXISTS cases (
+    case_id INTEGER,
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    moderator_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    reason TEXT NOT NULL,
+    duration INTEGER,
+    status TEXT DEFAULT 'active',
+    timestamp INTEGER NOT NULL,
+    PRIMARY KEY (guild_id, case_id)
+  );
 `);
 
 const getGuildConfig = (guildId) => {
@@ -173,6 +186,50 @@ const setAntiRaidConfig = (guildId, config) => {
   stmt.run(guildId, config.enabled, config.action, config.thresholdJoins, config.timeWindow, config.logChannelId, config.enabled, config.action, config.thresholdJoins, config.timeWindow, config.logChannelId);
 };
 
+const getNextCaseId = (guildId) => {
+  const stmt = db.prepare('SELECT MAX(case_id) as max_id FROM cases WHERE guild_id = ?');
+  const result = stmt.get(guildId);
+  return (result?.max_id || 0) + 1;
+};
+
+const createCase = (guildId, userId, moderatorId, action, reason, duration = null) => {
+  const caseId = getNextCaseId(guildId);
+  const stmt = db.prepare(`
+    INSERT INTO cases (case_id, guild_id, user_id, moderator_id, action, reason, duration, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(caseId, guildId, userId, moderatorId, action, reason, duration, Date.now());
+  return caseId;
+};
+
+const getCase = (guildId, caseId) => {
+  const stmt = db.prepare('SELECT * FROM cases WHERE guild_id = ? AND case_id = ?');
+  return stmt.get(guildId, caseId);
+};
+
+const getCases = (guildId, userId = null) => {
+  let query = 'SELECT * FROM cases WHERE guild_id = ?';
+  let params = [guildId];
+  if (userId) {
+    query += ' AND user_id = ?';
+    params.push(userId);
+  }
+  query += ' ORDER BY case_id DESC';
+  const stmt = db.prepare(query);
+  return stmt.all(...params);
+};
+
+const updateCaseStatus = (guildId, caseId, status) => {
+  const stmt = db.prepare('UPDATE cases SET status = ? WHERE guild_id = ? AND case_id = ?');
+  stmt.run(status, guildId, caseId);
+};
+
+const deleteCase = (guildId, caseId) => {
+  const stmt = db.prepare('DELETE FROM cases WHERE guild_id = ? AND case_id = ?');
+  const info = stmt.run(guildId, caseId);
+  return info.changes > 0;
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -188,5 +245,11 @@ module.exports = {
   getAntiNukeConfig,
   setAntiNukeConfig,
   getAntiRaidConfig,
-  setAntiRaidConfig
+  setAntiRaidConfig,
+  getNextCaseId,
+  createCase,
+  getCase,
+  getCases,
+  updateCaseStatus,
+  deleteCase
 };
