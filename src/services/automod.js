@@ -25,13 +25,6 @@ async function checkMessage(message) {
     if (regex.test(lowerText)) {
       try {
         await message.delete();
-        
-        addWarning(
-          message.guild.id,
-          message.author.id,
-          message.client.user.id,
-          `Automod: Used blacklisted word "${word}"`
-        );
 
         await logModeration(message.guild, 'automod', {
           user: message.author,

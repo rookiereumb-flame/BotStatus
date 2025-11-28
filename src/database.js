@@ -16,6 +16,7 @@ db.exec(`
     user_id TEXT NOT NULL,
     moderator_id TEXT NOT NULL,
     reason TEXT NOT NULL,
+    is_manual INTEGER DEFAULT 1,
     timestamp INTEGER NOT NULL
   );
 
@@ -24,6 +25,40 @@ db.exec(`
     guild_id TEXT NOT NULL,
     word TEXT NOT NULL,
     UNIQUE(guild_id, word)
+  );
+
+  CREATE TABLE IF NOT EXISTS anti_nuke_settings (
+    guild_id TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 0,
+    action TEXT DEFAULT 'ban',
+    threshold_channels INTEGER DEFAULT 5,
+    threshold_roles INTEGER DEFAULT 5,
+    threshold_bans INTEGER DEFAULT 3,
+    time_window INTEGER DEFAULT 300,
+    log_channel_id TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS anti_raid_settings (
+    guild_id TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 0,
+    action TEXT DEFAULT 'ban',
+    threshold_joins INTEGER DEFAULT 5,
+    time_window INTEGER DEFAULT 60,
+    log_channel_id TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS join_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    timestamp INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS moderation_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    action TEXT NOT NULL,
+    timestamp INTEGER NOT NULL
   );
 `);
 
@@ -59,17 +94,20 @@ const disableAutomod = (guildId) => {
   stmt.run(guildId);
 };
 
-const addWarning = (guildId, userId, moderatorId, reason) => {
+const addWarning = (guildId, userId, moderatorId, reason, isManual = 1) => {
   const stmt = db.prepare(`
-    INSERT INTO warnings (guild_id, user_id, moderator_id, reason, timestamp) 
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO warnings (guild_id, user_id, moderator_id, reason, is_manual, timestamp) 
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  const info = stmt.run(guildId, userId, moderatorId, reason, Date.now());
+  const info = stmt.run(guildId, userId, moderatorId, reason, isManual, Date.now());
   return info.lastInsertRowid;
 };
 
-const getWarnings = (guildId, userId) => {
-  const stmt = db.prepare('SELECT * FROM warnings WHERE guild_id = ? AND user_id = ? ORDER BY timestamp DESC');
+const getWarnings = (guildId, userId, onlyManual = true) => {
+  let query = 'SELECT * FROM warnings WHERE guild_id = ? AND user_id = ?';
+  if (onlyManual) query += ' AND is_manual = 1';
+  query += ' ORDER BY timestamp DESC';
+  const stmt = db.prepare(query);
   return stmt.all(guildId, userId);
 };
 
@@ -107,6 +145,34 @@ const getBlacklistWords = (guildId) => {
   return stmt.all(guildId).map(row => row.word);
 };
 
+const getAntiNukeConfig = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM anti_nuke_settings WHERE guild_id = ?');
+  return stmt.get(guildId);
+};
+
+const setAntiNukeConfig = (guildId, config) => {
+  const stmt = db.prepare(`
+    INSERT INTO anti_nuke_settings (guild_id, enabled, action, threshold_channels, threshold_roles, threshold_bans, time_window, log_channel_id) 
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET enabled = ?, action = ?, threshold_channels = ?, threshold_roles = ?, threshold_bans = ?, time_window = ?, log_channel_id = ?
+  `);
+  stmt.run(guildId, config.enabled, config.action, config.thresholdChannels, config.thresholdRoles, config.thresholdBans, config.timeWindow, config.logChannelId, config.enabled, config.action, config.thresholdChannels, config.thresholdRoles, config.thresholdBans, config.timeWindow, config.logChannelId);
+};
+
+const getAntiRaidConfig = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM anti_raid_settings WHERE guild_id = ?');
+  return stmt.get(guildId);
+};
+
+const setAntiRaidConfig = (guildId, config) => {
+  const stmt = db.prepare(`
+    INSERT INTO anti_raid_settings (guild_id, enabled, action, threshold_joins, time_window, log_channel_id) 
+    VALUES (?, ?, ?, ?, ?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET enabled = ?, action = ?, threshold_joins = ?, time_window = ?, log_channel_id = ?
+  `);
+  stmt.run(guildId, config.enabled, config.action, config.thresholdJoins, config.timeWindow, config.logChannelId, config.enabled, config.action, config.thresholdJoins, config.timeWindow, config.logChannelId);
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -118,5 +184,9 @@ module.exports = {
   removeWarning,
   addBlacklistWord,
   removeBlacklistWord,
-  getBlacklistWords
+  getBlacklistWords,
+  getAntiNukeConfig,
+  setAntiNukeConfig,
+  getAntiRaidConfig,
+  setAntiRaidConfig
 };

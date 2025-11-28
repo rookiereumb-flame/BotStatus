@@ -1,12 +1,13 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
+const SAPPHIRE_COLOR = '#5865F2';
 
 const client = new Client({
   intents: [
@@ -287,6 +288,68 @@ const commands = [
         min_value: 1
       }
     ]
+  },
+  {
+    name: 'say',
+    description: 'Make the bot say something',
+    options: [
+      {
+        name: 'text',
+        description: 'The text to say',
+        type: 3,
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'change-role-name',
+    description: 'Change a role\'s name',
+    options: [
+      {
+        name: 'role',
+        description: 'The role to rename',
+        type: 8,
+        required: true
+      },
+      {
+        name: 'newname',
+        description: 'The new name for the role',
+        type: 3,
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'lock',
+    description: 'Lock a channel (prevent members from sending messages)',
+    options: [
+      {
+        name: 'channel',
+        description: 'The channel to lock',
+        type: 7,
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'unlock',
+    description: 'Unlock a channel (allow members to send messages)',
+    options: [
+      {
+        name: 'channel',
+        description: 'The channel to unlock',
+        type: 7,
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'setup-anti-nuke',
+    description: 'Setup anti-nuke protection'
+  },
+  {
+    name: 'setup-anti-raid',
+    description: 'Setup anti-raid protection'
   }
 ];
 
@@ -317,6 +380,7 @@ client.once('ready', async () => {
     console.log('  /add-role');
     console.log('  /remove-role');
     console.log('  /nick');
+    console.log('  /change-role-name');
     console.log('\n📊 INFORMATION:');
     console.log('  /warns');
     console.log('  /server-timeout-status');
@@ -330,6 +394,12 @@ client.once('ready', async () => {
     console.log('  /blacklist-library');
     console.log('\n🔧 UTILITIES:');
     console.log('  /purge');
+    console.log('  /say');
+    console.log('  /lock');
+    console.log('  /unlock');
+    console.log('\n🛡️  PROTECTION:');
+    console.log('  /setup-anti-nuke');
+    console.log('  /setup-anti-raid');
   } catch (error) {
     console.error('❌ Error registering commands:', error);
   }
@@ -338,10 +408,8 @@ client.once('ready', async () => {
 const PREFIX = 'n?';
 
 client.on('messageCreate', async message => {
-  // Automod check
   await checkMessage(message);
   
-  // Prefix command handling
   if (!message.content.startsWith(PREFIX) || message.author.bot) return;
   
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
@@ -397,7 +465,7 @@ client.on('messageCreate', async message => {
       
       case 'warn': {
         if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-          return message.reply('❌ You need the "Moderate Members" permission.');
+          return message.reply('❌ You need moderation permissions.');
         }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to warn.');
@@ -409,17 +477,69 @@ client.on('messageCreate', async message => {
       
       case 'unwarn': {
         if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-          return message.reply('❌ You need the "Moderate Members" permission.');
+          return message.reply('❌ You need moderation permissions.');
         }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user.');
-        const warnNum = parseInt(args[0]);
-        if (!warnNum) return message.reply('❌ Please specify warning number.');
-        if (removeWarning(message.guild.id, user.id, warnNum - 1)) {
-          message.reply(`✅ Removed warning #${warnNum} from ${user.tag}`);
+        const warningNum = parseInt(args[1]) - 1;
+        if (removeWarning(message.guild.id, user.id, warningNum)) {
+          message.reply(`✅ Removed warning from ${user.tag}`);
         } else {
-          message.reply(`❌ Warning #${warnNum} not found for ${user.tag}`);
+          message.reply('❌ Could not find that warning.');
         }
+        break;
+      }
+      
+      case 'unban': {
+        if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
+          return message.reply('❌ You need the "Ban Members" permission.');
+        }
+        const userId = args[0];
+        if (!userId) return message.reply('❌ Please provide a user ID.');
+        const reason = args.slice(1).join(' ') || 'No reason provided';
+        await message.guild.bans.remove(userId, reason);
+        message.reply(`✅ Unbanned user ${userId} - ${reason}`);
+        break;
+      }
+      
+      case 'unmute': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return message.reply('❌ You need the "Timeout Members" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to unmute.');
+        const reason = args.join(' ') || 'No reason provided';
+        const targetMember = await message.guild.members.fetch(user.id);
+        await targetMember.timeout(null, reason);
+        message.reply(`✅ Unmuted ${user.tag}`);
+        break;
+      }
+
+      case 'add-role': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return message.reply('❌ You need the "Manage Roles" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user.');
+        const role = message.mentions.roles.first();
+        if (!role) return message.reply('❌ Please mention a role.');
+        const targetMember = await message.guild.members.fetch(user.id);
+        await targetMember.roles.add(role);
+        message.reply(`✅ Added role ${role.name} to ${user.tag}`);
+        break;
+      }
+      
+      case 'remove-role': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return message.reply('❌ You need the "Manage Roles" permission.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user.');
+        const role = message.mentions.roles.first();
+        if (!role) return message.reply('❌ Please mention a role.');
+        const targetMember = await message.guild.members.fetch(user.id);
+        await targetMember.roles.remove(role);
+        message.reply(`✅ Removed role ${role.name} from ${user.tag}`);
         break;
       }
       
@@ -432,55 +552,74 @@ client.on('messageCreate', async message => {
         const nickname = args.join(' ') || null;
         const targetMember = await message.guild.members.fetch(user.id);
         await targetMember.setNickname(nickname);
-        if (nickname) {
-          message.reply(`✅ Changed ${user.tag}'s nickname to: ${nickname}`);
-        } else {
-          message.reply(`✅ Reset ${user.tag}'s nickname`);
-        }
+        message.reply(`✅ Changed nickname for ${user.tag}`);
         break;
       }
-      
-      case 'purge': {
-        if (!message.member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-          return message.reply('❌ You need the "Manage Messages" permission.');
+
+      case 'say': {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return message.reply('❌ You need Administrator permission.');
         }
-        const amount = parseInt(args[0]);
-        if (!amount || amount < 1 || amount > 100) return message.reply('❌ Please specify 1-100 messages to delete.');
-        const deleted = await message.channel.bulkDelete(amount, true);
-        message.reply(`✅ Deleted ${deleted.size} messages.`).then(msg => setTimeout(() => msg.delete(), 3000));
+        const text = args.join(' ');
+        if (!text) return message.reply('❌ Please provide text to say.');
+        message.delete().catch(() => {});
+        await message.channel.send(text);
         break;
       }
-      
-      case 'warns': {
-        const user = message.mentions.users.first();
-        if (!user) return message.reply('❌ Please mention a user.');
-        const warnings = getWarnings(message.guild.id, user.id);
-        if (warnings.length === 0) {
-          return message.reply(`✅ ${user.tag} has no warnings.`);
+
+      case 'change-role-name': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return message.reply('❌ You need the "Manage Roles" permission.');
         }
-        const list = warnings.map((w, i) => `${i + 1}. ${w.reason}`).slice(0, 10).join('\n');
-        message.reply(`⚠️  **Warnings for ${user.tag}** (${warnings.length} total):\n${list}`);
+        const role = message.mentions.roles.first();
+        if (!role) return message.reply('❌ Please mention a role.');
+        const newName = args.join(' ');
+        if (!newName) return message.reply('❌ Please provide a new name.');
+        await role.setName(newName);
+        message.reply(`✅ Renamed role to **${newName}**`);
         break;
       }
-      
-      case 'help': {
-        message.reply(`🤖 **Discord Moderation Bot**\n\n**Slash Commands:** Use / followed by command\n**Prefix Commands:** Use n? followed by command\n\n⚖️ **Moderation:** Kick Member, Ban Member, Mute Member, Warn Member, Unwarn, Unmute Member, Unban User\n👥 **Role Management:** Add Role, Remove Role, Change Nickname\n📊 **Info:** Show Warnings, Show Timed Out Users, Help\n🛡️ **Automod:** Set Log Channel, Enable Automod, Disable Automod, Add Blacklist Word, Remove Blacklist Word, List Blacklist Words\n🔧 **Utilities:** Delete Messages`);
+
+      case 'lock': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return message.reply('❌ You need the "Manage Channels" permission.');
+        }
+        const channel = message.channel;
+        await channel.permissionOverwrites.edit(message.guild.id, { SendMessages: false });
+        message.reply(`🔒 Channel locked!`);
+        break;
+      }
+
+      case 'unlock': {
+        if (!message.member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return message.reply('❌ You need the "Manage Channels" permission.');
+        }
+        const channel = message.channel;
+        await channel.permissionOverwrites.edit(message.guild.id, { SendMessages: null });
+        message.reply(`🔓 Channel unlocked!`);
         break;
       }
     }
   } catch (error) {
-    console.error(`Error executing prefix command ${cmd}:`, error);
-    message.reply('❌ An error occurred executing that command.');
+    console.error('Error in prefix command:', error);
+    message.reply('❌ An error occurred while executing the command.');
   }
 });
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
-  const { commandName, member, guild } = interaction;
-  
+  const { commandName, options, member, guild } = interaction;
+  const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR) => {
+    return new EmbedBuilder()
+      .setTitle(title)
+      .setDescription(desc)
+      .setColor(color)
+      .setTimestamp();
+  };
+
   try {
-    switch (commandName) {
+    switch(commandName) {
       case 'kick': {
         if (!member.permissions.has(PermissionFlagsBits.KickMembers)) {
           return interaction.reply({ 
@@ -488,31 +627,17 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
+        const user = options.getUser('user');
+        const reason = options.getString('reason') || 'No reason provided';
         const targetMember = await guild.members.fetch(user.id);
-        
-        if (!targetMember.kickable) {
-          return interaction.reply({ 
-            content: '❌ I cannot kick this user. They may have higher permissions than me.', 
-            ephemeral: true 
-          });
-        }
-        
+        if (!targetMember.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
         await targetMember.kick(reason);
-        addWarning(guild.id, user.id, interaction.user.id, `Kicked: ${reason}`);
-        
-        const embed = await logModeration(guild, 'kick', {
-          user,
-          moderator: interaction.user,
-          reason
-        });
-        
+        addWarning(guild.id, user.id, member.id, `Kicked: ${reason}`);
+        const embed = sapphireEmbed('👢 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
-      
+
       case 'ban': {
         if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
           return interaction.reply({ 
@@ -520,31 +645,17 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
+        const user = options.getUser('user');
+        const reason = options.getString('reason') || 'No reason provided';
         const targetMember = await guild.members.fetch(user.id);
-        
-        if (!targetMember.bannable) {
-          return interaction.reply({ 
-            content: '❌ I cannot ban this user. They may have higher permissions than me.', 
-            ephemeral: true 
-          });
-        }
-        
+        if (!targetMember.bannable) return interaction.reply({ content: '❌ Cannot ban this user.', ephemeral: true });
         await targetMember.ban({ reason });
-        addWarning(guild.id, user.id, interaction.user.id, `Banned: ${reason}`);
-        
-        const embed = await logModeration(guild, 'ban', {
-          user,
-          moderator: interaction.user,
-          reason
-        });
-        
+        addWarning(guild.id, user.id, member.id, `Banned: ${reason}`);
+        const embed = sapphireEmbed('🔨 Member Banned', `${user} has been banned from the server.\n**Reason:** ${reason}`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
-      
+
       case 'mute': {
         if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
           return interaction.reply({ 
@@ -552,77 +663,53 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const duration = interaction.options.getInteger('duration');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
+        const user = options.getUser('user');
+        const duration = options.getInteger('duration');
+        const reason = options.getString('reason') || 'No reason provided';
+        if (duration > 40320) return interaction.reply({ content: '❌ Duration cannot exceed 40320 minutes.', ephemeral: true });
         const targetMember = await guild.members.fetch(user.id);
-        
-        if (duration > 40320) {
-          return interaction.reply({ 
-            content: '❌ Duration cannot exceed 40320 minutes (28 days).', 
-            ephemeral: true 
-          });
-        }
-        
-        if (!targetMember.moderatable) {
-          return interaction.reply({ 
-            content: '❌ I cannot timeout this user. They may have higher permissions than me.', 
-            ephemeral: true 
-          });
-        }
-        
         await targetMember.timeout(duration * 60 * 1000, reason);
-        addWarning(guild.id, user.id, interaction.user.id, `Muted (${duration}m): ${reason}`);
-        
-        const embed = await logModeration(guild, 'mute', {
-          user,
-          moderator: interaction.user,
-          reason,
-          duration
-        });
-        
+        addWarning(guild.id, user.id, member.id, `Muted (${duration}m): ${reason}`);
+        const embed = sapphireEmbed('🔇 Member Muted', `${user} has been muted for ${duration} minutes.\n**Reason:** ${reason}`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
-      
+
       case 'warn': {
         if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
           return interaction.reply({ 
-            content: '❌ You need the "Moderate Members" permission to use this command.', 
+            content: '❌ You need moderation permissions to use this command.', 
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason');
-        
-        addWarning(guild.id, user.id, interaction.user.id, reason);
-        
-        const embed = await logModeration(guild, 'warn', {
-          user,
-          moderator: interaction.user,
-          reason
-        });
-        
+        const user = options.getUser('user');
+        const reason = options.getString('reason');
+        addWarning(guild.id, user.id, member.id, reason);
+        const warnings = getWarnings(guild.id, user.id);
+        const embed = sapphireEmbed('⚠️ Member Warned', `${user} has been warned.\n**Reason:** ${reason}\n**Total Warnings:** ${warnings.length}`);
         await interaction.reply({ embeds: [embed] });
-        
-        try {
-          await user.send({
-            embeds: [new EmbedBuilder()
-              .setColor(0xF1C40F)
-              .setTitle('⚠️ You have been warned')
-              .setDescription(`You received a warning in **${guild.name}**`)
-              .addFields({ name: 'Reason', value: reason })
-              .setTimestamp()
-            ]
+        break;
+      }
+
+      case 'unwarn': {
+        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
+          return interaction.reply({ 
+            content: '❌ You need moderation permissions to use this command.', 
+            ephemeral: true 
           });
-        } catch (error) {
-          console.log(`Could not DM ${user.tag}`);
+        }
+        const user = options.getUser('user');
+        const warningNum = options.getInteger('warning_number') - 1;
+        if (removeWarning(guild.id, user.id, warningNum)) {
+          const warnings = getWarnings(guild.id, user.id);
+          const embed = sapphireEmbed('✅ Warning Removed', `Removed warning from ${user}.\n**Remaining Warnings:** ${warnings.length}`);
+          await interaction.reply({ embeds: [embed] });
+        } else {
+          await interaction.reply({ content: '❌ Could not find that warning.', ephemeral: true });
         }
         break;
       }
-      
+
       case 'unban': {
         if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
           return interaction.reply({ 
@@ -630,29 +717,14 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const userId = interaction.options.getString('userid');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
-        
-        try {
-          await guild.members.unban(userId, reason);
-          
-          const embed = await logModeration(guild, 'unban', {
-            userId,
-            moderator: interaction.user,
-            reason
-          });
-          
-          await interaction.reply({ embeds: [embed] });
-        } catch (error) {
-          await interaction.reply({ 
-            content: '❌ Could not unban user. Make sure the User ID is correct and they are banned.', 
-            ephemeral: true 
-          });
-        }
+        const userId = options.getString('userid');
+        const reason = options.getString('reason') || 'No reason provided';
+        await guild.bans.remove(userId, reason);
+        const embed = sapphireEmbed('✅ Member Unbanned', `User ${userId} has been unbanned.\n**Reason:** ${reason}`);
+        await interaction.reply({ embeds: [embed] });
         break;
       }
-      
+
       case 'unmute': {
         if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
           return interaction.reply({ 
@@ -660,26 +732,11 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const reason = interaction.options.getString('reason') || 'No reason provided';
+        const user = options.getUser('user');
+        const reason = options.getString('reason') || 'No reason provided';
         const targetMember = await guild.members.fetch(user.id);
-        
-        if (!targetMember.moderatable) {
-          return interaction.reply({ 
-            content: '❌ I cannot modify this user\'s timeout.', 
-            ephemeral: true 
-          });
-        }
-        
         await targetMember.timeout(null, reason);
-        
-        const embed = await logModeration(guild, 'unmute', {
-          user,
-          moderator: interaction.user,
-          reason
-        });
-        
+        const embed = sapphireEmbed('🔊 Member Unmuted', `${user} has been unmuted.`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -691,30 +748,11 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const role = interaction.options.getRole('role');
+        const user = options.getUser('user');
+        const role = options.getRole('role');
         const targetMember = await guild.members.fetch(user.id);
-        
-        if (targetMember.roles.cache.has(role.id)) {
-          return interaction.reply({ 
-            content: `❌ ${user.tag} already has the ${role.name} role.`, 
-            ephemeral: true 
-          });
-        }
-        
         await targetMember.roles.add(role);
-        
-        const embed = new EmbedBuilder()
-          .setColor(0x2ECC71)
-          .setTitle('✅ Role Added')
-          .addFields(
-            { name: 'User', value: `${user.tag}`, inline: true },
-            { name: 'Role', value: `${role.name}`, inline: true },
-            { name: 'Moderator', value: `${interaction.user.tag}`, inline: true }
-          )
-          .setTimestamp();
-        
+        const embed = sapphireEmbed('✅ Role Added', `Added role ${role} to ${user}.`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -726,64 +764,43 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const user = interaction.options.getUser('user');
-        const role = interaction.options.getRole('role');
+        const user = options.getUser('user');
+        const role = options.getRole('role');
         const targetMember = await guild.members.fetch(user.id);
-        
-        if (!targetMember.roles.cache.has(role.id)) {
+        await targetMember.roles.remove(role);
+        const embed = sapphireEmbed('✅ Role Removed', `Removed role ${role} from ${user}.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'nick': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageNicknames)) {
           return interaction.reply({ 
-            content: `❌ ${user.tag} doesn't have the ${role.name} role.`, 
+            content: '❌ You need the "Manage Nicknames" permission to use this command.', 
             ephemeral: true 
           });
         }
-        
-        await targetMember.roles.remove(role);
-        
-        const embed = new EmbedBuilder()
-          .setColor(0xE74C3C)
-          .setTitle('🗑️ Role Removed')
-          .addFields(
-            { name: 'User', value: `${user.tag}`, inline: true },
-            { name: 'Role', value: `${role.name}`, inline: true },
-            { name: 'Moderator', value: `${interaction.user.tag}`, inline: true }
-          )
-          .setTimestamp();
-        
+        const user = options.getUser('user');
+        const nickname = options.getString('nickname') || null;
+        const targetMember = await guild.members.fetch(user.id);
+        await targetMember.setNickname(nickname);
+        const embed = sapphireEmbed('✅ Nickname Changed', `Changed nickname for ${user}.`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
 
       case 'warns': {
-        const user = interaction.options.getUser('user');
+        const user = options.getUser('user');
         const warnings = getWarnings(guild.id, user.id);
-        
         if (warnings.length === 0) {
-          return interaction.reply({ 
-            content: `✅ ${user.tag} has no warnings.`, 
-            ephemeral: true 
-          });
+          const embed = sapphireEmbed('📋 No Warnings', `${user} has no warnings.`);
+          return await interaction.reply({ embeds: [embed] });
         }
-        
-        const embed = new EmbedBuilder()
-          .setColor(0xF1C40F)
-          .setTitle(`⚠️ Warnings for ${user.tag}`)
-          .setDescription(`Total warnings: ${warnings.length}`)
-          .setTimestamp();
-        
-        warnings.slice(0, 10).forEach((warning, index) => {
-          const date = new Date(warning.timestamp).toLocaleString();
-          embed.addFields({
-            name: `Warning #${index + 1}`,
-            value: `**Reason:** ${warning.reason}\n**Date:** ${date}`,
-            inline: false
-          });
+        let warningText = '';
+        warnings.forEach((w, i) => {
+          warningText += `**${i + 1}.** ${w.reason}\n`;
         });
-        
-        if (warnings.length > 10) {
-          embed.setFooter({ text: `Showing 10 of ${warnings.length} warnings` });
-        }
-        
+        const embed = sapphireEmbed(`⚠️ Warnings for ${user.username}`, warningText);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -793,67 +810,17 @@ client.on('interactionCreate', async interaction => {
         const timedOutMembers = members.filter(m => m.communicationDisabledUntilTimestamp && m.communicationDisabledUntilTimestamp > Date.now());
         
         if (timedOutMembers.size === 0) {
-          return interaction.reply({ 
-            content: '✅ No users are currently timed out.', 
-            ephemeral: true 
-          });
+          const embed = sapphireEmbed('✅ No Timeouts', 'No members are currently timed out.');
+          return await interaction.reply({ embeds: [embed] });
         }
         
-        const embed = new EmbedBuilder()
-          .setColor(0xF39C12)
-          .setTitle('🔇 Currently Timed Out Users')
-          .setDescription(`Total: ${timedOutMembers.size}`)
-          .setTimestamp();
-        
-        timedOutMembers.forEach(member => {
-          const endsAt = new Date(member.communicationDisabledUntilTimestamp);
-          const timeLeft = Math.round((member.communicationDisabledUntilTimestamp - Date.now()) / 60000);
-          embed.addFields({
-            name: member.user.tag,
-            value: `Ends: ${endsAt.toLocaleString()}\nTime left: ${timeLeft} minutes`,
-            inline: true
-          });
+        let statusText = '';
+        timedOutMembers.forEach(m => {
+          const timeLeft = Math.ceil((m.communicationDisabledUntilTimestamp - Date.now()) / 1000 / 60);
+          statusText += `${m.user.tag} - ${timeLeft} minutes left\n`;
         });
         
-        await interaction.reply({ embeds: [embed] });
-        break;
-      }
-
-      case 'help': {
-        const embed = new EmbedBuilder()
-          .setColor(0x5865F2)
-          .setTitle('🤖 Discord Moderation Bot')
-          .setDescription('A comprehensive moderation bot with automod features')
-          .addFields(
-            {
-              name: '⚖️ Moderation Commands',
-              value: '`/kick` - Kick Member\n`/ban` - Ban Member\n`/mute` - Mute Member\n`/warn` - Warn Member\n`/unwarn` - Remove Warning\n`/unban` - Unban User\n`/unmute` - Unmute Member',
-              inline: false
-            },
-            {
-              name: '👥 Role Management',
-              value: '`/add-role` - Add Role\n`/remove-role` - Remove Role\n`/nick` - Change Nickname',
-              inline: false
-            },
-            {
-              name: '📊 Information',
-              value: '`/warns` - Show Warnings\n`/server-timeout-status` - Show Timed Out Users\n`/help` - Show Help',
-              inline: false
-            },
-            {
-              name: '🛡️ Automod Configuration',
-              value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod\n`/add-blacklist-word` - Add Blacklist Word\n`/remove-blacklist-word` - Remove Blacklist Word\n`/blacklist-library` - List Blacklist Words',
-              inline: false
-            },
-            {
-              name: '🔧 Utilities',
-              value: '`/purge` - Delete Messages',
-              inline: false
-            }
-          )
-          .setFooter({ text: 'Use commands responsibly' })
-          .setTimestamp();
-        
+        const embed = sapphireEmbed(`⏱️ Timed Out Members (${timedOutMembers.size})`, statusText);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -865,22 +832,10 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const channel = interaction.options.getChannel('channel');
-        
-        if (channel.type !== ChannelType.GuildText) {
-          return interaction.reply({ 
-            content: '❌ Please select a text channel.', 
-            ephemeral: true 
-          });
-        }
-        
+        const channel = options.getChannel('channel');
         setLogChannel(guild.id, channel.id);
-        
-        await interaction.reply({ 
-          content: `✅ Log channel set to ${channel}`, 
-          ephemeral: true 
-        });
+        const embed = sapphireEmbed('✅ Log Channel Set', `Moderation logs will now be sent to ${channel}.`);
+        await interaction.reply({ embeds: [embed] });
         break;
       }
 
@@ -891,13 +846,9 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
         enableAutomod(guild.id);
-        
-        await interaction.reply({ 
-          content: '✅ Automod system has been enabled. Messages will be checked against the blacklist.', 
-          ephemeral: true 
-        });
+        const embed = sapphireEmbed('✅ Automod Enabled', 'Automod is now enabled for this server.');
+        await interaction.reply({ embeds: [embed] });
         break;
       }
 
@@ -908,13 +859,9 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
         disableAutomod(guild.id);
-        
-        await interaction.reply({ 
-          content: '✅ Automod system has been disabled.', 
-          ephemeral: true 
-        });
+        const embed = sapphireEmbed('✅ Automod Disabled', 'Automod is now disabled for this server.');
+        await interaction.reply({ embeds: [embed] });
         break;
       }
 
@@ -925,20 +872,12 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const word = interaction.options.getString('word');
-        const success = addBlacklistWord(guild.id, word);
-        
-        if (success) {
-          await interaction.reply({ 
-            content: `✅ Added "${word}" to the blacklist.`, 
-            ephemeral: true 
-          });
+        const word = options.getString('word');
+        if (addBlacklistWord(guild.id, word)) {
+          const embed = sapphireEmbed('✅ Word Added', `**${word}** has been added to the blacklist.`);
+          await interaction.reply({ embeds: [embed] });
         } else {
-          await interaction.reply({ 
-            content: `❌ "${word}" is already in the blacklist.`, 
-            ephemeral: true 
-          });
+          await interaction.reply({ content: '❌ Word already in blacklist.', ephemeral: true });
         }
         break;
       }
@@ -950,20 +889,12 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const word = interaction.options.getString('word');
-        const success = removeBlacklistWord(guild.id, word);
-        
-        if (success) {
-          await interaction.reply({ 
-            content: `✅ Removed "${word}" from the blacklist.`, 
-            ephemeral: true 
-          });
+        const word = options.getString('word');
+        if (removeBlacklistWord(guild.id, word)) {
+          const embed = sapphireEmbed('✅ Word Removed', `**${word}** has been removed from the blacklist.`);
+          await interaction.reply({ embeds: [embed] });
         } else {
-          await interaction.reply({ 
-            content: `❌ "${word}" is not in the blacklist.`, 
-            ephemeral: true 
-          });
+          await interaction.reply({ content: '❌ Word not found in blacklist.', ephemeral: true });
         }
         break;
       }
@@ -975,57 +906,12 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
         const words = getBlacklistWords(guild.id);
-        
         if (words.length === 0) {
-          return interaction.reply({ 
-            content: '✅ No words are currently blacklisted.', 
-            ephemeral: true 
-          });
+          const embed = sapphireEmbed('📚 Blacklist Library', 'No blacklisted words yet.');
+          return await interaction.reply({ embeds: [embed] });
         }
-        
-        const embed = new EmbedBuilder()
-          .setColor(0xFF0000)
-          .setTitle('🚫 Blacklisted Words')
-          .setDescription(words.map((w, i) => `${i + 1}. ${w}`).join('\n'))
-          .setFooter({ text: `Total: ${words.length} words` })
-          .setTimestamp();
-        
-        await interaction.reply({ embeds: [embed], ephemeral: true });
-        break;
-      }
-
-      case 'nick': {
-        if (!member.permissions.has(PermissionFlagsBits.ManageNicknames)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Manage Nicknames" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        
-        const user = interaction.options.getUser('user');
-        const nickname = interaction.options.getString('nickname');
-        const targetMember = await guild.members.fetch(user.id);
-        
-        if (!targetMember.manageable) {
-          return interaction.reply({ 
-            content: '❌ I cannot manage this user\'s nickname.', 
-            ephemeral: true 
-          });
-        }
-        
-        await targetMember.setNickname(nickname);
-        
-        const embed = new EmbedBuilder()
-          .setColor(0x3498DB)
-          .setTitle('✏️ Nickname Changed')
-          .addFields(
-            { name: 'User', value: `${user.tag}`, inline: true },
-            { name: 'New Nickname', value: nickname || 'Reset to default', inline: true }
-          )
-          .setTimestamp();
-        
+        const embed = sapphireEmbed('📚 Blacklist Library', `**${words.length} words:**\n${words.join(', ')}`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -1037,65 +923,160 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        
-        const amount = interaction.options.getInteger('amount');
-        
-        try {
-          const deleted = await interaction.channel.bulkDelete(amount, true);
-          await interaction.reply({ 
-            content: `✅ Deleted ${deleted.size} messages.`, 
-            ephemeral: true 
-          });
-        } catch (error) {
-          await interaction.reply({ 
-            content: '❌ Could not delete messages. Messages must be less than 2 weeks old.', 
-            ephemeral: true 
-          });
-        }
+        const amount = options.getInteger('amount');
+        await interaction.channel.bulkDelete(amount);
+        const embed = sapphireEmbed('🗑️ Messages Purged', `Deleted ${amount} messages.`);
+        await interaction.reply({ embeds: [embed], ephemeral: true });
         break;
       }
 
-      case 'unwarn': {
-        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Moderate Members" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        
-        const user = interaction.options.getUser('user');
-        const warningNum = interaction.options.getInteger('warning_number');
-        
-        if (removeWarning(guild.id, user.id, warningNum - 1)) {
-          await interaction.reply({ 
-            content: `✅ Removed warning #${warningNum} from ${user.tag}`, 
-            ephemeral: true 
-          });
-        } else {
-          await interaction.reply({ 
-            content: `❌ Warning #${warningNum} not found for ${user.tag}`, 
-            ephemeral: true 
-          });
-        }
+      case 'help': {
+        const embed = sapphireEmbed('🤖 Bot Help', 'All available commands:');
+        embed.addFields(
+          {
+            name: '⚖️ Moderation Commands',
+            value: '`/kick` - Kick Member\n`/ban` - Ban Member\n`/mute` - Mute Member\n`/warn` - Warn Member\n`/unwarn` - Remove Warning\n`/unban` - Unban User\n`/unmute` - Unmute Member',
+            inline: false
+          },
+          {
+            name: '👥 Role Management',
+            value: '`/add-role` - Add Role\n`/remove-role` - Remove Role\n`/nick` - Change Nickname\n`/change-role-name` - Rename Role',
+            inline: false
+          },
+          {
+            name: '📊 Information',
+            value: '`/warns` - Show Warnings\n`/server-timeout-status` - Show Timed Out Users\n`/help` - Show Help',
+            inline: false
+          },
+          {
+            name: '🛡️ Automod Configuration',
+            value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod\n`/add-blacklist-word` - Add Blacklist Word\n`/remove-blacklist-word` - Remove Blacklist Word\n`/blacklist-library` - List Blacklist Words',
+            inline: false
+          },
+          {
+            name: '🔧 Utilities',
+            value: '`/purge` - Delete Messages\n`/say` - Make Bot Say Something\n`/lock` - Lock Channel\n`/unlock` - Unlock Channel',
+            inline: false
+          },
+          {
+            name: '🛡️ Protection',
+            value: '`/setup-anti-nuke` - Setup Anti-Nuke\n`/setup-anti-raid` - Setup Anti-Raid',
+            inline: false
+          }
+        );
+        await interaction.reply({ embeds: [embed] });
         break;
       }
+
+      case 'say': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const text = options.getString('text');
+        await interaction.channel.send(text);
+        await interaction.reply({ content: '✅ Message sent!', ephemeral: true });
+        break;
+      }
+
+      case 'change-role-name': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Roles" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const role = options.getRole('role');
+        const newName = options.getString('newname');
+        await role.setName(newName);
+        const embed = sapphireEmbed('✅ Role Renamed', `Role has been renamed to **${newName}**.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'lock': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Channels" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const channel = options.getChannel('channel') || interaction.channel;
+        await channel.permissionOverwrites.edit(guild.id, { SendMessages: false });
+        const embed = sapphireEmbed('🔒 Channel Locked', `${channel} has been locked.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'unlock': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageChannels)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Channels" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const channel = options.getChannel('channel') || interaction.channel;
+        await channel.permissionOverwrites.edit(guild.id, { SendMessages: null });
+        const embed = sapphireEmbed('🔓 Channel Unlocked', `${channel} has been unlocked.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'setup-anti-nuke': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const config = {
+          enabled: 1,
+          action: 'ban',
+          thresholdChannels: 5,
+          thresholdRoles: 5,
+          thresholdBans: 3,
+          timeWindow: 300,
+          logChannelId: null
+        };
+        setAntiNukeConfig(guild.id, config);
+        const embed = sapphireEmbed('🛡️ Anti-Nuke Setup Complete', 
+          `Anti-Nuke protection is now **enabled** for this server!\n\n**Default Settings:**\n• Action: Ban\n• Channel Deletion Threshold: 5 channels\n• Role Deletion Threshold: 5 roles\n• Ban Threshold: 3 bans\n• Time Window: 5 minutes\n\nYou can customize these settings in the database if needed.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'setup-anti-raid': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const config = {
+          enabled: 1,
+          action: 'ban',
+          thresholdJoins: 5,
+          timeWindow: 60,
+          logChannelId: null
+        };
+        setAntiRaidConfig(guild.id, config);
+        const embed = sapphireEmbed('🛡️ Anti-Raid Setup Complete', 
+          `Anti-Raid protection is now **enabled** for this server!\n\n**Default Settings:**\n• Action: Ban\n• Join Threshold: 5 members\n• Time Window: 1 minute\n\nYou can customize these settings in the database if needed.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      default:
+        await interaction.reply({ content: 'Unknown command.', ephemeral: true });
     }
   } catch (error) {
-    console.error(`Error executing ${commandName}:`, error);
-    const errorMessage = { 
-      content: '❌ An error occurred while executing this command.', 
-      ephemeral: true 
-    };
-    
-    if (interaction.replied || interaction.deferred) {
-      await interaction.followUp(errorMessage);
-    } else {
-      await interaction.reply(errorMessage);
-    }
+    console.error('Error in command:', error);
+    try {
+      await interaction.reply({ content: '❌ An error occurred while executing the command.', ephemeral: true });
+    } catch (e) {}
   }
 });
 
-client.login(TOKEN).catch(error => {
-  console.error('❌ Failed to login:', error);
-  console.log('\n⚠️  Make sure DISCORD_BOT_TOKEN is set in your environment variables.');
-});
+client.login(TOKEN);
