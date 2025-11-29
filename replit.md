@@ -7,7 +7,8 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **November 29, 2025**: Per-server custom prefix + Language Guardian + Smart Mention Handler
   - Added `/set-prefix` command for per-server custom prefixes (one special char from #$_-+/*:!?~=\ + optional letters)
   - Examples: `Y?`, `$mod`, `#k`, `n-`, `admin+`
-  - Prefix settings saved per guild in database
+  - 30-day cooldown: Once set, prefix can't be changed for 30 days (private error message shows remaining days)
+  - Prefix settings saved per guild in database with timestamp tracking
   - Falls back to default `!` if no custom prefix set
   - Smart mention handler: Bot replies when mentioned with welcome message
   - Language Guardian system: multilingual bad word detection with automatic translation

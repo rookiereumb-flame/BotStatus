@@ -8,7 +8,8 @@ db.exec(`
     guild_id TEXT PRIMARY KEY,
     log_channel_id TEXT,
     automod_enabled INTEGER DEFAULT 0,
-    custom_prefix TEXT
+    custom_prefix TEXT,
+    prefix_set_timestamp INTEGER
   );
 
   CREATE TABLE IF NOT EXISTS warnings (
@@ -110,17 +111,37 @@ const disableAutomod = (guildId) => {
 
 const setCustomPrefix = (guildId, prefix) => {
   const stmt = db.prepare(`
-    INSERT INTO guild_config (guild_id, custom_prefix) 
-    VALUES (?, ?) 
-    ON CONFLICT(guild_id) DO UPDATE SET custom_prefix = ?
+    INSERT INTO guild_config (guild_id, custom_prefix, prefix_set_timestamp) 
+    VALUES (?, ?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET custom_prefix = ?, prefix_set_timestamp = ?
   `);
-  stmt.run(guildId, prefix, prefix);
+  const now = Date.now();
+  stmt.run(guildId, prefix, now, prefix, now);
 };
 
 const getCustomPrefix = (guildId) => {
   const stmt = db.prepare('SELECT custom_prefix FROM guild_config WHERE guild_id = ?');
   const result = stmt.get(guildId);
   return result?.custom_prefix || null;
+};
+
+const getPrefixCooldown = (guildId) => {
+  const stmt = db.prepare('SELECT custom_prefix, prefix_set_timestamp FROM guild_config WHERE guild_id = ?');
+  const result = stmt.get(guildId);
+  if (!result?.custom_prefix || !result?.prefix_set_timestamp) return null;
+  
+  const now = Date.now();
+  const elapsedMs = now - result.prefix_set_timestamp;
+  const elapsedDays = Math.floor(elapsedMs / (1000 * 60 * 60 * 24));
+  const remainingDays = Math.max(0, 30 - elapsedDays);
+  
+  return {
+    prefix: result.custom_prefix,
+    setTimestamp: result.prefix_set_timestamp,
+    elapsedDays,
+    remainingDays,
+    canChange: remainingDays === 0
+  };
 };
 
 const addWarning = (guildId, userId, moderatorId, reason, isManual = 1) => {
@@ -266,6 +287,7 @@ module.exports = {
   disableAutomod,
   setCustomPrefix,
   getCustomPrefix,
+  getPrefixCooldown,
   addWarning,
   getWarnings,
   removeWarning,

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, setCustomPrefix, getCustomPrefix, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -1091,6 +1091,16 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
+        
+        // Check cooldown
+        const cooldown = getPrefixCooldown(interaction.guildId);
+        if (cooldown && !cooldown.canChange) {
+          return interaction.reply({ 
+            content: `Hello sorry i couldn't change the prefix because there's already an existing prefix (\`${cooldown.prefix}\`) pls try after ${cooldown.remainingDays} day${cooldown.remainingDays !== 1 ? 's' : ''}`, 
+            ephemeral: true 
+          });
+        }
+        
         const prefix = options.getString('prefix');
         const validChars = '#$_-+/*:!?~=\\';
         const specialCharCount = prefix.split('').filter(c => validChars.includes(c)).length;
