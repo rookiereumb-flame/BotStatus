@@ -1,7 +1,7 @@
 require('dotenv').config();
-const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
+const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -568,6 +568,64 @@ const commands = [
   {
     name: 'server-config',
     description: 'Advanced server configuration (admin only)'
+  },
+  {
+    name: 'server-report',
+    description: 'View server audit logs between two times and undo changes (admin only)',
+    options: [
+      {
+        name: 'from-hour',
+        description: 'From hour (0-12)',
+        type: 4,
+        required: true,
+        min_value: 0,
+        max_value: 12
+      },
+      {
+        name: 'from-minute',
+        description: 'From minute (0-59)',
+        type: 4,
+        required: true,
+        min_value: 0,
+        max_value: 59
+      },
+      {
+        name: 'from-meridian',
+        description: 'From AM or PM',
+        type: 3,
+        required: true,
+        choices: [
+          { name: 'AM', value: 'AM' },
+          { name: 'PM', value: 'PM' }
+        ]
+      },
+      {
+        name: 'to-hour',
+        description: 'To hour (0-12)',
+        type: 4,
+        required: true,
+        min_value: 0,
+        max_value: 12
+      },
+      {
+        name: 'to-minute',
+        description: 'To minute (0-59)',
+        type: 4,
+        required: true,
+        min_value: 0,
+        max_value: 59
+      },
+      {
+        name: 'to-meridian',
+        description: 'To AM or PM',
+        type: 3,
+        required: true,
+        choices: [
+          { name: 'AM', value: 'AM' },
+          { name: 'PM', value: 'PM' }
+        ]
+      }
+    ]
   }
 ];
 
@@ -1769,6 +1827,125 @@ Click buttons below to toggle each system's whitelist bypass.
         break;
       }
 
+      case 'server-report': {
+        // Only allow users with roles above the bot
+        if (!isUserAboveBot(member, guild)) {
+          return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
+        }
+        
+        const fromHour = options.getInteger('from-hour');
+        const fromMinute = options.getInteger('from-minute');
+        const fromMeridian = options.getString('from-meridian');
+        const toHour = options.getInteger('to-hour');
+        const toMinute = options.getInteger('to-minute');
+        const toMeridian = options.getString('to-meridian');
+        
+        // Convert to 24-hour format
+        let from24H = fromHour;
+        if (fromMeridian === 'PM' && fromHour !== 12) from24H += 12;
+        if (fromMeridian === 'AM' && fromHour === 12) from24H = 0;
+        
+        let to24H = toHour;
+        if (toMeridian === 'PM' && toHour !== 12) to24H += 12;
+        if (toMeridian === 'AM' && toHour === 12) to24H = 0;
+        
+        // Get today's date
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        
+        const fromTime = new Date(today);
+        fromTime.setHours(from24H, fromMinute, 0, 0);
+        
+        const toTime = new Date(today);
+        toTime.setHours(to24H, toMinute, 59, 999);
+        
+        // Fetch Discord audit logs for the time range
+        const auditLogs = await guild.fetchAuditLogs({ limit: 100 }).catch(() => null);
+        if (!auditLogs) {
+          return interaction.reply({ content: '❌ Could not fetch audit logs.', ephemeral: true });
+        }
+        
+        // Filter and categorize logs
+        const filtered = auditLogs.entries.filter(log => {
+          const logTime = new Date(log.createdTimestamp);
+          return logTime >= fromTime && logTime <= toTime;
+        });
+        
+        const categories = {
+          1: { name: '📁 Channel Events', events: [] },
+          2: { name: '🔰 Role Events', events: [] },
+          3: { name: '👥 Member Events', events: [] },
+          4: { name: '💬 Message Events', events: [] }
+        };
+        
+        filtered.forEach(log => {
+          const logInfo = {
+            id: log.id,
+            action: log.action,
+            target: log.targetType,
+            user: log.executor?.tag || 'Unknown',
+            time: new Date(log.createdTimestamp).toLocaleTimeString(),
+            details: `${log.targetType === 'Channel' ? '📁' : log.targetType === 'Role' ? '🔰' : log.targetType === 'User' ? '👤' : '💬'} ${log.action} - ${log.target?.name || 'Unknown'}`
+          };
+          
+          if (log.targetType === 'Channel') categories[1].events.push(logInfo);
+          else if (log.targetType === 'Role') categories[2].events.push(logInfo);
+          else if (log.targetType === 'User' || log.targetType === 'Member') categories[3].events.push(logInfo);
+          else categories[4].events.push(logInfo);
+        });
+        
+        const total = Object.values(categories).reduce((sum, cat) => sum + cat.events.length, 0);
+        
+        const embed = sapphireEmbed('📊 Server Report', 
+          `**Time Range:** ${fromHour}:${String(fromMinute).padStart(2, '0')} ${fromMeridian} - ${toHour}:${String(toMinute).padStart(2, '0')} ${toMeridian}\n**Total Events:** ${total}\n\n${
+            Object.entries(categories)
+              .map(([num, cat]) => `**${cat.name}:** ${cat.events.length} events`)
+              .join('\n')
+          }\n\nSelect events below to undo them.`
+        );
+        
+        // Store events for button interactions
+        if (!global.reportCache) global.reportCache = {};
+        const cacheId = `${guild.id}_${Date.now()}`;
+        global.reportCache[cacheId] = categories;
+        
+        // Create select menus for each category with events
+        const selects = [];
+        for (let i = 1; i <= 4; i++) {
+          if (categories[i].events.length > 0) {
+            const select = new ActionRowBuilder()
+              .addComponents(
+                new StringSelectMenuBuilder()
+                  .setCustomId(`report_select_${i}_${cacheId}`)
+                  .setPlaceholder(`Select ${categories[i].name.toLowerCase()} to undo`)
+                  .setMinValues(0)
+                  .setMaxValues(Math.min(25, categories[i].events.length))
+                  .addOptions(
+                    categories[i].events.slice(0, 25).map((e, idx) => ({
+                      label: e.details.substring(0, 100),
+                      value: `${i}_${idx}`,
+                      description: `By ${e.user} at ${e.time}`
+                    }))
+                  )
+              );
+            selects.push(select);
+          }
+        }
+        
+        const undoButton = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`report_undo_${cacheId}`)
+              .setLabel('⏮️ Undo Selected')
+              .setStyle(ButtonStyle.Danger)
+          );
+        
+        selects.push(undoButton);
+        
+        await interaction.reply({ embeds: [embed], components: selects.length > 0 ? selects : undefined, ephemeral: true });
+        break;
+      }
+
       case 'whitelist': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
@@ -2388,6 +2565,87 @@ client.on('interactionCreate', async interaction => {
     }
   } catch (error) {
     console.error('Button interaction error:', error);
+  }
+});
+
+// Handle Select Menus (Server Report)
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isStringSelectMenu()) return;
+  
+  try {
+    const customId = interaction.customId;
+    
+    if (customId.startsWith('report_select_')) {
+      const selected = interaction.values;
+      if (!global.reportSelected) global.reportSelected = {};
+      const cacheId = customId.split('_').pop();
+      if (!global.reportSelected[cacheId]) global.reportSelected[cacheId] = [];
+      global.reportSelected[cacheId] = global.reportSelected[cacheId].concat(selected);
+      
+      await interaction.reply({ content: `✅ Selected ${selected.length} event(s) for undo.`, ephemeral: true });
+    }
+  } catch (error) {
+    console.error('Select menu error:', error);
+  }
+});
+
+// Handle Report Undo Button
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  
+  try {
+    if (interaction.customId.startsWith('report_undo_')) {
+      const cacheId = interaction.customId.replace('report_undo_', '');
+      const selected = global.reportSelected?.[cacheId] || [];
+      const categories = global.reportCache?.[cacheId];
+      
+      if (!categories || selected.length === 0) {
+        return interaction.reply({ content: '❌ No events selected or cache expired.', ephemeral: true });
+      }
+      
+      let undone = 0;
+      const results = [];
+      
+      // Process undo for each selected event
+      for (const val of selected) {
+        const [catNum, idx] = val.split('_');
+        const event = categories[catNum]?.events[parseInt(idx)];
+        if (event) {
+          try {
+            if (catNum === '1') {
+              // Channel undo
+              const channel = interaction.guild.channels.cache.get(event.id);
+              if (channel) {
+                await channel.delete('Undo from server report');
+                results.push(`✅ Deleted channel: ${event.details}`);
+                undone++;
+              }
+            } else if (catNum === '2') {
+              // Role undo
+              const role = interaction.guild.roles.cache.get(event.id);
+              if (role) {
+                await role.delete('Undo from server report');
+                results.push(`✅ Deleted role: ${event.details}`);
+                undone++;
+              }
+            }
+          } catch (e) {
+            results.push(`⚠️ Could not undo: ${event.details}`);
+          }
+        }
+      }
+      
+      const embed = sapphireEmbed('⏮️ Undo Report', 
+        `**Events Undone:** ${undone}/${selected.length}\n\n${results.join('\n').substring(0, 2000)}`
+      );
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      
+      // Cleanup
+      delete global.reportCache[cacheId];
+      delete global.reportSelected[cacheId];
+    }
+  } catch (error) {
+    console.error('Report undo error:', error);
   }
 });
 

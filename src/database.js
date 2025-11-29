@@ -548,6 +548,43 @@ const getWhitelistBypassConfig = (guildId) => {
   return stmt.get(guildId) || { bypassAntiSpam: 0, bypassLanguageGuardian: 0, bypassAntiNuke: 0, bypassAntiRaid: 0 };
 };
 
+// Audit log tracking for server report
+try {
+  db.prepare('SELECT * FROM audit_logs LIMIT 1').get();
+} catch (e) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS audit_logs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      action_type TEXT NOT NULL,
+      action_category INTEGER NOT NULL,
+      action_id TEXT,
+      action_name TEXT NOT NULL,
+      action_user TEXT,
+      action_target TEXT,
+      action_timestamp INTEGER NOT NULL,
+      action_data TEXT
+    );
+  `);
+}
+
+const addAuditLog = (guildId, actionType, category, actionId, actionName, actionUser, actionTarget, timestamp, data) => {
+  const stmt = db.prepare(`
+    INSERT INTO audit_logs (guild_id, action_type, action_category, action_id, action_name, action_user, action_target, action_timestamp, action_data)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `);
+  stmt.run(guildId, actionType, category, actionId, actionName, actionUser, actionTarget, timestamp, JSON.stringify(data || {}));
+};
+
+const getAuditLogsByTimeRange = (guildId, fromTime, toTime) => {
+  const stmt = db.prepare(`
+    SELECT * FROM audit_logs 
+    WHERE guild_id = ? AND action_timestamp BETWEEN ? AND ?
+    ORDER BY action_timestamp DESC
+  `);
+  return stmt.all(guildId, fromTime, toTime);
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -596,5 +633,7 @@ module.exports = {
   getWhitelistMembers,
   isUserWhitelisted,
   setWhitelistBypassConfig,
-  getWhitelistBypassConfig
+  getWhitelistBypassConfig,
+  addAuditLog,
+  getAuditLogsByTimeRange
 };

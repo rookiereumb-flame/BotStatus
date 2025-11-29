@@ -4,7 +4,21 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
-- **November 29, 2025**: Per-System Whitelist Bypass Configuration (NEW!)
+- **November 29, 2025**: Server Report & Selective Undo (FINAL COMMAND!)
+  - **`/server-report` Command** - Fast attack recovery tool
+    - Time-range inputs: FROM (hour:minute AM/PM) TO (hour:minute AM/PM)
+    - Fetches Discord audit logs for selected time range
+    - **4 Categorized Views:**
+      - 📁 **Category 1: Channel Events** (create, delete, edit)
+      - 🔰 **Category 2: Role Events** (create, delete, edit)
+      - 👥 **Category 3: Member Events** (kicks, bans, timeouts)
+      - 💬 **Category 4: Message Events** (purges, deletes)
+    - **Select Menus**: Choose which events to undo from each category
+    - **Undo Button**: ⏮️ Instantly restore selected events (delete created channels/roles, etc.)
+    - **Role Hierarchy Check**: Only roles ABOVE bot can use
+  - Example: After nuke, run `/server-report 2:30 PM 3:45 PM`, select deleted channels/roles, hit undo
+
+- **November 29, 2025**: Per-System Whitelist Bypass Configuration
   - **Customizable Whitelist**: Higher roles can enable/disable whitelist bypass per protection system
     - `/server-config` - Open admin config panel (only for roles ABOVE bot)
     - Toggle buttons: Anti-Spam, Language Guardian, Anti-Nuke, Anti-Raid
@@ -36,7 +50,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **src/services/**: Automod, Language Guardian, Translation, Logger utilities
 - **data/**: Blacklist words and user strikes storage
 
-## Commands (49 Total)
+## Commands (50 Total)
 
 ### Moderation (7)
 - `/kick`, `/ban`, `/mute`, `/warn`, `/unwarn`, `/unban`, `/unmute`
@@ -57,12 +71,13 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 ### Utilities (5)
 - `/purge`, `/say`, `/lock`, `/unlock`, `/set-prefix`
 
-### Protection & Configuration (8)
+### Protection & Configuration (9)
 - `/setup-anti-nuke`, `/setup-anti-raid`
 - `/enable-anti-spam`, `/disable-anti-spam`, `/setup-anti-spam` *(with buttons)*
 - `/set-auto-role`, `/remove-auto-role`
 - `/setup-language-guardian` *(with buttons)*
-- `/server-config` *(NEW - role hierarchy check, 4 toggle buttons)*
+- `/server-config` *(role hierarchy check, 4 toggle buttons)*
+- `/server-report` *(NEW - time-range audit logs + selective undo)*
 - `/whitelist add`, `/whitelist remove`, `/whitelist list`
 
 ## All Admin-Customizable Settings (Per-Guild)
@@ -109,7 +124,8 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - Respects whitelist bypass settings
 
 ## Features
-✅ **Per-System Whitelist Configuration** - Enable/disable bypass per protection system (NEW!)
+✅ **Server Report & Undo** - Time-range audit logs with selective undo for fast attack recovery (NEW!)
+✅ **Per-System Whitelist Configuration** - Enable/disable bypass per protection system
 ✅ **Role Hierarchy Protection** - Only super-admin roles can configure advanced settings
 ✅ **100% Admin Customizable** - All protection settings via slash commands
 ✅ **Whitelist System** - Role & member exemption with granular per-system control
