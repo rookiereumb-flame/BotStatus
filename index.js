@@ -2850,4 +2850,38 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// Error handlers to prevent bot crashes
+client.on('error', error => {
+  console.error('❌ Discord Client Error:', error);
+  // Auto-reconnect on error
+  if (!client.isReady()) {
+    setTimeout(() => {
+      console.log('🔄 Attempting to reconnect...');
+      client.login(TOKEN).catch(e => console.error('Reconnect failed:', e));
+    }, 5000);
+  }
+});
+
+client.on('disconnect', () => {
+  console.warn('⚠️ Bot disconnected from Discord');
+  setTimeout(() => {
+    if (!client.isReady()) {
+      console.log('🔄 Attempting to reconnect...');
+      client.login(TOKEN).catch(e => console.error('Reconnect failed:', e));
+    }
+  }, 5000);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // Keep the process running instead of crashing
+  console.log('🔄 Bot continuing despite error...');
+});
+
 client.login(TOKEN);
