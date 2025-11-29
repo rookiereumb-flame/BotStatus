@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, setCustomPrefix, getCustomPrefix, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -194,6 +194,18 @@ const commands = [
   {
     name: 'help',
     description: 'Show bot information and all commands'
+  },
+  {
+    name: 'set-prefix',
+    description: 'Set custom prefix for your server (2-3 chars, must include #$_-+/*:!?~=\\)',
+    options: [
+      {
+        name: 'prefix',
+        description: 'The new prefix (2-3 characters)',
+        type: 3,
+        required: true
+      }
+    ]
   },
   {
     name: 'set-channel',
@@ -436,9 +448,13 @@ client.once('ready', async () => {
 
 client.on('messageCreate', async message => {
   if (message.author.bot) return;
+  if (!message.guild) return;
+
+  // Get custom prefix for this guild
+  const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
 
   // Language Guardian - Automatic bad word detection
-  if (!message.content.startsWith(PREFIX)) {
+  if (!message.content.startsWith(customPrefix)) {
     try {
       const translated = await safeTranslate(message.content);
       const bad = matchesBlacklist(translated);
@@ -466,9 +482,9 @@ client.on('messageCreate', async message => {
 
   await checkMessage(message);
   
-  if (!message.content.startsWith(PREFIX)) return;
+  if (!message.content.startsWith(customPrefix)) return;
   
-  const args = message.content.slice(PREFIX.length).trim().split(/ +/);
+  const args = message.content.slice(customPrefix.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
   
   try {
@@ -1051,7 +1067,7 @@ client.on('interactionCreate', async interaction => {
           },
           {
             name: '📊 Information',
-            value: '`/warns` - Show Warnings\n`/server-timeout-status` - Show Timed Out Users\n`/help` - Show Help',
+            value: '`/warns` - Show Warnings\n`/server-timeout-status` - Show Timed Out Users\n`/case` - View Case\n`/cases` - View Cases\n`/help` - Show Help',
             inline: false
           },
           {
@@ -1061,7 +1077,7 @@ client.on('interactionCreate', async interaction => {
           },
           {
             name: '🔧 Utilities',
-            value: '`/purge` - Delete Messages\n`/say` - Make Bot Say Something\n`/lock` - Lock Channel\n`/unlock` - Unlock Channel',
+            value: '`/purge` - Delete Messages\n`/say` - Make Bot Say Something\n`/lock` - Lock Channel\n`/unlock` - Unlock Channel\n`/set-prefix` - Set Custom Prefix',
             inline: false
           },
           {

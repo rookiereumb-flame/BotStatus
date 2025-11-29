@@ -4,8 +4,11 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke and anti-raid), an intelligent automod system with translation support, and a new Language Guardian system that detects bad words from all languages with auto-translation.
 
 ## Recent Changes
-- **November 29, 2025**: Language Guardian system integration
-  - Added multilingual bad word detection with automatic translation
+- **November 29, 2025**: Per-server custom prefix + Language Guardian
+  - Added `/set-prefix` command for per-server custom prefixes (2-3 characters, must include one of #$_-+/*:!?~=\)
+  - Prefix settings saved per guild in database
+  - Falls back to default `!` if no custom prefix set
+  - Language Guardian system: multilingual bad word detection with automatic translation
   - Detects blacklisted words from any language (translates to English automatically)
   - Strike system: 3 strikes = automatic timeout
   - New prefix commands: `!blacklist add/remove/list` and `!purgebad`
@@ -37,9 +40,9 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **data/strikes.json**: User strike tracking per guild
 - **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv, translate-google, fs-extra)
 
-## Commands (30 Total)
+## Commands (31 Total)
 
-### Moderation (7)
+### Moderation (7 commands)
 - `/kick` - Kick member with reason (creates case)
 - `/ban` - Ban member with reason (creates case)
 - `/mute` - Timeout member with duration (creates case)
@@ -48,20 +51,20 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/unban` - Unban user by ID (creates case)
 - `/unmute` - Remove timeout (creates case)
 
-### Role Management (4)
+### Role Management (4 commands)
 - `/add-role` - Add role to user
 - `/remove-role` - Remove role from user
 - `/nick` - Change user nickname
 - `/change-role-name` - Rename a role
 
-### Information (5)
+### Information (5 commands)
 - `/warns` - Show manual warnings for user (excludes automod)
 - `/server-timeout-status` - List all timed-out members
 - `/case <id>` - View case with buttons: Close, Edit, Delete
 - `/cases [user]` - View case history with pagination (10 per page)
 - `/help` - Show all commands
 
-### Automod (6)
+### Automod (6 commands)
 - `/set-channel` - Set moderation log channel
 - `/enable-automod` - Enable translation-based content filter
 - `/disable-automod` - Disable automod
@@ -69,13 +72,14 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/remove-blacklist-word` - Remove word from blacklist
 - `/blacklist-library` - View all blacklisted words
 
-### Utilities (4)
+### Utilities (5)
 - `/purge` - Delete messages (1-100)
 - `/say` - Make bot send a message
 - `/lock` - Lock channel (prevent messages)
 - `/unlock` - Unlock channel (allow messages)
+- `/set-prefix` - Set custom server prefix (2-3 chars, must include #$_-+/*:!?~=\)
 
-### Protection (2)
+### Protection (2 commands)
 - `/setup-anti-nuke` - Enable anti-nuke with default settings
 - `/setup-anti-raid` - Enable anti-raid with default settings
 

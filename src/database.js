@@ -7,7 +7,8 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS guild_config (
     guild_id TEXT PRIMARY KEY,
     log_channel_id TEXT,
-    automod_enabled INTEGER DEFAULT 0
+    automod_enabled INTEGER DEFAULT 0,
+    custom_prefix TEXT
   );
 
   CREATE TABLE IF NOT EXISTS warnings (
@@ -105,6 +106,21 @@ const disableAutomod = (guildId) => {
     ON CONFLICT(guild_id) DO UPDATE SET automod_enabled = 0
   `);
   stmt.run(guildId);
+};
+
+const setCustomPrefix = (guildId, prefix) => {
+  const stmt = db.prepare(`
+    INSERT INTO guild_config (guild_id, custom_prefix) 
+    VALUES (?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET custom_prefix = ?
+  `);
+  stmt.run(guildId, prefix, prefix);
+};
+
+const getCustomPrefix = (guildId) => {
+  const stmt = db.prepare('SELECT custom_prefix FROM guild_config WHERE guild_id = ?');
+  const result = stmt.get(guildId);
+  return result?.custom_prefix || null;
 };
 
 const addWarning = (guildId, userId, moderatorId, reason, isManual = 1) => {
@@ -248,6 +264,8 @@ module.exports = {
   setLogChannel,
   enableAutomod,
   disableAutomod,
+  setCustomPrefix,
+  getCustomPrefix,
   addWarning,
   getWarnings,
   removeWarning,
