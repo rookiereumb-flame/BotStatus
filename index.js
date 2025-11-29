@@ -491,7 +491,18 @@ client.on('messageCreate', async message => {
   if (!message.content.startsWith(customPrefix)) return;
   
   const args = message.content.slice(customPrefix.length).trim().split(/ +/);
-  const cmd = args.shift().toLowerCase();
+  let cmd = args.shift().toLowerCase();
+  
+  // Command aliases
+  const aliases = {
+    'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
+    'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
+    'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
+    'ea': 'enable-automod', 'da': 'disable-automod', 'abw': 'add-blacklist-word', 'rbw': 'remove-blacklist-word'
+  };
+  
+  // Resolve alias to full command
+  if (aliases[cmd]) cmd = aliases[cmd];
   
   try {
     switch(cmd) {
@@ -720,6 +731,21 @@ client.on('messageCreate', async message => {
         await channel.permissionOverwrites.edit(message.guild.id, { SendMessages: null });
         message.reply(`🔓 Channel unlocked!`);
         break;
+      }
+      
+      default: {
+        // Suggest correct command
+        const allCommands = ['kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'nick', 'change-role-name', 'say', 'purge', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 'add-blacklist-word', 'remove-blacklist-word', 'blacklist', 'purgebad'];
+        
+        // Find closest match
+        const suggestions = allCommands.filter(c => c.startsWith(cmd.charAt(0))).slice(0, 3);
+        
+        if (suggestions.length > 0) {
+          const suggestionText = suggestions.map(s => `\`${customPrefix}${s}\``).join(', ');
+          return message.reply({ content: `❌ Unknown command \`${cmd}\`. Did you mean: ${suggestionText}?`, ephemeral: true });
+        } else {
+          return message.reply({ content: `❌ Unknown command \`${cmd}\`. Use \`${customPrefix}help\` for a list of commands.`, ephemeral: true });
+        }
       }
     }
   } catch (error) {

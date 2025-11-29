@@ -85,10 +85,11 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/setup-anti-nuke` - Enable anti-nuke with default settings
 - `/setup-anti-raid` - Enable anti-raid with default settings
 
-### Prefix Commands
-- `n?` - Classic moderation commands (kick, ban, mute, warn, etc.)
+### Prefix Commands & Aliases
+- All commands support short aliases: `k` (kick), `b` (ban), `m` (mute), `um` (unmute), `ub` (unban), `w` (warn), `uw` (unwarn), `p` (purge), `l` (lock), `ul` (unlock), `sp` (set-prefix)
 - `!blacklist <add/remove/list> [word]` - Manage blacklist (Admin only)
 - `!purgebad [limit]` - Delete bad messages from channel (Admin only)
+- Smart error handling: Typos show suggestions (private to user)
 
 **Automatic Message Monitoring:**
 - Every message is scanned for blacklisted words
