@@ -408,6 +408,26 @@ const commands = [
         required: false
       }
     ]
+  },
+  {
+    name: 'user-info',
+    description: 'Get information about a user',
+    options: [
+      {
+        name: 'user',
+        description: 'The user to get info about',
+        type: 6,
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'server-info',
+    description: 'Get information about the server'
+  },
+  {
+    name: 'ban-list',
+    description: 'View all banned members'
   }
 ];
 
@@ -1196,6 +1216,11 @@ client.on('interactionCreate', async interaction => {
             inline: false
           },
           {
+            name: '📊 Information',
+            value: '`/user-info` - View user details\n`/server-info` - View server details\n`/ban-list` - View all banned members',
+            inline: false
+          },
+          {
             name: '🔧 Utilities',
             value: '`/purge` - Delete Messages\n`/say` - Make Bot Say Something\n`/lock` - Lock Channel\n`/unlock` - Unlock Channel\n`/set-prefix` - Set Custom Prefix',
             inline: false
@@ -1306,6 +1331,42 @@ client.on('interactionCreate', async interaction => {
         setAntiRaidConfig(guild.id, config);
         const embed = sapphireEmbed('🛡️ Anti-Raid Setup Complete', 
           `Anti-Raid protection is now **enabled** for this server!\n\n**Default Settings:**\n• Action: Ban\n• Join Threshold: 5 members\n• Time Window: 1 minute\n\nYou can customize these settings in the database if needed.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'user-info': {
+        const user = options.getUser('user');
+        const member = await guild.members.fetch(user.id).catch(() => null);
+        
+        const embed = sapphireEmbed(`👤 User Info - ${user.tag}`,
+          `**Username:** ${user.username}\n**ID:** ${user.id}\n**Bot:** ${user.bot ? 'Yes' : 'No'}\n**Created:** <t:${Math.floor(user.createdTimestamp / 1000)}>\n${member ? `**Joined:** <t:${Math.floor(member.joinedTimestamp / 1000)}>\n**Roles:** ${member.roles.cache.size > 1 ? member.roles.cache.map(r => r.name).slice(0, 5).join(', ') : 'No roles'}` : ''}`
+        );
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'server-info': {
+        const embed = sapphireEmbed(`🏰 Server Info - ${guild.name}`,
+          `**ID:** ${guild.id}\n**Owner:** ${(await guild.fetchOwner()).user.tag}\n**Members:** ${guild.memberCount}\n**Channels:** ${guild.channels.cache.size}\n**Roles:** ${guild.roles.cache.size}\n**Created:** <t:${Math.floor(guild.createdTimestamp / 1000)}>\n**Verification:** ${guild.verificationLevel}`
+        );
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'ban-list': {
+        const bans = await guild.bans.fetch().catch(() => null);
+        if (!bans || bans.size === 0) {
+          const embed = sapphireEmbed('📋 Ban List', 'No banned members.');
+          return await interaction.reply({ embeds: [embed] });
+        }
+        
+        let banList = '';
+        bans.forEach((ban, idx) => {
+          if (idx < 20) banList += `${idx + 1}. **${ban.user.tag}** - Reason: ${ban.reason || 'No reason'}\n`;
+        });
+        
+        const embed = sapphireEmbed('📋 Ban List', `${banList}${bans.size > 20 ? `\n...and ${bans.size - 20} more` : ''}`);
         await interaction.reply({ embeds: [embed] });
         break;
       }

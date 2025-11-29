@@ -48,7 +48,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **data/strikes.json**: User strike tracking per guild
 - **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv, translate-google, fs-extra)
 
-## Commands (35 Total)
+## Commands (38 Total)
 
 ### Moderation (7 commands)
 - `/kick` - Kick member with reason (creates case)
@@ -65,11 +65,14 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/nick` - Change user nickname
 - `/change-role-name` - Rename a role
 
-### Information (5 commands)
+### Information (8 commands)
 - `/warns` - Show manual warnings for user (excludes automod)
 - `/server-timeout-status` - List all timed-out members
 - `/case <id>` - View case with buttons: Close, Edit, Delete
 - `/cases [user]` - View case history with pagination (10 per page)
+- `/user-info <user>` - Get information about a user
+- `/server-info` - Get information about the server
+- `/ban-list` - View all banned members
 - `/help` - Show all commands
 
 ### Automod (2 commands)
