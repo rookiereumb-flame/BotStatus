@@ -1595,7 +1595,22 @@ client.on('interactionCreate', async interaction => {
         });
         
         const embed = sapphireEmbed('⚙️ Anti-Spam Configured', `✅ Anti-spam settings updated.\n**Max messages:** ${maxMessages}\n**Time window:** ${timeWindow}s\n**Mute duration:** ${muteDuration / 60} minutes`);
-        await interaction.reply({ embeds: [embed] });
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`antispam_status_${guild.id}`)
+              .setLabel('View Settings')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⚙️'),
+            new ButtonBuilder()
+              .setCustomId(`antispam_disable_${guild.id}`)
+              .setLabel('Disable')
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji('❌')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1606,7 +1621,22 @@ client.on('interactionCreate', async interaction => {
         const role = options.getRole('role');
         setAutoRole(guild.id, role.id);
         const embed = sapphireEmbed('👥 Auto-Role Set', `✅ New members will receive the ${role.name} role.`);
-        await interaction.reply({ embeds: [embed] });
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`autorole_status_${guild.id}`)
+              .setLabel('View Setting')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('👥'),
+            new ButtonBuilder()
+              .setCustomId(`autorole_remove_${guild.id}`)
+              .setLabel('Remove')
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji('❌')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1633,7 +1663,22 @@ client.on('interactionCreate', async interaction => {
         });
         
         const embed = sapphireEmbed('🛡️ Language Guardian Configured', `✅ Settings updated.\n**Strike limit:** ${strikeLimit} strikes\n**Timeout duration:** ${timeoutMinutes} minutes`);
-        await interaction.reply({ embeds: [embed] });
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`lguardian_status_${guild.id}`)
+              .setLabel('View Settings')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⚙️'),
+            new ButtonBuilder()
+              .setCustomId(`lguardian_disable_${guild.id}`)
+              .setLabel('Disable')
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji('❌')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1949,6 +1994,7 @@ client.on('interactionCreate', async interaction => {
   try {
     const customId = interaction.customId;
     
+    // User Info Buttons
     if (customId.startsWith('userinfo_warns_')) {
       const userId = customId.replace('userinfo_warns_', '');
       const warnings = getWarnings(interaction.guild.id, userId);
@@ -1984,6 +2030,64 @@ client.on('interactionCreate', async interaction => {
       }
       
       const embed = sapphireEmbed(`📋 ${user.tag}'s Cases`, list);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Config Buttons - Anti-Spam
+    if (customId.startsWith('antispam_status_')) {
+      const guildId = customId.replace('antispam_status_', '');
+      const config = getAntiSpamConfig(guildId);
+      const settings = config ? `**Max messages:** ${config.max_messages}\n**Time window:** ${config.time_window}s\n**Mute duration:** ${Math.floor(config.mute_duration / 60)} minutes\n**Status:** ${config.enabled ? '✅ Enabled' : '❌ Disabled'}` : 'Not configured yet.';
+      const embed = sapphireEmbed('⚙️ Anti-Spam Settings', settings);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (customId.startsWith('antispam_disable_')) {
+      const guildId = customId.replace('antispam_disable_', '');
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+      }
+      disableAntiSpam(guildId);
+      const embed = sapphireEmbed('✅ Anti-Spam Disabled', 'Anti-spam protection has been disabled.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Config Buttons - Language Guardian
+    if (customId.startsWith('lguardian_status_')) {
+      const guildId = customId.replace('lguardian_status_', '');
+      const config = getLanguageGuardianConfig(guildId);
+      const settings = `**Strike limit:** ${config.strikeLimit}\n**Timeout duration:** ${Math.floor(config.timeoutSeconds / 60)} minutes\n**Status:** ✅ Configured`;
+      const embed = sapphireEmbed('⚙️ Language Guardian Settings', settings);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (customId.startsWith('lguardian_disable_')) {
+      const guildId = customId.replace('lguardian_disable_', '');
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+      }
+      disableLGBL(guildId);
+      const embed = sapphireEmbed('✅ Language Guardian Disabled', 'Language Guardian has been disabled.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Config Buttons - Auto-Role
+    if (customId.startsWith('autorole_status_')) {
+      const guildId = customId.replace('autorole_status_', '');
+      const roleId = getAutoRole(guildId);
+      const role = interaction.guild.roles.cache.get(roleId);
+      const settings = role ? `**Role:** ${role.name}\n**Status:** ✅ Active` : 'No auto-role configured.';
+      const embed = sapphireEmbed('👥 Auto-Role Setting', settings);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (customId.startsWith('autorole_remove_')) {
+      const guildId = customId.replace('autorole_remove_', '');
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+      }
+      removeAutoRole(guildId);
+      const embed = sapphireEmbed('✅ Auto-Role Removed', 'Auto-role assignment has been disabled.');
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   } catch (error) {
