@@ -229,19 +229,19 @@ const commands = [
   },
   {
     name: 'enable-lgbl',
-    description: 'Enable Language Guardian Blacklist Library'
+    description: 'Enable LGBL (Language Guardian Blacklist Library)'
   },
   {
     name: 'disable-lgbl',
-    description: 'Disable Language Guardian Blacklist Library'
+    description: 'Disable LGBL (Language Guardian Blacklist Library)'
   },
   {
     name: 'lgbl',
-    description: 'Language Guardian Blacklist Library - manage blacklisted words',
+    description: 'Language Guardian - manage blacklisted words',
     options: [
       {
         name: 'add',
-        description: 'Add a word to the blacklist (works in any language)',
+        description: 'Language Guardian - Add a word to the blacklist (works in any language)',
         type: 1,
         options: [
           {
@@ -254,7 +254,7 @@ const commands = [
       },
       {
         name: 'remove',
-        description: 'Remove a word from the blacklist',
+        description: 'Language Guardian - Remove a word from the blacklist',
         type: 1,
         options: [
           {
@@ -267,7 +267,7 @@ const commands = [
       },
       {
         name: 'list',
-        description: 'List all blacklisted words',
+        description: 'Language Guardian - List all blacklisted words',
         type: 1
       }
     ]
