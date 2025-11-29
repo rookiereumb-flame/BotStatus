@@ -4,10 +4,15 @@ require('./server');
 const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
+const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
 const SAPPHIRE_COLOR = '#5865F2';
+const PREFIX = process.env.PREFIX || '!';
+const MOD_LOG_CHANNEL = process.env.MOD_LOG_CHANNEL || '';
+const STRIKE_LIMIT = parseInt(process.env.STRIKE_LIMIT || '3', 10);
+const TIMEOUT_SECONDS = parseInt(process.env.TIMEOUT_SECONDS || '600', 10);
 
 const client = new Client({
   intents: [
@@ -429,12 +434,39 @@ client.once('ready', async () => {
   }
 });
 
-const PREFIX = 'n?';
-
 client.on('messageCreate', async message => {
+  if (message.author.bot) return;
+
+  // Language Guardian - Automatic bad word detection
+  if (!message.content.startsWith(PREFIX)) {
+    try {
+      const translated = await safeTranslate(message.content);
+      const bad = matchesBlacklist(translated);
+
+      if (bad) {
+        await message.delete().catch(() => {});
+        const strikesNow = addStrike(message.guild.id, message.author.id);
+
+        message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${STRIKE_LIMIT})`)
+          .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+
+        await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
+
+        if (strikesNow >= STRIKE_LIMIT) {
+          const member = await message.guild.members.fetch(message.author.id);
+          if (member.moderatable) {
+            await member.timeout(TIMEOUT_SECONDS * 1000, "Blacklist strikes exceeded");
+            resetStrikesFor(message.guild.id, message.author.id);
+          }
+        }
+      }
+    } catch (e) {}
+    return;
+  }
+
   await checkMessage(message);
   
-  if (!message.content.startsWith(PREFIX) || message.author.bot) return;
+  if (!message.content.startsWith(PREFIX)) return;
   
   const args = message.content.slice(PREFIX.length).trim().split(/ +/);
   const cmd = args.shift().toLowerCase();
@@ -512,6 +544,50 @@ client.on('messageCreate', async message => {
           message.reply('❌ Could not find that warning.');
         }
         break;
+      }
+
+      case 'blacklist': {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return message.reply("You need admin permissions.");
+        }
+
+        const action = args.shift();
+        const word = args.join(" ").toLowerCase();
+
+        if (action === "add") {
+          addWord(word);
+          return message.reply(`✅ Added \`${word}\` to blacklist.`);
+        }
+
+        if (action === "remove") {
+          removeWord(word);
+          return message.reply(`✅ Removed \`${word}\` from blacklist.`);
+        }
+
+        if (action === "list") {
+          const words = getWords();
+          return message.reply(words.length > 0 ? `**Blacklisted Words (${words.length}):**\n${words.join(", ")}` : "No words in blacklist.");
+        }
+
+        return message.reply("Usage: `!blacklist <add/remove/list> [word]`");
+      }
+
+      case 'purgebad': {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return message.reply("You need admin permissions.");
+        }
+
+        const limit = parseInt(args[0]) || 30;
+        const messages = await message.channel.messages.fetch({ limit });
+
+        const toDelete = [];
+        for (const m of messages.values()) {
+          const translated = await safeTranslate(m.content);
+          if (matchesBlacklist(translated)) toDelete.push(m);
+        }
+
+        for (const m of toDelete) m.delete().catch(() => {});
+        return message.reply(`✅ Deleted ${toDelete.length} bad messages.`);
       }
       
       case 'unban': {

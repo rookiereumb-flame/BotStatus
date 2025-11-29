@@ -39,9 +39,23 @@ localPort = 44263
 externalPort = 3000
 
 [[ports]]
+localPort = 45679
+externalPort = 3003
+
+[[ports]]
 localPort = 45871
 externalPort = 3001
 
 [deployment]
 deploymentTarget = "vm"
 run = ["node", "index.js"]
+
+[nix]
+channel = "stable-25_05"
+
+[userenv]
+
+[userenv.shared]
+PREFIX = "!"
+STRIKE_LIMIT = "3"
+TIMEOUT_SECONDS = "600"

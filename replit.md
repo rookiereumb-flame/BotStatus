@@ -1,35 +1,41 @@
 # Discord Bot Host
 
 ## Overview
-This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke and anti-raid), and an intelligent automod system with translation support.
+This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke and anti-raid), an intelligent automod system with translation support, and a new Language Guardian system that detects bad words from all languages with auto-translation.
 
 ## Recent Changes
-- **November 28, 2025**: Complete case system with interactive management + major feature expansion
+- **November 29, 2025**: Language Guardian system integration
+  - Added multilingual bad word detection with automatic translation
+  - Detects blacklisted words from any language (translates to English automatically)
+  - Strike system: 3 strikes = automatic timeout
+  - New prefix commands: `!blacklist add/remove/list` and `!purgebad`
+  - Real-time message filtering on all non-command messages
+  - Customizable strike limit and timeout duration via environment variables
+  - Optional moderation log channel for all violations
+  
+- **November 28, 2025**: Complete case system with interactive management
   - Implemented Sapphire-style case system with unique per-server case IDs
-  - All moderation commands (kick, ban, mute, warn, unban, unmute) automatically create cases
-  - Added `/case <case_id>` command with interactive buttons: Close, Edit, Delete
-  - Added `/cases [user]` command with pagination: 10 cases per page with Next/Previous buttons
-  - Edit modal allows mods to update: action, reason, duration, status
-  - Case management requires proper permissions (Moderator for close/edit, Admin for delete)
-  - Added 6 new commands: say, change-role-name, lock, unlock, setup-anti-nuke, setup-anti-raid
-  - Implemented Sapphire bot-style embeds (blurple color #5865F2) across all commands
-  - Added anti-nuke and anti-raid database schemas for server protection
-  - Separated manual warnings from automod violations in the database (is_manual flag)
-  - Updated all command names to use hyphenated format (add-role, remove-role, etc.)
+  - All moderation commands automatically create cases
+  - Added `/case <case_id>` and `/cases [user]` with pagination and buttons
+  - Interactive buttons: Close, Edit, Delete with full modal editing
+  - Case management requires proper permissions (Moderator/Admin)
 
 ## Project Architecture
-- **index.js**: Main bot file with all command handlers (26 total commands)
+- **index.js**: Main bot file with all command handlers and event listeners (30 slash commands + prefix commands)
 - **server.js**: Express web server for keeping bot alive on Replit
 - **src/database.js**: SQLite database with:
   - Guild configuration (automod, log channels)
   - Warning system (manual warnings only, marked with is_manual flag)
-  - Blacklist words for automod
+  - Case management system (auto-incrementing per-server case IDs)
   - Anti-nuke and anti-raid settings
   - Join and moderation logs
 - **src/services/automod.js**: Translation-based content filtering
+- **src/services/language-guardian.js**: Multilingual bad word detection with translation
 - **src/services/translation.js**: LibreTranslate API integration
 - **src/utils/logger.js**: Moderation action logging
-- **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv)
+- **data/blacklist.json**: Customizable blacklist words (persistent storage)
+- **data/strikes.json**: User strike tracking per guild
+- **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv, translate-google, fs-extra)
 
 ## Commands (30 Total)
 
@@ -74,7 +80,15 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/setup-anti-raid` - Enable anti-raid with default settings
 
 ### Prefix Commands
-All commands support `n?` prefix format for text commands
+- `n?` - Classic moderation commands (kick, ban, mute, warn, etc.)
+- `!blacklist <add/remove/list> [word]` - Manage blacklist (Admin only)
+- `!purgebad [limit]` - Delete bad messages from channel (Admin only)
+
+**Automatic Message Monitoring:**
+- Every message is scanned for blacklisted words
+- Multi-language support (translates to English automatically)
+- 3 strikes system with configurable timeout
+- Optional moderation log channel
 
 ## Configuration
 - Bot token stored in DISCORD_BOT_TOKEN environment variable

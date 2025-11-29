@@ -11,6 +11,8 @@
     "better-sqlite3": "^12.4.1",
     "discord.js": "^14.14.1",
     "dotenv": "^17.2.3",
-    "express": "^4.18.2"
+    "express": "^4.18.2",
+    "fs-extra": "^11.3.2",
+    "translate-google": "^1.5.0"
   }
 }
