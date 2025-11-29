@@ -11,9 +11,9 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
   - Prefix settings saved per guild in database with timestamp tracking
   - Falls back to default `!` if no custom prefix set
   - Smart mention handler: Bot replies when mentioned with welcome message
-  - **LGBL & Automod: TWO SEPARATE SYSTEMS**
-    - **LGBL (Language Guardian Blacklist Library)**: Multilingual bad word detection with automatic translation (enable/disable with `/enable-lgbl` and `/disable-lgbl`)
-    - **Language Guardian**: Add/remove/list blacklisted words via `/lgbl add/remove/list` (works in any language!)
+  - **Language Guardian & Automod: TWO SEPARATE SYSTEMS**
+    - **Language Guardian**: Multilingual bad word detection with automatic translation (enable/disable with `/enable-language-guardian` and `/disable-language-guardian`)
+    - **LGBL (Language Guardian Blacklist Library)**: Manage blacklisted words via `/lgbl add/remove/list` (works in any language!)
     - **Automod**: Traditional translation-based content filtering (enable with `/enable-automod`)
   - Admins can add/remove custom words via `/lgbl add/remove/list` or `!blacklist add/remove/list`
   - Works with BOTH slash commands AND prefix commands (custom prefixes fully supported)
@@ -77,11 +77,11 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/enable-automod` - Enable translation-based content filter
 - `/disable-automod` - Disable automod
 
-### LGBL - Language Guardian Blacklist Library (2 commands)
-- `/enable-lgbl` - Enable LGBL (Language Guardian Blacklist Library)
-- `/disable-lgbl` - Disable LGBL (Language Guardian Blacklist Library)
+### Language Guardian (2 commands)
+- `/enable-language-guardian` - Enable Language Guardian
+- `/disable-language-guardian` - Disable Language Guardian
 
-### Language Guardian (3 commands)
+### LGBL - Language Guardian Blacklist Library (3 commands)
 - `/lgbl add` - Add word to blacklist (works in any language!)
 - `/lgbl remove` - Remove word from blacklist
 - `/lgbl list` - List all blacklisted words
@@ -104,9 +104,9 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - Smart error handling: Typos show suggestions (private to user)
 
 **Automatic Message Monitoring:**
-- **LGBL (Language Guardian Blacklist Library)**: Scans all non-command messages for blacklisted words with automatic translation and strike system
-  - Enable/disable with `/enable-lgbl` and `/disable-lgbl`
-  - **Language Guardian** commands: `/lgbl add/remove/list` to manage blacklisted words
+- **Language Guardian**: Scans all non-command messages for blacklisted words with automatic translation and strike system
+  - Enable/disable with `/enable-language-guardian` and `/disable-language-guardian`
+  - **LGBL** commands: `/lgbl add/remove/list` to manage blacklisted words
   - Multi-language support (translates to English automatically)
   - Works on any server prefix (default `!` or custom prefixes)
   - 3 strikes system with configurable timeout

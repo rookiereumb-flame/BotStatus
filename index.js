@@ -228,12 +228,12 @@ const commands = [
     description: 'Disable automod system'
   },
   {
-    name: 'enable-lgbl',
-    description: 'Enable LGBL (Language Guardian Blacklist Library)'
+    name: 'enable-language-guardian',
+    description: 'Enable Language Guardian'
   },
   {
-    name: 'disable-lgbl',
-    description: 'Disable LGBL (Language Guardian Blacklist Library)'
+    name: 'disable-language-guardian',
+    description: 'Disable Language Guardian'
   },
   {
     name: 'lgbl',
@@ -447,8 +447,8 @@ client.once('ready', async () => {
     console.log('  /set-channel');
     console.log('  /enable-automod');
     console.log('  /disable-automod');
-    console.log('  /enable-lgbl');
-    console.log('  /disable-lgbl');
+    console.log('  /enable-language-guardian');
+    console.log('  /disable-language-guardian');
     console.log('  /lgbl');
     console.log('\n🔧 UTILITIES:');
     console.log('  /purge');
@@ -524,7 +524,7 @@ client.on('messageCreate', async message => {
       'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
       'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
       'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
-      'ea': 'enable-automod', 'da': 'disable-automod'
+      'ea': 'enable-automod', 'da': 'disable-automod', 'elg': 'enable-language-guardian', 'dlg': 'disable-language-guardian'
     };
     
     // Resolve alias to full command
@@ -760,7 +760,7 @@ client.on('messageCreate', async message => {
       
       default: {
         // Suggest correct command
-        const allCommands = ['kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'nick', 'change-role-name', 'say', 'purge', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 'blacklist', 'purgebad'];
+        const allCommands = ['kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'nick', 'change-role-name', 'say', 'purge', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 'enable-language-guardian', 'disable-language-guardian', 'blacklist', 'purgebad'];
         
         // Find closest match
         const suggestions = allCommands.filter(c => c.startsWith(cmd.charAt(0))).slice(0, 3);
@@ -1044,7 +1044,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'enable-lgbl': {
+      case 'enable-language-guardian': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -1052,12 +1052,12 @@ client.on('interactionCreate', async interaction => {
           });
         }
         enableLGBL(guild.id);
-        const embed = sapphireEmbed('✅ LGBL Enabled', 'Language Guardian Blacklist Library is now active for this server.\n\nUsers will get strikes for blacklisted words (3 strikes = timeout).');
+        const embed = sapphireEmbed('✅ Language Guardian Enabled', 'Language Guardian is now active for this server.\n\nUsers will get strikes for blacklisted words (3 strikes = timeout).');
         await interaction.reply({ embeds: [embed] });
         break;
       }
 
-      case 'disable-lgbl': {
+      case 'disable-language-guardian': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
@@ -1065,7 +1065,7 @@ client.on('interactionCreate', async interaction => {
           });
         }
         disableLGBL(guild.id);
-        const embed = sapphireEmbed('✅ LGBL Disabled', 'Language Guardian Blacklist Library is now disabled for this server.');
+        const embed = sapphireEmbed('✅ Language Guardian Disabled', 'Language Guardian is now disabled for this server.');
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -1191,8 +1191,8 @@ client.on('interactionCreate', async interaction => {
             inline: false
           },
           {
-            name: '🛡️ LGBL (Language Guardian Blacklist Library)',
-            value: '`/enable-lgbl` - Enable LGBL\n`/disable-lgbl` - Disable LGBL\n`/lgbl add` - Add Word to LGBL\n`/lgbl remove` - Remove Word from LGBL\n`/lgbl list` - List LGBL Words',
+            name: '🛡️ Language Guardian',
+            value: '`/enable-language-guardian` - Enable Language Guardian\n`/disable-language-guardian` - Disable Language Guardian\n`/lgbl add` - Add Word to LGBL\n`/lgbl remove` - Remove Word from LGBL\n`/lgbl list` - List LGBL Words',
             inline: false
           },
           {
