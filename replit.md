@@ -12,13 +12,15 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
   - Falls back to default `!` if no custom prefix set
   - Smart mention handler: Bot replies when mentioned with welcome message
   - **Language Guardian Blacklist Library (LGBL)**: Unified multilingual bad word detection with automatic translation
-  - Admins can add/remove custom words via `/lgbl add/remove/list`
+  - Admins can add/remove custom words via `/lgbl add/remove/list` or `!blacklist add/remove/list`
+  - Works with BOTH slash commands AND prefix commands (custom prefixes fully supported)
   - Detects blacklisted words from any language (translates to English automatically)
-  - Strike system: 3 strikes = automatic timeout
-  - Prefix commands: `!blacklist add/remove/list` and `!purgebad`
-  - Real-time message filtering on all non-command messages
-  - Customizable strike limit and timeout duration via environment variables
-  - Optional moderation log channel for all violations
+  - **Only active when automod is enabled** (`/enable-automod`)
+  - Strike system: 3 strikes = automatic timeout (configurable via env vars)
+  - Prefix commands: `!blacklist add/remove/list` and `!purgebad` work on any prefix
+  - Real-time message filtering on all non-command messages when enabled
+  - Customizable strike limit (STRIKE_LIMIT env var) and timeout duration (TIMEOUT_SECONDS env var)
+  - Optional moderation log channel for all violations (MOD_LOG_CHANNEL env var)
   
 - **November 28, 2025**: Complete case system with interactive management
   - Implemented Sapphire-style case system with unique per-server case IDs
@@ -91,11 +93,13 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `!purgebad [limit]` - Delete bad messages from channel (Admin only)
 - Smart error handling: Typos show suggestions (private to user)
 
-**Automatic Message Monitoring:**
-- Every message is scanned for blacklisted words
+**Automatic Message Monitoring (When Automod Enabled):**
+- Language Guardian scans all non-command messages for blacklisted words
 - Multi-language support (translates to English automatically)
+- Works on any server prefix (default `!` or custom prefixes)
 - 3 strikes system with configurable timeout
 - Optional moderation log channel
+- Enable/disable with `/enable-automod` and `/disable-automod`
 
 ## Configuration
 - Bot token stored in DISCORD_BOT_TOKEN environment variable

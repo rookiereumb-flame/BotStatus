@@ -472,26 +472,29 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // Language Guardian - Automatic bad word detection
+    // Language Guardian - Automatic bad word detection (only if automod enabled)
     if (!message.content.startsWith(customPrefix)) {
       try {
-        const translated = await safeTranslate(message.content);
-        const bad = matchesBlacklist(translated);
+        const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
+        if (guildConfig && guildConfig.automod_enabled) {
+          const translated = await safeTranslate(message.content);
+          const bad = matchesBlacklist(translated);
 
-        if (bad) {
-          await message.delete().catch(() => {});
-          const strikesNow = addStrike(message.guild.id, message.author.id);
+          if (bad) {
+            await message.delete().catch(() => {});
+            const strikesNow = addStrike(message.guild.id, message.author.id);
 
-          message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${STRIKE_LIMIT})`)
-            .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+            message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${STRIKE_LIMIT})`)
+              .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
-          await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
+            await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
 
-          if (strikesNow >= STRIKE_LIMIT) {
-            const member = await message.guild.members.fetch(message.author.id);
-            if (member.moderatable) {
-              await member.timeout(TIMEOUT_SECONDS * 1000, "Blacklist strikes exceeded");
-              resetStrikesFor(message.guild.id, message.author.id);
+            if (strikesNow >= STRIKE_LIMIT) {
+              const member = await message.guild.members.fetch(message.author.id);
+              if (member.moderatable) {
+                await member.timeout(TIMEOUT_SECONDS * 1000, "Blacklist strikes exceeded");
+                resetStrikesFor(message.guild.id, message.author.id);
+              }
             }
           }
         }
