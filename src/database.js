@@ -8,6 +8,7 @@ db.exec(`
     guild_id TEXT PRIMARY KEY,
     log_channel_id TEXT,
     automod_enabled INTEGER DEFAULT 0,
+    lgbl_enabled INTEGER DEFAULT 0,
     custom_prefix TEXT,
     prefix_set_timestamp INTEGER
   );
@@ -24,6 +25,12 @@ try {
   db.prepare('SELECT prefix_set_timestamp FROM guild_config LIMIT 1').get();
 } catch (e) {
   db.exec(`ALTER TABLE guild_config ADD COLUMN prefix_set_timestamp INTEGER;`);
+}
+
+try {
+  db.prepare('SELECT lgbl_enabled FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN lgbl_enabled INTEGER DEFAULT 0;`);
 }
 
 db.exec(`
@@ -121,6 +128,24 @@ const disableAutomod = (guildId) => {
     INSERT INTO guild_config (guild_id, automod_enabled) 
     VALUES (?, 0) 
     ON CONFLICT(guild_id) DO UPDATE SET automod_enabled = 0
+  `);
+  stmt.run(guildId);
+};
+
+const enableLGBL = (guildId) => {
+  const stmt = db.prepare(`
+    INSERT INTO guild_config (guild_id, lgbl_enabled) 
+    VALUES (?, 1) 
+    ON CONFLICT(guild_id) DO UPDATE SET lgbl_enabled = 1
+  `);
+  stmt.run(guildId);
+};
+
+const disableLGBL = (guildId) => {
+  const stmt = db.prepare(`
+    INSERT INTO guild_config (guild_id, lgbl_enabled) 
+    VALUES (?, 0) 
+    ON CONFLICT(guild_id) DO UPDATE SET lgbl_enabled = 0
   `);
   stmt.run(guildId);
 };
@@ -301,6 +326,8 @@ module.exports = {
   setLogChannel,
   enableAutomod,
   disableAutomod,
+  enableLGBL,
+  disableLGBL,
   setCustomPrefix,
   getCustomPrefix,
   getPrefixCooldown,

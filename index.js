@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -228,6 +228,14 @@ const commands = [
     description: 'Disable automod system'
   },
   {
+    name: 'enable-lgbl',
+    description: 'Enable Language Guardian Blacklist Library'
+  },
+  {
+    name: 'disable-lgbl',
+    description: 'Disable Language Guardian Blacklist Library'
+  },
+  {
     name: 'lgbl',
     description: 'Language Guardian Blacklist Library - manage blacklisted words',
     options: [
@@ -439,6 +447,8 @@ client.once('ready', async () => {
     console.log('  /set-channel');
     console.log('  /enable-automod');
     console.log('  /disable-automod');
+    console.log('  /enable-lgbl');
+    console.log('  /disable-lgbl');
     console.log('  /lgbl');
     console.log('\n🔧 UTILITIES:');
     console.log('  /purge');
@@ -472,11 +482,11 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // Language Guardian - Automatic bad word detection (only if automod enabled)
+    // Language Guardian - Automatic bad word detection (only if LGBL enabled)
     if (!message.content.startsWith(customPrefix)) {
       try {
         const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
-        if (guildConfig && guildConfig.automod_enabled) {
+        if (guildConfig && guildConfig.lgbl_enabled) {
           const translated = await safeTranslate(message.content);
           const bad = matchesBlacklist(translated);
 
@@ -1034,6 +1044,32 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      case 'enable-lgbl': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        enableLGBL(guild.id);
+        const embed = sapphireEmbed('✅ LGBL Enabled', 'Language Guardian Blacklist Library is now active for this server.\n\nUsers will get strikes for blacklisted words (3 strikes = timeout).');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'disable-lgbl': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        disableLGBL(guild.id);
+        const embed = sapphireEmbed('✅ LGBL Disabled', 'Language Guardian Blacklist Library is now disabled for this server.');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
       case 'lgbl': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
@@ -1151,7 +1187,12 @@ client.on('interactionCreate', async interaction => {
           },
           {
             name: '🛡️ Automod Configuration',
-            value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod\n`/lgbl add` - Add Word to LGBL\n`/lgbl remove` - Remove Word from LGBL\n`/lgbl list` - List LGBL Words',
+            value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod',
+            inline: false
+          },
+          {
+            name: '🛡️ LGBL (Language Guardian Blacklist Library)',
+            value: '`/enable-lgbl` - Enable LGBL\n`/disable-lgbl` - Disable LGBL\n`/lgbl add` - Add Word to LGBL\n`/lgbl remove` - Remove Word from LGBL\n`/lgbl list` - List LGBL Words',
             inline: false
           },
           {

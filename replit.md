@@ -11,11 +11,12 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
   - Prefix settings saved per guild in database with timestamp tracking
   - Falls back to default `!` if no custom prefix set
   - Smart mention handler: Bot replies when mentioned with welcome message
-  - **Language Guardian Blacklist Library (LGBL)**: Unified multilingual bad word detection with automatic translation
+  - **LGBL & Automod: TWO SEPARATE SYSTEMS**
+    - **Language Guardian Blacklist Library (LGBL)**: Multilingual bad word detection with automatic translation (enable with `/enable-lgbl`)
+    - **Automod**: Traditional translation-based content filtering (enable with `/enable-automod`)
   - Admins can add/remove custom words via `/lgbl add/remove/list` or `!blacklist add/remove/list`
   - Works with BOTH slash commands AND prefix commands (custom prefixes fully supported)
   - Detects blacklisted words from any language (translates to English automatically)
-  - **Only active when automod is enabled** (`/enable-automod`)
   - Strike system: 3 strikes = automatic timeout (configurable via env vars)
   - Prefix commands: `!blacklist add/remove/list` and `!purgebad` work on any prefix
   - Real-time message filtering on all non-command messages when enabled
@@ -46,7 +47,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **data/strikes.json**: User strike tracking per guild
 - **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv, translate-google, fs-extra)
 
-## Commands (29 Total)
+## Commands (33 Total)
 
 ### Moderation (7 commands)
 - `/kick` - Kick member with reason (creates case)
@@ -70,11 +71,17 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/cases [user]` - View case history with pagination (10 per page)
 - `/help` - Show all commands
 
-### Automod (4 commands)
+### Automod (2 commands)
 - `/set-channel` - Set moderation log channel
 - `/enable-automod` - Enable translation-based content filter
 - `/disable-automod` - Disable automod
-- `/lgbl` - Language Guardian Blacklist Library (add/remove/list words - works in any language!)
+
+### LGBL - Language Guardian Blacklist Library (4 commands)
+- `/enable-lgbl` - Enable LGBL multilingual bad word detection
+- `/disable-lgbl` - Disable LGBL
+- `/lgbl add` - Add word to blacklist (works in any language!)
+- `/lgbl remove` - Remove word from blacklist
+- `/lgbl list` - List all blacklisted words
 
 ### Utilities (5)
 - `/purge` - Delete messages (1-100)
@@ -93,13 +100,17 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `!purgebad [limit]` - Delete bad messages from channel (Admin only)
 - Smart error handling: Typos show suggestions (private to user)
 
-**Automatic Message Monitoring (When Automod Enabled):**
-- Language Guardian scans all non-command messages for blacklisted words
-- Multi-language support (translates to English automatically)
-- Works on any server prefix (default `!` or custom prefixes)
-- 3 strikes system with configurable timeout
-- Optional moderation log channel
-- Enable/disable with `/enable-automod` and `/disable-automod`
+**Automatic Message Monitoring:**
+- **LGBL (Language Guardian Blacklist Library)**: Scans all non-command messages for blacklisted words with automatic translation and strike system
+  - Enable/disable with `/enable-lgbl` and `/disable-lgbl`
+  - Multi-language support (translates to English automatically)
+  - Works on any server prefix (default `!` or custom prefixes)
+  - 3 strikes system with configurable timeout
+  - Optional moderation log channel
+- **Automod**: Traditional translation-based content filtering
+  - Enable/disable with `/enable-automod` and `/disable-automod`
+  - Works on prefix commands only
+  - Logs all violations
 
 ## Configuration
 - Bot token stored in DISCORD_BOT_TOKEN environment variable
