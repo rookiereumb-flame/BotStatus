@@ -55,13 +55,14 @@ function getStrikes(guildId, userId) {
 
 function matchesBlacklist(text) {
   const lc = text.toLowerCase();
-  // Match only whole words, not substrings
-  const words = lc.split(/\s+|[.,!?;:\-]/);
+  // Match whole words using word boundaries
   for (const bad of blacklist) {
-    for (const word of words) {
-      if (word === bad || word.includes(bad)) {
-        return bad;
-      }
+    // Escape special regex characters
+    const escaped = bad.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    // Use word boundaries for whole word matching
+    const regex = new RegExp(`\\b${escaped}\\b`, 'i');
+    if (regex.test(lc)) {
+      return bad;
     }
   }
   return null;
