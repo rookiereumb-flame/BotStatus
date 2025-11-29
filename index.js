@@ -451,60 +451,65 @@ client.on('messageCreate', async message => {
   if (message.author.bot) return;
   if (!message.guild) return;
 
-  // Get custom prefix for this guild
-  const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
+  try {
+    // Get custom prefix for this guild
+    const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
 
-  // Bot mention handler
-  if (message.mentions.has(client.user.id)) {
-    return message.reply(`Hello ${message.author}, nice to meet you I am Daddy USSR pls use /help to get started!!`);
-  }
+    // Bot mention handler
+    if (message.mentions.has(client.user.id)) {
+      try {
+        await message.reply(`Hello ${message.author}, nice to meet you I am Daddy USSR pls use /help to get started!!`);
+      } catch (e) {
+        console.error('Error sending mention reply:', e);
+      }
+      return;
+    }
 
-  // Language Guardian - Automatic bad word detection
-  if (!message.content.startsWith(customPrefix)) {
-    try {
-      const translated = await safeTranslate(message.content);
-      const bad = matchesBlacklist(translated);
+    // Language Guardian - Automatic bad word detection
+    if (!message.content.startsWith(customPrefix)) {
+      try {
+        const translated = await safeTranslate(message.content);
+        const bad = matchesBlacklist(translated);
 
-      if (bad) {
-        await message.delete().catch(() => {});
-        const strikesNow = addStrike(message.guild.id, message.author.id);
+        if (bad) {
+          await message.delete().catch(() => {});
+          const strikesNow = addStrike(message.guild.id, message.author.id);
 
-        message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${STRIKE_LIMIT})`)
-          .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+          message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${STRIKE_LIMIT})`)
+            .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
-        await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
+          await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
 
-        if (strikesNow >= STRIKE_LIMIT) {
-          const member = await message.guild.members.fetch(message.author.id);
-          if (member.moderatable) {
-            await member.timeout(TIMEOUT_SECONDS * 1000, "Blacklist strikes exceeded");
-            resetStrikesFor(message.guild.id, message.author.id);
+          if (strikesNow >= STRIKE_LIMIT) {
+            const member = await message.guild.members.fetch(message.author.id);
+            if (member.moderatable) {
+              await member.timeout(TIMEOUT_SECONDS * 1000, "Blacklist strikes exceeded");
+              resetStrikesFor(message.guild.id, message.author.id);
+            }
           }
         }
-      }
-    } catch (e) {}
-    return;
-  }
+      } catch (e) {}
+      return;
+    }
 
-  await checkMessage(message);
-  
-  if (!message.content.startsWith(customPrefix)) return;
-  
-  const args = message.content.slice(customPrefix.length).trim().split(/ +/);
-  let cmd = args.shift().toLowerCase();
-  
-  // Command aliases
-  const aliases = {
-    'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
-    'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
-    'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
-    'ea': 'enable-automod', 'da': 'disable-automod', 'abw': 'add-blacklist-word', 'rbw': 'remove-blacklist-word'
-  };
-  
-  // Resolve alias to full command
-  if (aliases[cmd]) cmd = aliases[cmd];
-  
-  try {
+    await checkMessage(message);
+    
+    if (!message.content.startsWith(customPrefix)) return;
+    
+    const args = message.content.slice(customPrefix.length).trim().split(/ +/);
+    let cmd = args.shift().toLowerCase();
+    
+    // Command aliases
+    const aliases = {
+      'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
+      'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
+      'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
+      'ea': 'enable-automod', 'da': 'disable-automod', 'abw': 'add-blacklist-word', 'rbw': 'remove-blacklist-word'
+    };
+    
+    // Resolve alias to full command
+    if (aliases[cmd]) cmd = aliases[cmd];
+    
     switch(cmd) {
       case 'kick': {
         if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) {

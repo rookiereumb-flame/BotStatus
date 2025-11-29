@@ -11,6 +11,22 @@ db.exec(`
     custom_prefix TEXT,
     prefix_set_timestamp INTEGER
   );
+`);
+
+// Add missing columns if they don't exist
+try {
+  db.prepare('SELECT custom_prefix FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN custom_prefix TEXT;`);
+}
+
+try {
+  db.prepare('SELECT prefix_set_timestamp FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN prefix_set_timestamp INTEGER;`);
+}
+
+db.exec(`
 
   CREATE TABLE IF NOT EXISTS warnings (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
