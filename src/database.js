@@ -98,6 +98,27 @@ db.exec(`
     timestamp INTEGER NOT NULL,
     PRIMARY KEY (guild_id, case_id)
   );
+
+  CREATE TABLE IF NOT EXISTS anti_spam_settings (
+    guild_id TEXT PRIMARY KEY,
+    enabled INTEGER DEFAULT 0,
+    max_messages INTEGER DEFAULT 5,
+    time_window INTEGER DEFAULT 10,
+    action TEXT DEFAULT 'mute',
+    mute_duration INTEGER DEFAULT 300
+  );
+
+  CREATE TABLE IF NOT EXISTS spam_tracking (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    timestamp INTEGER NOT NULL
+  );
+
+  CREATE TABLE IF NOT EXISTS auto_role_settings (
+    guild_id TEXT PRIMARY KEY,
+    role_id TEXT NOT NULL
+  );
 `);
 
 const getGuildConfig = (guildId) => {
@@ -320,6 +341,73 @@ const deleteCase = (guildId, caseId) => {
   return info.changes > 0;
 };
 
+const enableAntiSpam = (guildId) => {
+  const stmt = db.prepare(`
+    INSERT INTO anti_spam_settings (guild_id, enabled) 
+    VALUES (?, 1) 
+    ON CONFLICT(guild_id) DO UPDATE SET enabled = 1
+  `);
+  stmt.run(guildId);
+};
+
+const disableAntiSpam = (guildId) => {
+  const stmt = db.prepare(`
+    INSERT INTO anti_spam_settings (guild_id, enabled) 
+    VALUES (?, 0) 
+    ON CONFLICT(guild_id) DO UPDATE SET enabled = 0
+  `);
+  stmt.run(guildId);
+};
+
+const getAntiSpamConfig = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM anti_spam_settings WHERE guild_id = ?');
+  return stmt.get(guildId);
+};
+
+const setAntiSpamConfig = (guildId, config) => {
+  const stmt = db.prepare(`
+    INSERT INTO anti_spam_settings (guild_id, enabled, max_messages, time_window, action, mute_duration) 
+    VALUES (?, ?, ?, ?, ?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET enabled = ?, max_messages = ?, time_window = ?, action = ?, mute_duration = ?
+  `);
+  stmt.run(guildId, config.enabled, config.maxMessages, config.timeWindow, config.action, config.muteDuration, config.enabled, config.maxMessages, config.timeWindow, config.action, config.muteDuration);
+};
+
+const trackSpamMessage = (guildId, userId) => {
+  const stmt = db.prepare('INSERT INTO spam_tracking (guild_id, user_id, timestamp) VALUES (?, ?, ?)');
+  stmt.run(guildId, userId, Date.now());
+};
+
+const getRecentMessages = (guildId, userId, windowSeconds) => {
+  const stmt = db.prepare('SELECT * FROM spam_tracking WHERE guild_id = ? AND user_id = ? AND timestamp > ? ORDER BY timestamp DESC');
+  return stmt.all(guildId, userId, Date.now() - (windowSeconds * 1000));
+};
+
+const cleanupSpamTracking = () => {
+  const stmt = db.prepare('DELETE FROM spam_tracking WHERE timestamp < ?');
+  stmt.run(Date.now() - (3600 * 1000));
+};
+
+const setAutoRole = (guildId, roleId) => {
+  const stmt = db.prepare(`
+    INSERT INTO auto_role_settings (guild_id, role_id) 
+    VALUES (?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET role_id = ?
+  `);
+  stmt.run(guildId, roleId, roleId);
+};
+
+const removeAutoRole = (guildId) => {
+  const stmt = db.prepare('DELETE FROM auto_role_settings WHERE guild_id = ?');
+  stmt.run(guildId);
+};
+
+const getAutoRole = (guildId) => {
+  const stmt = db.prepare('SELECT role_id FROM auto_role_settings WHERE guild_id = ?');
+  const result = stmt.get(guildId);
+  return result?.role_id || null;
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -347,5 +435,15 @@ module.exports = {
   getCases,
   updateCaseStatus,
   updateCase,
-  deleteCase
+  deleteCase,
+  enableAntiSpam,
+  disableAntiSpam,
+  getAntiSpamConfig,
+  setAntiSpamConfig,
+  trackSpamMessage,
+  getRecentMessages,
+  cleanupSpamTracking,
+  setAutoRole,
+  removeAutoRole,
+  getAutoRole
 };

@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -428,6 +428,52 @@ const commands = [
   {
     name: 'ban-list',
     description: 'View ban and kick history'
+  },
+  {
+    name: 'enable-anti-spam',
+    description: 'Enable anti-spam protection'
+  },
+  {
+    name: 'disable-anti-spam',
+    description: 'Disable anti-spam protection'
+  },
+  {
+    name: 'setup-anti-spam',
+    description: 'Configure anti-spam settings',
+    options: [
+      {
+        name: 'max_messages',
+        description: 'Max messages allowed in time window',
+        type: 4,
+        required: false,
+        min_value: 2,
+        max_value: 10
+      },
+      {
+        name: 'time_window',
+        description: 'Time window in seconds',
+        type: 4,
+        required: false,
+        min_value: 5,
+        max_value: 60
+      }
+    ]
+  },
+  {
+    name: 'set-auto-role',
+    description: 'Set role to auto-assign to new members',
+    options: [
+      {
+        name: 'role',
+        description: 'The role to auto-assign',
+        type: 8,
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'remove-auto-role',
+    description: 'Remove auto-role assignment'
   }
 ];
 
@@ -501,6 +547,25 @@ client.on('messageCreate', async message => {
       }
       return;
     }
+
+    // Anti-Spam Detection
+    try {
+      const spamConfig = getAntiSpamConfig(message.guild.id);
+      if (spamConfig && spamConfig.enabled) {
+        trackSpamMessage(message.guild.id, message.author.id);
+        const recentMessages = getRecentMessages(message.guild.id, message.author.id, spamConfig.time_window);
+        
+        if (recentMessages.length > spamConfig.max_messages) {
+          await message.delete().catch(() => {});
+          const member = await message.guild.members.fetch(message.author.id);
+          if (member && member.moderatable) {
+            await member.timeout(spamConfig.mute_duration * 1000, 'Anti-spam');
+            message.channel.send(`⏱️ ${message.author} has been muted for spam.`)
+              .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+          }
+        }
+      }
+    } catch (e) {}
 
     // Language Guardian - Automatic bad word detection (only if LGBL enabled)
     if (!message.content.startsWith(customPrefix)) {
@@ -1422,6 +1487,67 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      case 'enable-anti-spam': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        enableAntiSpam(guild.id);
+        const embed = sapphireEmbed('🛡️ Anti-Spam Enabled', '✅ Anti-spam system is now active.\n**Settings:**\n• Max messages: 5\n• Time window: 10 seconds\n• Action: Mute for 5 minutes');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'disable-anti-spam': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        disableAntiSpam(guild.id);
+        const embed = sapphireEmbed('🛡️ Anti-Spam Disabled', '✅ Anti-spam system has been disabled.');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'setup-anti-spam': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        const maxMessages = options.getInteger('max_messages') || 5;
+        const timeWindow = options.getInteger('time_window') || 10;
+        
+        setAntiSpamConfig(guild.id, {
+          enabled: 1,
+          maxMessages,
+          timeWindow,
+          action: 'mute',
+          muteDuration: 300
+        });
+        
+        const embed = sapphireEmbed('⚙️ Anti-Spam Configured', `✅ Anti-spam settings updated.\n**Max messages:** ${maxMessages}\n**Time window:** ${timeWindow}s\n**Action:** Mute for 5 minutes`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'set-auto-role': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        const role = options.getRole('role');
+        setAutoRole(guild.id, role.id);
+        const embed = sapphireEmbed('👥 Auto-Role Set', `✅ New members will receive the ${role.name} role.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'remove-auto-role': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        removeAutoRole(guild.id);
+        const embed = sapphireEmbed('👥 Auto-Role Removed', '✅ Auto-role assignment has been disabled.');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
       case 'case': {
         const caseId = options.getInteger('case_id');
         const caseData = getCase(guild.id, caseId);
@@ -1708,6 +1834,22 @@ client.on('interactionCreate', async interaction => {
     try {
       await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
     } catch (e) {}
+  }
+});
+
+// Auto-Role on Member Join
+client.on('guildMemberAdd', async member => {
+  try {
+    const autoRoleId = getAutoRole(member.guild.id);
+    if (autoRoleId) {
+      const role = member.guild.roles.cache.get(autoRoleId);
+      if (role && member.manageable) {
+        await member.roles.add(role);
+        console.log(`✅ Auto-assigned ${role.name} to ${member.user.tag}`);
+      }
+    }
+  } catch (error) {
+    console.error('Error assigning auto-role:', error);
   }
 });
 
