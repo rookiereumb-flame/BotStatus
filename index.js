@@ -763,28 +763,45 @@ client.on('messageCreate', async message => {
           const member = await message.guild.members.fetch(message.author.id).catch(() => null);
           if (!isUserWhitelisted(message.guild.id, message.author.id, member, 'language_guardian')) {
             const lgConfig = getLanguageGuardianConfig(message.guild.id);
-            const translated = await safeTranslate(message.content);
-            const bad = matchesBlacklist(translated);
+            // Get blacklist words from DATABASE (per guild)
+            const blacklistWords = getBlacklistWords(message.guild.id);
+            
+            if (blacklistWords && blacklistWords.length > 0) {
+              // Translate the message first
+              const translated = await safeTranslate(message.content);
+              
+              // Check translated text against database blacklist
+              let foundBadWord = null;
+              for (const badWord of blacklistWords) {
+                const regex = new RegExp(`\\b${badWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+                if (regex.test(translated.toLowerCase())) {
+                  foundBadWord = badWord;
+                  break;
+                }
+              }
 
-            if (bad) {
-              await message.delete().catch(() => {});
-              const strikesNow = addStrike(message.guild.id, message.author.id);
+              if (foundBadWord) {
+                await message.delete().catch(() => {});
+                const strikesNow = addStrike(message.guild.id, message.author.id);
 
-              message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${lgConfig.strikeLimit})`)
-                .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+                message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${lgConfig.strikeLimit})`)
+                  .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
-              await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
+                await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${foundBadWord}`);
 
-              if (strikesNow >= lgConfig.strikeLimit) {
-                if (member && member.moderatable) {
-                  await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
-                  resetStrikesFor(message.guild.id, message.author.id);
+                if (strikesNow >= lgConfig.strikeLimit) {
+                  if (member && member.moderatable) {
+                    await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
+                    resetStrikesFor(message.guild.id, message.author.id);
+                  }
                 }
               }
             }
           }
         }
-      } catch (e) {}
+      } catch (e) {
+        console.error('Language Guardian error:', e);
+      }
       return;
     }
 
