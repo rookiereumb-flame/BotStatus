@@ -70,9 +70,9 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/server-timeout-status` - List all timed-out members
 - `/case <id>` - View case with buttons: Close, Edit, Delete
 - `/cases [user]` - View case history with pagination (10 per page)
-- `/user-info <user>` - Get information about a user
-- `/server-info` - Get information about the server
-- `/ban-list` - View all banned members
+- `/user-info <user>` - Get information about a user (with pagination)
+- `/server-info` - Get information about the server (with pagination)
+- `/ban-list` - View ban and kick history with pagination (10 per page)
 - `/help` - Show all commands
 
 ### Automod (2 commands)

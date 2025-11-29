@@ -427,7 +427,7 @@ const commands = [
   },
   {
     name: 'ban-list',
-    description: 'View all banned members'
+    description: 'View ban and kick history'
   }
 ];
 
@@ -1342,7 +1342,24 @@ client.on('interactionCreate', async interaction => {
         const embed = sapphireEmbed(`👤 User Info - ${user.tag}`,
           `**Username:** ${user.username}\n**ID:** ${user.id}\n**Bot:** ${user.bot ? 'Yes' : 'No'}\n**Created:** <t:${Math.floor(user.createdTimestamp / 1000)}>\n${member ? `**Joined:** <t:${Math.floor(member.joinedTimestamp / 1000)}>\n**Roles:** ${member.roles.cache.size > 1 ? member.roles.cache.map(r => r.name).slice(0, 5).join(', ') : 'No roles'}` : ''}`
         );
-        await interaction.reply({ embeds: [embed] });
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`userinfo_prev_${user.id}`)
+              .setLabel('Previous')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⬅️')
+              .setDisabled(true),
+            new ButtonBuilder()
+              .setCustomId(`userinfo_next_${user.id}`)
+              .setLabel('Next')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('➡️')
+              .setDisabled(true)
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1350,24 +1367,72 @@ client.on('interactionCreate', async interaction => {
         const embed = sapphireEmbed(`🏰 Server Info - ${guild.name}`,
           `**ID:** ${guild.id}\n**Owner:** ${(await guild.fetchOwner()).user.tag}\n**Members:** ${guild.memberCount}\n**Channels:** ${guild.channels.cache.size}\n**Roles:** ${guild.roles.cache.size}\n**Created:** <t:${Math.floor(guild.createdTimestamp / 1000)}>\n**Verification:** ${guild.verificationLevel}`
         );
-        await interaction.reply({ embeds: [embed] });
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`serverinfo_prev_${guild.id}`)
+              .setLabel('Previous')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⬅️')
+              .setDisabled(true),
+            new ButtonBuilder()
+              .setCustomId(`serverinfo_next_${guild.id}`)
+              .setLabel('Next')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('➡️')
+              .setDisabled(true)
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
       case 'ban-list': {
         const bans = await guild.bans.fetch().catch(() => null);
-        if (!bans || bans.size === 0) {
-          const embed = sapphireEmbed('📋 Ban List', 'No banned members.');
+        const kicks = getCases(guild.id).filter(c => c.action === 'kick');
+        
+        const allActions = [
+          ...bans.map(ban => ({ type: 'ban', user: ban.user.tag, reason: ban.reason || 'No reason', timestamp: 0 })),
+          ...kicks.map(k => ({ type: 'kick', user: k.user_id, reason: k.reason, timestamp: k.timestamp }))
+        ];
+        
+        if (allActions.length === 0) {
+          const embed = sapphireEmbed('📋 Ban/Kick History', 'No ban or kick history.');
           return await interaction.reply({ embeds: [embed] });
         }
         
-        let banList = '';
-        bans.forEach((ban, idx) => {
-          if (idx < 20) banList += `${idx + 1}. **${ban.user.tag}** - Reason: ${ban.reason || 'No reason'}\n`;
-        });
+        const totalPages = Math.ceil(allActions.length / 10);
+        let currentPage = 0;
         
-        const embed = sapphireEmbed('📋 Ban List', `${banList}${bans.size > 20 ? `\n...and ${bans.size - 20} more` : ''}`);
-        await interaction.reply({ embeds: [embed] });
+        const buildEmbed = (page) => {
+          let list = '';
+          const startIdx = page * 10;
+          const endIdx = startIdx + 10;
+          allActions.slice(startIdx, endIdx).forEach((action, idx) => {
+            const emoji = action.type === 'ban' ? '🔨' : '👢';
+            list += `${emoji} **${action.user}** - ${action.type.toUpperCase()} - ${action.reason}\n`;
+          });
+          return sapphireEmbed(`📋 Ban/Kick History (Page ${page + 1}/${totalPages})`, list);
+        };
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`banlist_prev`)
+              .setLabel('Previous')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⬅️')
+              .setDisabled(currentPage === 0),
+            new ButtonBuilder()
+              .setCustomId(`banlist_next`)
+              .setLabel('Next')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('➡️')
+              .setDisabled(currentPage >= totalPages - 1)
+          );
+        
+        await interaction.reply({ embeds: [buildEmbed(currentPage)], components: [buttons] });
         break;
       }
 
