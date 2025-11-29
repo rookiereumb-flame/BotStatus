@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -647,7 +647,7 @@ client.on('messageCreate', async message => {
       const spamConfig = getAntiSpamConfig(message.guild.id);
       if (spamConfig && spamConfig.enabled) {
         const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-        if (!isUserWhitelisted(message.guild.id, message.author.id, member)) {
+        if (!isUserWhitelisted(message.guild.id, message.author.id, member, 'anti_spam')) {
           trackSpamMessage(message.guild.id, message.author.id);
           const recentMessages = getRecentMessages(message.guild.id, message.author.id, spamConfig.time_window);
           
@@ -669,7 +669,7 @@ client.on('messageCreate', async message => {
         const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
         if (guildConfig && guildConfig.lgbl_enabled) {
           const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-          if (!isUserWhitelisted(message.guild.id, message.author.id, member)) {
+          if (!isUserWhitelisted(message.guild.id, message.author.id, member, 'language_guardian')) {
             const lgConfig = getLanguageGuardianConfig(message.guild.id);
             const translated = await safeTranslate(message.content);
             const bad = matchesBlacklist(translated);
@@ -1724,10 +1724,48 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
         }
         
-        const embed = sapphireEmbed('⚙️ Server Configuration', 
-          `✅ Advanced server configuration panel.\n\n**Your Role Level:** ${member.roles.highest.name}\n**Bot Role Level:** ${guild.members.cache.get(client.user.id).roles.highest.name}\n\nYou have access to all advanced settings.`
-        );
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        const bypassConfig = getWhitelistBypassConfig(guild.id);
+        const settings = `
+**Whitelist Bypass Settings:**
+🛡️ Anti-Spam: ${bypassConfig.bypass_anti_spam ? '✅ BYPASS' : '❌ NO BYPASS'}
+🛡️ Language Guardian: ${bypassConfig.bypass_language_guardian ? '✅ BYPASS' : '❌ NO BYPASS'}
+🛡️ Anti-Nuke: ${bypassConfig.bypass_anti_nuke ? '✅ BYPASS' : '❌ NO BYPASS'}
+🛡️ Anti-Raid: ${bypassConfig.bypass_anti_raid ? '✅ BYPASS' : '❌ NO BYPASS'}
+
+Click buttons below to toggle each system's whitelist bypass.
+        `;
+        
+        const embed = sapphireEmbed('⚙️ Server Configuration', settings);
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`config_toggle_anti_spam_${guild.id}`)
+              .setLabel('Toggle Anti-Spam')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('🛡️'),
+            new ButtonBuilder()
+              .setCustomId(`config_toggle_lg_${guild.id}`)
+              .setLabel('Toggle Language Guardian')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('📢')
+          );
+        
+        const buttons2 = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`config_toggle_anti_nuke_${guild.id}`)
+              .setLabel('Toggle Anti-Nuke')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('💣'),
+            new ButtonBuilder()
+              .setCustomId(`config_toggle_anti_raid_${guild.id}`)
+              .setLabel('Toggle Anti-Raid')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('👾')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons, buttons2], ephemeral: true });
         break;
       }
 
@@ -2310,6 +2348,42 @@ client.on('interactionCreate', async interaction => {
       }
       removeWhitelistMember(interaction.guild.id, userId);
       const embed = sapphireEmbed('✅ Member Removed', 'Member has been removed from whitelist.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Config Toggle Buttons
+    if (customId.startsWith('config_toggle_')) {
+      if (!isUserAboveBot(interaction.member, interaction.guild)) {
+        return interaction.reply({ content: '❌ Only users with roles above the bot can change this.', ephemeral: true });
+      }
+      
+      const config = getWhitelistBypassConfig(interaction.guild.id);
+      let system = '';
+      
+      if (customId.includes('anti_spam')) {
+        system = 'anti_spam';
+        config.bypass_anti_spam = config.bypass_anti_spam ? 0 : 1;
+      } else if (customId.includes('_lg_')) {
+        system = 'language_guardian';
+        config.bypass_language_guardian = config.bypass_language_guardian ? 0 : 1;
+      } else if (customId.includes('anti_nuke')) {
+        system = 'anti_nuke';
+        config.bypass_anti_nuke = config.bypass_anti_nuke ? 0 : 1;
+      } else if (customId.includes('anti_raid')) {
+        system = 'anti_raid';
+        config.bypass_anti_raid = config.bypass_anti_raid ? 0 : 1;
+      }
+      
+      setWhitelistBypassConfig(interaction.guild.id, {
+        bypassAntiSpam: config.bypass_anti_spam,
+        bypassLanguageGuardian: config.bypass_language_guardian,
+        bypassAntiNuke: config.bypass_anti_nuke,
+        bypassAntiRaid: config.bypass_anti_raid
+      });
+      
+      const systemName = system.replace('_', ' ').toUpperCase();
+      const newState = config[`bypass_${system}`] ? '✅ BYPASS' : '❌ NO BYPASS';
+      const embed = sapphireEmbed(`✅ ${systemName} Updated`, `Whitelist bypass for ${systemName}: **${newState}**`);
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   } catch (error) {

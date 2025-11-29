@@ -4,6 +4,15 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
+- **November 29, 2025**: Per-System Whitelist Bypass Configuration (NEW!)
+  - **Customizable Whitelist**: Higher roles can enable/disable whitelist bypass per protection system
+    - `/server-config` - Open admin config panel (only for roles ABOVE bot)
+    - Toggle buttons: Anti-Spam, Language Guardian, Anti-Nuke, Anti-Raid
+    - Each system independently configured (✅ BYPASS or ❌ NO BYPASS)
+    - Example: Allow whitelist bypass for anti-spam but NOT for anti-nuke
+  - **Role Hierarchy Check**: Commands restricted to users with roles above bot's highest role
+  - **Full Per-System Control**: Admins decide exactly which protections respect whitelist
+
 - **November 29, 2025**: Discord Invite Detection + Full Admin Customization
   - **Discord Invite Detection**: Auto-detects `discord.gg/` and `discordapp.com/invite/` links
     - Automatically deletes invite messages
@@ -27,7 +36,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **src/services/**: Automod, Language Guardian, Translation, Logger utilities
 - **data/**: Blacklist words and user strikes storage
 
-## Commands (46 Total)
+## Commands (49 Total)
 
 ### Moderation (7)
 - `/kick`, `/ban`, `/mute`, `/warn`, `/unwarn`, `/unban`, `/unmute`
@@ -48,24 +57,43 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 ### Utilities (5)
 - `/purge`, `/say`, `/lock`, `/unlock`, `/set-prefix`
 
-### Protection & Configuration (7)
+### Protection & Configuration (8)
 - `/setup-anti-nuke`, `/setup-anti-raid`
 - `/enable-anti-spam`, `/disable-anti-spam`, `/setup-anti-spam` *(with buttons)*
 - `/set-auto-role`, `/remove-auto-role`
 - `/setup-language-guardian` *(with buttons)*
+- `/server-config` *(NEW - role hierarchy check, 4 toggle buttons)*
+- `/whitelist add`, `/whitelist remove`, `/whitelist list`
 
 ## All Admin-Customizable Settings (Per-Guild)
+
+### Whitelist Bypass Configuration (NEW!)
+- **Anti-Spam Bypass**: ✅ Enable or ❌ Disable whitelist bypass
+- **Language Guardian Bypass**: ✅ Enable or ❌ Disable whitelist bypass
+- **Anti-Nuke Bypass**: ✅ Enable or ❌ Disable whitelist bypass
+- **Anti-Raid Bypass**: ✅ Enable or ❌ Disable whitelist bypass
+- **Access**: Only users with roles ABOVE bot's highest role
+- **Method**: `/server-config` command with 4 toggle buttons
+- Example: Allow admin whitelist bypass for anti-spam, but enforce anti-nuke on everyone
+
+### Whitelist Management
+- `/whitelist add` - Add role or member
+- `/whitelist remove` - Remove role or member
+- `/whitelist list` - View all whitelisted (with buttons to remove)
+- Access: Administrator permission required
 
 ### Anti-Spam
 - Max messages: 2-10
 - Time window: 5-60 seconds
 - Mute duration: 1-60 minutes
 - Buttons: View Settings, Disable
+- Respects whitelist bypass setting from `/server-config`
 
 ### Language Guardian
 - Strike limit: 1-10 strikes
 - Timeout duration: 1-60 minutes
 - Buttons: View Settings, Disable
+- Respects whitelist bypass setting from `/server-config`
 
 ### Auto-Role
 - Any server role can be auto-assigned on join
@@ -78,9 +106,13 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 ### Anti-Nuke/Raid
 - Configurable thresholds
 - Separate setup commands
+- Respects whitelist bypass settings
 
 ## Features
+✅ **Per-System Whitelist Configuration** - Enable/disable bypass per protection system (NEW!)
+✅ **Role Hierarchy Protection** - Only super-admin roles can configure advanced settings
 ✅ **100% Admin Customizable** - All protection settings via slash commands
+✅ **Whitelist System** - Role & member exemption with granular per-system control
 ✅ **Discord Invite Detection** - Auto-deletes discord.gg/ and discordapp.com/invite/ links
 ✅ **Anti-Spam** - Customizable message tracking with auto-mute
 ✅ **Auto-Role** - Automatic role assignment on member join

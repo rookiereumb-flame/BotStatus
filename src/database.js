@@ -439,6 +439,14 @@ try {
       user_id TEXT NOT NULL,
       UNIQUE(guild_id, user_id)
     );
+    
+    CREATE TABLE IF NOT EXISTS whitelist_bypass_config (
+      guild_id TEXT PRIMARY KEY,
+      bypass_anti_spam INTEGER DEFAULT 0,
+      bypass_language_guardian INTEGER DEFAULT 0,
+      bypass_anti_nuke INTEGER DEFAULT 0,
+      bypass_anti_raid INTEGER DEFAULT 0
+    );
   `);
 }
 
@@ -501,15 +509,43 @@ const getWhitelistMembers = (guildId) => {
   return stmt.all(guildId).map(row => row.user_id);
 };
 
-const isUserWhitelisted = (guildId, userId, member) => {
+const isUserWhitelisted = (guildId, userId, member, system = null) => {
   const whitelistMembers = getWhitelistMembers(guildId);
-  if (whitelistMembers.includes(userId)) return true;
+  const isWhitelisted = whitelistMembers.includes(userId);
   
-  const whitelistRoles = getWhitelistRoles(guildId);
-  if (member && member.roles) {
-    return member.roles.cache.some(role => whitelistRoles.includes(role.id));
+  if (!isWhitelisted && member && member.roles) {
+    const whitelistRoles = getWhitelistRoles(guildId);
+    if (!member.roles.cache.some(role => whitelistRoles.includes(role.id))) {
+      return false;
+    }
+  } else if (!isWhitelisted) {
+    return false;
   }
-  return false;
+  
+  // If user is whitelisted, check if system allows bypass
+  if (system) {
+    const stmt = db.prepare('SELECT * FROM whitelist_bypass_config WHERE guild_id = ?');
+    const config = stmt.get(guildId) || {};
+    const bypassKey = `bypass_${system}`;
+    return config[bypassKey] === 1;
+  }
+  
+  return true;
+};
+
+const setWhitelistBypassConfig = (guildId, config) => {
+  const stmt = db.prepare(`
+    INSERT INTO whitelist_bypass_config (guild_id, bypass_anti_spam, bypass_language_guardian, bypass_anti_nuke, bypass_anti_raid)
+    VALUES (?, ?, ?, ?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET bypass_anti_spam = ?, bypass_language_guardian = ?, bypass_anti_nuke = ?, bypass_anti_raid = ?
+  `);
+  stmt.run(guildId, config.bypassAntiSpam || 0, config.bypassLanguageGuardian || 0, config.bypassAntiNuke || 0, config.bypassAntiRaid || 0,
+           config.bypassAntiSpam || 0, config.bypassLanguageGuardian || 0, config.bypassAntiNuke || 0, config.bypassAntiRaid || 0);
+};
+
+const getWhitelistBypassConfig = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM whitelist_bypass_config WHERE guild_id = ?');
+  return stmt.get(guildId) || { bypassAntiSpam: 0, bypassLanguageGuardian: 0, bypassAntiNuke: 0, bypassAntiRaid: 0 };
 };
 
 module.exports = {
@@ -558,5 +594,7 @@ module.exports = {
   addWhitelistMember,
   removeWhitelistMember,
   getWhitelistMembers,
-  isUserWhitelisted
+  isUserWhitelisted,
+  setWhitelistBypassConfig,
+  getWhitelistBypassConfig
 };
