@@ -724,8 +724,8 @@ client.on('messageCreate', async message => {
     // Get custom prefix for this guild
     const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
 
-    // Bot mention handler
-    if (message.mentions.has(client.user.id)) {
+    // Bot mention handler - ONLY reply if bot is directly mentioned (not a reply to another message)
+    if (message.mentions.has(client.user.id) && !message.reference) {
       try {
         await message.reply(`Hello ${message.author}, ***nice to meet you I am Daddy USSR*** pls use \` /help \` to get started!!`);
       } catch (e) {
@@ -1889,16 +1889,46 @@ Click buttons below to toggle each system's whitelist bypass.
           return interaction.reply({ content: '❌ Could not create suspend role.', ephemeral: true });
         }
         
+        // Get or create suspend channel
+        let suspendChannel = guild.channels.cache.find(c => c.name === 'suspended' && c.type === ChannelType.GuildText);
+        if (!suspendChannel) {
+          suspendChannel = await guild.channels.create({
+            name: 'suspended',
+            type: ChannelType.GuildText,
+            reason: 'Channel for suspended users',
+            permissionOverwrites: [
+              {
+                id: guild.id,
+                deny: ['ViewChannel']
+              },
+              {
+                id: suspendRole.id,
+                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+              }
+            ]
+          }).catch(() => null);
+        }
+        
         // Store previous roles
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
         suspendUser(guild.id, user.id, suspendRole.id, previousRoles, reason);
         
-        // Remove all roles and add suspend role
-        await targetMember.roles.set([suspendRole.id], 'User suspended').catch(() => {});
+        // Remove ALL roles and add suspend role only
+        await targetMember.roles.set([suspendRole.id], `User suspended - ${reason}`).catch((err) => {
+          console.error('Error setting roles for suspend:', err);
+        });
         
         const embed = sapphireEmbed('⛔ User Suspended', 
-          `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\nAll roles have been removed. Use \`/unsuspend\` to restore.`
+          `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\n✅ All roles removed\n✅ Suspend role assigned\n✅ Can only access #suspended channel\n\nUse \`/unsuspend\` to restore.`
         );
+        
+        // Notify in suspend channel
+        if (suspendChannel) {
+          const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', 
+            `${targetMember} has been suspended.\n**Reason:** ${reason}`
+          );
+          suspendChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
+        }
         
         await interaction.reply({ embeds: [embed] });
         break;
