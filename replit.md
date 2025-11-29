@@ -4,11 +4,12 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke and anti-raid), an intelligent automod system with translation support, and a new Language Guardian system that detects bad words from all languages with auto-translation.
 
 ## Recent Changes
-- **November 29, 2025**: Per-server custom prefix + Language Guardian
+- **November 29, 2025**: Per-server custom prefix + Language Guardian + Smart Mention Handler
   - Added `/set-prefix` command for per-server custom prefixes (one special char from #$_-+/*:!?~=\ + optional letters)
   - Examples: `Y?`, `$mod`, `#k`, `n-`, `admin+`
   - Prefix settings saved per guild in database
   - Falls back to default `!` if no custom prefix set
+  - Smart mention handler: Bot replies when mentioned with welcome message
   - Language Guardian system: multilingual bad word detection with automatic translation
   - Detects blacklisted words from any language (translates to English automatically)
   - Strike system: 3 strikes = automatic timeout

@@ -454,6 +454,11 @@ client.on('messageCreate', async message => {
   // Get custom prefix for this guild
   const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
 
+  // Bot mention handler
+  if (message.mentions.has(client.user.id)) {
+    return message.reply(`Hello ${message.author}, nice to meet you I am Daddy USSR pls use /help to get started!!`);
+  }
+
   // Language Guardian - Automatic bad word detection
   if (!message.content.startsWith(customPrefix)) {
     try {
