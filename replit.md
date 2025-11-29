@@ -4,7 +4,21 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
-- **November 29, 2025**: Wick-Style Suspend System (NEW!)
+- **November 29, 2025**: Prefix Commands Enhanced + Admin-Only Suspend (LATEST!)
+  - **Multi-Word Prefix Commands**: All commands now work with spaces instead of hyphens
+    - `=set prefix` works the same as `=set-prefix`
+    - `=add role` works the same as `=add-role`
+    - Works for ALL hyphenated commands!
+  - **Suspend Commands - Admin Only**: Only users with roles ABOVE bot can use
+    - `=suspend @user reason` (or `/suspend`)
+    - `=unsuspend @user` (or `/unsuspend`)
+    - `=suspended-list` (or `/suspended-list`)
+    - Short aliases: `=sus`, `=unsus`, `=susl`
+  - **Automod Fixes**: Prefix commands fixed to only check non-command messages
+  - **Crash Prevention**: Added auto-reconnect + error handlers for 24/7 stability
+  - **Prefix Commands**: Fixed blacklist commands to use per-guild database
+
+- **November 29, 2025**: Wick-Style Suspend System
   - **`/suspend` Command** - Suspend users by removing all roles
     - Removes all roles and assigns "⛔ Suspended" role
     - Stores previous roles for restoration

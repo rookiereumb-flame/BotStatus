@@ -823,11 +823,26 @@ client.on('messageCreate', async message => {
       'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
       'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
       'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
-      'ea': 'enable-automod', 'da': 'disable-automod', 'elg': 'enable-language-guardian', 'dlg': 'disable-language-guardian'
+      'ea': 'enable-automod', 'da': 'disable-automod', 'elg': 'enable-language-guardian', 'dlg': 'disable-language-guardian',
+      'sus': 'suspend', 'unsus': 'unsuspend', 'susl': 'suspended-list'
     };
     
     // Resolve alias to full command
     if (aliases[cmd]) cmd = aliases[cmd];
+    
+    // Handle multi-word commands (e.g., "set prefix" -> "set-prefix", "add role" -> "add-role")
+    if (args.length > 0) {
+      const multiWordCmd = cmd + '-' + args[0];
+      const knownCommands = [
+        'kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'purge', 'say', 'blacklist', 'purgebad',
+        'change-role-name', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 
+        'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list'
+      ];
+      if (knownCommands.includes(multiWordCmd)) {
+        cmd = multiWordCmd;
+        args.shift(); // Remove the second word from args
+      }
+    }
     
     switch(cmd) {
       case 'kick': {
@@ -1066,6 +1081,56 @@ client.on('messageCreate', async message => {
         const channel = message.channel;
         await channel.permissionOverwrites.edit(message.guild.id, { SendMessages: null });
         message.reply(`🔓 Channel unlocked!`);
+        break;
+      }
+      
+      case 'suspend': {
+        if (!isUserAboveBot(message.member, message.guild)) {
+          return message.reply('❌ Your role must be above the bot\'s highest role to use this command.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to suspend.');
+        const reason = args.join(' ') || 'No reason provided';
+        const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
+        if (!targetMember) return message.reply('❌ User not found.');
+        let suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
+        if (!suspendRole) {
+          suspendRole = await message.guild.roles.create({
+            name: '⛔ Suspended',
+            color: '#FF0000'
+          }).catch(() => null);
+        }
+        if (!suspendRole) return message.reply('❌ Could not create suspend role.');
+        const previousRoles = targetMember.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
+        suspendUser(message.guild.id, user.id, suspendRole.id, previousRoles, reason);
+        for (const role of targetMember.roles.cache.values()) {
+          if (role.id !== message.guild.id) await targetMember.roles.remove(role).catch(() => {});
+        }
+        await targetMember.roles.add(suspendRole).catch(() => {});
+        message.reply(`✅ ${user.tag} suspended. Reason: ${reason}`);
+        break;
+      }
+      
+      case 'unsuspend': {
+        if (!isUserAboveBot(message.member, message.guild)) {
+          return message.reply('❌ Your role must be above the bot\'s highest role to use this command.');
+        }
+        const user = message.mentions.users.first();
+        if (!user) return message.reply('❌ Please mention a user to unsuspend.');
+        if (!isUserSuspended(message.guild.id, user.id)) return message.reply('❌ This user is not suspended.');
+        const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
+        if (!targetMember) return message.reply('❌ User not found.');
+        const previousRoles = unsuspendUser(message.guild.id, user.id);
+        await targetMember.roles.set(previousRoles).catch(() => {});
+        message.reply(`✅ ${user.tag} restored.`);
+        break;
+      }
+      
+      case 'suspended-list': {
+        const suspended = getSuspendedUsers(message.guild.id);
+        if (suspended.length === 0) return message.reply('✅ No suspended users.');
+        const list = suspended.map(s => `👤 <@${s.user_id}> - ${s.suspend_reason}`).join('\n');
+        message.reply(`⛔ **Suspended Users:**\n${list}`);
         break;
       }
       
