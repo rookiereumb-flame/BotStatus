@@ -5,7 +5,8 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 
 ## Recent Changes
 - **November 29, 2025**: Per-server custom prefix + Language Guardian
-  - Added `/set-prefix` command for per-server custom prefixes (2-3 characters, must include one of #$_-+/*:!?~=\)
+  - Added `/set-prefix` command for per-server custom prefixes (one special char from #$_-+/*:!?~=\ + optional letters)
+  - Examples: `Y?`, `$mod`, `#k`, `n-`, `admin+`
   - Prefix settings saved per guild in database
   - Falls back to default `!` if no custom prefix set
   - Language Guardian system: multilingual bad word detection with automatic translation
@@ -77,7 +78,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/say` - Make bot send a message
 - `/lock` - Lock channel (prevent messages)
 - `/unlock` - Unlock channel (allow messages)
-- `/set-prefix` - Set custom server prefix (2-3 chars, must include #$_-+/*:!?~=\)
+- `/set-prefix` - Set custom server prefix (one special char #$_-+/*:!?~=\ + optional letters)
 
 ### Protection (2 commands)
 - `/setup-anti-nuke` - Enable anti-nuke with default settings
@@ -99,6 +100,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - Web server runs on port 5000 for Replit compatibility
 - Embeds styled with Sapphire bot theme (blurple #5865F2)
 - SQLite database for persistent storage
+- Custom prefix validation: exactly ONE special char (from #$_-+/*:!?~=\) + optional letters/numbers
 
 ## Database Schema Features
 - **Cases**: Full case management system with Sapphire-style features

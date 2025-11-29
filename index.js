@@ -438,6 +438,7 @@ client.once('ready', async () => {
     console.log('  /say');
     console.log('  /lock');
     console.log('  /unlock');
+    console.log('  /set-prefix');
     console.log('\n🛡️  PROTECTION:');
     console.log('  /setup-anti-nuke');
     console.log('  /setup-anti-raid');
@@ -1050,6 +1051,29 @@ client.on('interactionCreate', async interaction => {
         const embed = sapphireEmbed('🗑️ Messages Purged', `Deleted ${amount} messages.`);
         await interaction.reply({ embeds: [embed], ephemeral: true });
         break;
+      }
+
+      case 'set-prefix': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const prefix = options.getString('prefix');
+        const validChars = '#$_-+/*:!?~=\\';
+        const specialCharCount = prefix.split('').filter(c => validChars.includes(c)).length;
+        
+        if (specialCharCount !== 1) {
+          return interaction.reply({ 
+            content: `❌ Prefix must contain exactly ONE special character from: ${validChars}`, 
+            ephemeral: true 
+          });
+        }
+        
+        setCustomPrefix(interaction.guildId, prefix);
+        const embed = sapphireEmbed('✅ Custom Prefix Set', `Server prefix changed to \`${prefix}\`\n\nExample: \`${prefix}unmute @user reason\``);
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       case 'help': {
