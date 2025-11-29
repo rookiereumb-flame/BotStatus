@@ -4,17 +4,17 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
-- **November 29, 2025**: Wick-Style Quarantine/Suspend System (NEW!)
-  - **`/quarantine` Command** - Suspend users by removing all roles
-    - Removes all roles and assigns "⛔ Quarantined" role
+- **November 29, 2025**: Wick-Style Suspend System (NEW!)
+  - **`/suspend` Command** - Suspend users by removing all roles
+    - Removes all roles and assigns "⛔ Suspended" role
     - Stores previous roles for restoration
     - Only for roles ABOVE bot's highest role
     - Optional reason/comment
-  - **`/unquarantine` Command** - Instantly restore suspended users
+  - **`/unsuspend` Command** - Instantly restore suspended users
     - Restores all previous roles
     - Only for roles ABOVE bot
-  - **`/quarantine-list` Command** - View all suspended users with reasons and time
-  - **Database Tracking**: Stores quarantine history and previous roles per user
+  - **`/suspended-list` Command** - View all suspended users with reasons and time
+  - **Database Tracking**: Stores suspension history and previous roles per user
 
 - **November 29, 2025**: Server Report & Selective Undo
   - **`/server-report` Command** - Fast attack recovery tool
@@ -66,9 +66,9 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 
 ### Moderation (10)
 - `/kick`, `/ban`, `/mute`, `/warn`, `/unwarn`, `/unban`, `/unmute`
-- `/quarantine` *(NEW - suspend user, only roles above bot)*
-- `/unquarantine` *(NEW - restore quarantined user)*
-- `/quarantine-list` *(NEW - view all suspended users)*
+- `/suspend` *(NEW - suspend user, only roles above bot)*
+- `/unsuspend` *(NEW - restore suspended user)*
+- `/suspended-list` *(NEW - view all suspended users)*
 
 ### Role Management (4)
 - `/add-role`, `/remove-role`, `/nick`, `/change-role-name`
@@ -139,7 +139,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - Respects whitelist bypass settings
 
 ## Features
-✅ **Wick Quarantine System** - Suspend users with instant restore capability (NEW!)
+✅ **Wick Suspend System** - Suspend users with instant restore capability (NEW!)
 ✅ **Server Report & Undo** - Time-range audit logs with selective undo for fast attack recovery
 ✅ **Per-System Whitelist Configuration** - Enable/disable bypass per protection system
 ✅ **Role Hierarchy Protection** - Only super-admin roles can configure advanced settings
@@ -176,8 +176,8 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **Role Hierarchy Protection**: Only roles ABOVE bot can use advanced admin commands
   - `/server-config` (per-system whitelist bypass)
   - `/server-report` (audit logs + selective undo)
-  - `/quarantine` (suspend users)
-  - `/unquarantine` (restore users)
+  - `/suspend` (suspend users instantly)
+  - `/unsuspend` (restore suspended users)
 
 ## Deployment
 For true 24/7 uptime, deploy using Replit's Reserved VM option. Currently running on workflow.

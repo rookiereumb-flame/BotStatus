@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, quarantineUser, unquarantineUser, getQuarantinedUsers, isUserQuarantined } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -570,26 +570,26 @@ const commands = [
     description: 'Advanced server configuration (admin only)'
   },
   {
-    name: 'quarantine',
-    description: 'Quarantine a user (suspend - removes all roles, only for roles above bot)',
+    name: 'suspend',
+    description: 'Suspend a user (removes all roles, only for roles above bot)',
     options: [
       {
         name: 'user',
-        description: 'User to quarantine',
+        description: 'User to suspend',
         type: 6,
         required: true
       },
       {
         name: 'reason',
-        description: 'Reason for quarantine',
+        description: 'Reason for suspension',
         type: 3,
         required: false
       }
     ]
   },
   {
-    name: 'unquarantine',
-    description: 'Restore a quarantined user (only for roles above bot)',
+    name: 'unsuspend',
+    description: 'Restore a suspended user (only for roles above bot)',
     options: [
       {
         name: 'user',
@@ -600,8 +600,8 @@ const commands = [
     ]
   },
   {
-    name: 'quarantine-list',
-    description: 'View all quarantined users'
+    name: 'suspended-list',
+    description: 'View all suspended users'
   },
   {
     name: 'server-report',
@@ -1861,7 +1861,7 @@ Click buttons below to toggle each system's whitelist bypass.
         break;
       }
 
-      case 'quarantine': {
+      case 'suspend': {
         // Only allow users with roles above the bot
         if (!isUserAboveBot(member, guild)) {
           return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
@@ -1875,36 +1875,36 @@ Click buttons below to toggle each system's whitelist bypass.
           return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
         }
         
-        // Get or create quarantine role
-        let quarantineRole = guild.roles.cache.find(r => r.name === '⛔ Quarantined');
-        if (!quarantineRole) {
-          quarantineRole = await guild.roles.create({
-            name: '⛔ Quarantined',
+        // Get or create suspend role
+        let suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
+        if (!suspendRole) {
+          suspendRole = await guild.roles.create({
+            name: '⛔ Suspended',
             color: '#FF0000',
-            reason: 'Quarantine role for suspended users'
+            reason: 'Suspend role for suspended users'
           }).catch(() => null);
         }
         
-        if (!quarantineRole) {
-          return interaction.reply({ content: '❌ Could not create quarantine role.', ephemeral: true });
+        if (!suspendRole) {
+          return interaction.reply({ content: '❌ Could not create suspend role.', ephemeral: true });
         }
         
         // Store previous roles
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
-        quarantineUser(guild.id, user.id, quarantineRole.id, previousRoles, reason);
+        suspendUser(guild.id, user.id, suspendRole.id, previousRoles, reason);
         
-        // Remove all roles and add quarantine role
-        await targetMember.roles.set([quarantineRole.id], 'User quarantined').catch(() => {});
+        // Remove all roles and add suspend role
+        await targetMember.roles.set([suspendRole.id], 'User suspended').catch(() => {});
         
-        const embed = sapphireEmbed('⛔ User Quarantined', 
-          `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\nAll roles have been removed. Use \`/unquarantine\` to restore.`
+        const embed = sapphireEmbed('⛔ User Suspended', 
+          `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\nAll roles have been removed. Use \`/unsuspend\` to restore.`
         );
         
         await interaction.reply({ embeds: [embed] });
         break;
       }
 
-      case 'unquarantine': {
+      case 'unsuspend': {
         // Only allow users with roles above the bot
         if (!isUserAboveBot(member, guild)) {
           return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
@@ -1912,8 +1912,8 @@ Click buttons below to toggle each system's whitelist bypass.
         
         const user = options.getUser('user');
         
-        if (!isUserQuarantined(guild.id, user.id)) {
-          return interaction.reply({ content: '❌ This user is not quarantined.', ephemeral: true });
+        if (!isUserSuspended(guild.id, user.id)) {
+          return interaction.reply({ content: '❌ This user is not suspended.', ephemeral: true });
         }
         
         const targetMember = await guild.members.fetch(user.id).catch(() => null);
@@ -1922,8 +1922,8 @@ Click buttons below to toggle each system's whitelist bypass.
         }
         
         // Restore previous roles
-        const previousRoles = unquarantineUser(guild.id, user.id);
-        await targetMember.roles.set(previousRoles, 'User unquarantined').catch(() => {});
+        const previousRoles = unsuspendUser(guild.id, user.id);
+        await targetMember.roles.set(previousRoles, 'User unsuspended').catch(() => {});
         
         const embed = sapphireEmbed('✅ User Restored', 
           `**User:** ${user.tag}\n**Status:** Restored\n\nPrevious roles have been restored.`
@@ -1933,19 +1933,19 @@ Click buttons below to toggle each system's whitelist bypass.
         break;
       }
 
-      case 'quarantine-list': {
-        const quarantined = getQuarantinedUsers(guild.id);
+      case 'suspended-list': {
+        const suspended = getSuspendedUsers(guild.id);
         
-        if (quarantined.length === 0) {
-          return interaction.reply({ content: '✅ No quarantined users.', ephemeral: true });
+        if (suspended.length === 0) {
+          return interaction.reply({ content: '✅ No suspended users.', ephemeral: true });
         }
         
-        const list = quarantined.map(q => {
-          const date = new Date(q.quarantine_timestamp).toLocaleString();
-          return `👤 <@${q.user_id}> - **${q.quarantine_reason}** <t:${Math.floor(q.quarantine_timestamp / 1000)}:R>`;
+        const list = suspended.map(s => {
+          const date = new Date(s.suspend_timestamp).toLocaleString();
+          return `👤 <@${s.user_id}> - **${s.suspend_reason}** <t:${Math.floor(s.suspend_timestamp / 1000)}:R>`;
         }).join('\n');
         
-        const embed = sapphireEmbed('⛔ Quarantined Users', list);
+        const embed = sapphireEmbed('⛔ Suspended Users', list);
         await interaction.reply({ embeds: [embed], ephemeral: true });
         break;
       }

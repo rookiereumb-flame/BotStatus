@@ -585,49 +585,49 @@ const getAuditLogsByTimeRange = (guildId, fromTime, toTime) => {
   return stmt.all(guildId, fromTime, toTime);
 };
 
-// Quarantine/Suspend system
+// Suspend/Suspension system
 try {
-  db.prepare('SELECT * FROM quarantined_users LIMIT 1').get();
+  db.prepare('SELECT * FROM suspended_users LIMIT 1').get();
 } catch (e) {
   db.exec(`
-    CREATE TABLE IF NOT EXISTS quarantined_users (
+    CREATE TABLE IF NOT EXISTS suspended_users (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       guild_id TEXT NOT NULL,
       user_id TEXT NOT NULL,
-      quarantine_role_id TEXT,
+      suspend_role_id TEXT,
       previous_roles TEXT,
-      quarantine_timestamp INTEGER NOT NULL,
-      quarantine_reason TEXT,
+      suspend_timestamp INTEGER NOT NULL,
+      suspend_reason TEXT,
       UNIQUE(guild_id, user_id)
     );
   `);
 }
 
-const quarantineUser = (guildId, userId, quarantineRoleId, previousRoles, reason) => {
+const suspendUser = (guildId, userId, suspendRoleId, previousRoles, reason) => {
   const stmt = db.prepare(`
-    INSERT OR REPLACE INTO quarantined_users (guild_id, user_id, quarantine_role_id, previous_roles, quarantine_timestamp, quarantine_reason)
+    INSERT OR REPLACE INTO suspended_users (guild_id, user_id, suspend_role_id, previous_roles, suspend_timestamp, suspend_reason)
     VALUES (?, ?, ?, ?, ?, ?)
   `);
-  stmt.run(guildId, userId, quarantineRoleId, JSON.stringify(previousRoles || []), Date.now(), reason || '');
+  stmt.run(guildId, userId, suspendRoleId, JSON.stringify(previousRoles || []), Date.now(), reason || '');
 };
 
-const unquarantineUser = (guildId, userId) => {
-  const stmt = db.prepare('SELECT previous_roles FROM quarantined_users WHERE guild_id = ? AND user_id = ?');
+const unsuspendUser = (guildId, userId) => {
+  const stmt = db.prepare('SELECT previous_roles FROM suspended_users WHERE guild_id = ? AND user_id = ?');
   const record = stmt.get(guildId, userId);
   
-  const deleteStmt = db.prepare('DELETE FROM quarantined_users WHERE guild_id = ? AND user_id = ?');
+  const deleteStmt = db.prepare('DELETE FROM suspended_users WHERE guild_id = ? AND user_id = ?');
   deleteStmt.run(guildId, userId);
   
   return record ? JSON.parse(record.previous_roles || '[]') : [];
 };
 
-const getQuarantinedUsers = (guildId) => {
-  const stmt = db.prepare('SELECT * FROM quarantined_users WHERE guild_id = ?');
+const getSuspendedUsers = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM suspended_users WHERE guild_id = ?');
   return stmt.all(guildId);
 };
 
-const isUserQuarantined = (guildId, userId) => {
-  const stmt = db.prepare('SELECT id FROM quarantined_users WHERE guild_id = ? AND user_id = ?');
+const isUserSuspended = (guildId, userId) => {
+  const stmt = db.prepare('SELECT id FROM suspended_users WHERE guild_id = ? AND user_id = ?');
   return stmt.get(guildId, userId) !== undefined;
 };
 
@@ -682,8 +682,8 @@ module.exports = {
   getWhitelistBypassConfig,
   addAuditLog,
   getAuditLogsByTimeRange,
-  quarantineUser,
-  unquarantineUser,
-  getQuarantinedUsers,
-  isUserQuarantined
+  suspendUser,
+  unsuspendUser,
+  getSuspendedUsers,
+  isUserSuspended
 };
