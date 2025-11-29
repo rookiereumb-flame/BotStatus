@@ -1093,20 +1093,48 @@ client.on('messageCreate', async message => {
         const reason = args.join(' ') || 'No reason provided';
         const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
         if (!targetMember) return message.reply('❌ User not found.');
+        
         let suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
         if (!suspendRole) {
           suspendRole = await message.guild.roles.create({
             name: '⛔ Suspended',
-            color: '#FF0000'
+            color: '#FF0000',
+            reason: 'Suspend role for suspended users'
           }).catch(() => null);
         }
         if (!suspendRole) return message.reply('❌ Could not create suspend role.');
+        
+        let suspendChannel = message.guild.channels.cache.find(c => c.name === 'suspended' && c.type === ChannelType.GuildText);
+        if (!suspendChannel) {
+          suspendChannel = await message.guild.channels.create({
+            name: 'suspended',
+            type: ChannelType.GuildText,
+            reason: 'Channel for suspended users',
+            permissionOverwrites: [
+              {
+                id: message.guild.id,
+                deny: ['ViewChannel']
+              },
+              {
+                id: suspendRole.id,
+                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
+              }
+            ]
+          }).catch(() => null);
+        }
+        
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
         suspendUser(message.guild.id, user.id, suspendRole.id, previousRoles, reason);
         for (const role of targetMember.roles.cache.values()) {
           if (role.id !== message.guild.id) await targetMember.roles.remove(role).catch(() => {});
         }
         await targetMember.roles.add(suspendRole).catch(() => {});
+        
+        if (suspendChannel) {
+          const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}`);
+          suspendChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
+        }
+        
         message.reply(`✅ ${user.tag} suspended. Reason: ${reason}`);
         break;
       }
