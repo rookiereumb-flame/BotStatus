@@ -421,6 +421,27 @@ try {
   `);
 }
 
+// Add whitelist tables
+try {
+  db.prepare('SELECT * FROM whitelist_roles LIMIT 1').get();
+} catch (e) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS whitelist_roles (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      role_id TEXT NOT NULL,
+      UNIQUE(guild_id, role_id)
+    );
+    
+    CREATE TABLE IF NOT EXISTS whitelist_members (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      UNIQUE(guild_id, user_id)
+    );
+  `);
+}
+
 const setLanguageGuardianConfig = (guildId, config) => {
   const stmt = db.prepare(`
     INSERT INTO language_guardian_config (guild_id, strike_limit, timeout_seconds) 
@@ -434,6 +455,61 @@ const getLanguageGuardianConfig = (guildId) => {
   const stmt = db.prepare('SELECT * FROM language_guardian_config WHERE guild_id = ?');
   const result = stmt.get(guildId);
   return result || { strikeLimit: 3, timeoutSeconds: 600 };
+};
+
+const addWhitelistRole = (guildId, roleId) => {
+  try {
+    const stmt = db.prepare('INSERT INTO whitelist_roles (guild_id, role_id) VALUES (?, ?)');
+    stmt.run(guildId, roleId);
+    return true;
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT') return false;
+    throw error;
+  }
+};
+
+const removeWhitelistRole = (guildId, roleId) => {
+  const stmt = db.prepare('DELETE FROM whitelist_roles WHERE guild_id = ? AND role_id = ?');
+  const info = stmt.run(guildId, roleId);
+  return info.changes > 0;
+};
+
+const getWhitelistRoles = (guildId) => {
+  const stmt = db.prepare('SELECT role_id FROM whitelist_roles WHERE guild_id = ?');
+  return stmt.all(guildId).map(row => row.role_id);
+};
+
+const addWhitelistMember = (guildId, userId) => {
+  try {
+    const stmt = db.prepare('INSERT INTO whitelist_members (guild_id, user_id) VALUES (?, ?)');
+    stmt.run(guildId, userId);
+    return true;
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT') return false;
+    throw error;
+  }
+};
+
+const removeWhitelistMember = (guildId, userId) => {
+  const stmt = db.prepare('DELETE FROM whitelist_members WHERE guild_id = ? AND user_id = ?');
+  const info = stmt.run(guildId, userId);
+  return info.changes > 0;
+};
+
+const getWhitelistMembers = (guildId) => {
+  const stmt = db.prepare('SELECT user_id FROM whitelist_members WHERE guild_id = ?');
+  return stmt.all(guildId).map(row => row.user_id);
+};
+
+const isUserWhitelisted = (guildId, userId, member) => {
+  const whitelistMembers = getWhitelistMembers(guildId);
+  if (whitelistMembers.includes(userId)) return true;
+  
+  const whitelistRoles = getWhitelistRoles(guildId);
+  if (member && member.roles) {
+    return member.roles.cache.some(role => whitelistRoles.includes(role.id));
+  }
+  return false;
 };
 
 module.exports = {
@@ -475,5 +551,12 @@ module.exports = {
   removeAutoRole,
   getAutoRole,
   setLanguageGuardianConfig,
-  getLanguageGuardianConfig
+  getLanguageGuardianConfig,
+  addWhitelistRole,
+  removeWhitelistRole,
+  getWhitelistRoles,
+  addWhitelistMember,
+  removeWhitelistMember,
+  getWhitelistMembers,
+  isUserWhitelisted
 };

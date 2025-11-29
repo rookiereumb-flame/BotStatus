@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -504,6 +504,55 @@ const commands = [
   {
     name: 'remove-auto-role',
     description: 'Remove auto-role assignment'
+  },
+  {
+    name: 'whitelist',
+    description: 'Manage whitelist (roles/members exempt from moderation)',
+    options: [
+      {
+        name: 'add',
+        description: 'Add role or member to whitelist',
+        type: 1,
+        options: [
+          {
+            name: 'role',
+            description: 'Role to whitelist',
+            type: 8,
+            required: false
+          },
+          {
+            name: 'member',
+            description: 'Member to whitelist',
+            type: 6,
+            required: false
+          }
+        ]
+      },
+      {
+        name: 'remove',
+        description: 'Remove role or member from whitelist',
+        type: 1,
+        options: [
+          {
+            name: 'role',
+            description: 'Role to remove',
+            type: 8,
+            required: false
+          },
+          {
+            name: 'member',
+            description: 'Member to remove',
+            type: 6,
+            required: false
+          }
+        ]
+      },
+      {
+        name: 'list',
+        description: 'View all whitelisted roles and members',
+        type: 1
+      }
+    ]
   }
 ];
 
@@ -582,16 +631,18 @@ client.on('messageCreate', async message => {
     try {
       const spamConfig = getAntiSpamConfig(message.guild.id);
       if (spamConfig && spamConfig.enabled) {
-        trackSpamMessage(message.guild.id, message.author.id);
-        const recentMessages = getRecentMessages(message.guild.id, message.author.id, spamConfig.time_window);
-        
-        if (recentMessages.length > spamConfig.max_messages) {
-          await message.delete().catch(() => {});
-          const member = await message.guild.members.fetch(message.author.id);
-          if (member && member.moderatable) {
-            await member.timeout(spamConfig.mute_duration * 1000, 'Anti-spam');
-            message.channel.send(`⏱️ ${message.author} has been muted for spam.`)
-              .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (!isUserWhitelisted(message.guild.id, message.author.id, member)) {
+          trackSpamMessage(message.guild.id, message.author.id);
+          const recentMessages = getRecentMessages(message.guild.id, message.author.id, spamConfig.time_window);
+          
+          if (recentMessages.length > spamConfig.max_messages) {
+            await message.delete().catch(() => {});
+            if (member && member.moderatable) {
+              await member.timeout(spamConfig.mute_duration * 1000, 'Anti-spam');
+              message.channel.send(`⏱️ ${message.author} has been muted for spam.`)
+                .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+            }
           }
         }
       }
@@ -602,24 +653,26 @@ client.on('messageCreate', async message => {
       try {
         const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
         if (guildConfig && guildConfig.lgbl_enabled) {
-          const lgConfig = getLanguageGuardianConfig(message.guild.id);
-          const translated = await safeTranslate(message.content);
-          const bad = matchesBlacklist(translated);
+          const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+          if (!isUserWhitelisted(message.guild.id, message.author.id, member)) {
+            const lgConfig = getLanguageGuardianConfig(message.guild.id);
+            const translated = await safeTranslate(message.content);
+            const bad = matchesBlacklist(translated);
 
-          if (bad) {
-            await message.delete().catch(() => {});
-            const strikesNow = addStrike(message.guild.id, message.author.id);
+            if (bad) {
+              await message.delete().catch(() => {});
+              const strikesNow = addStrike(message.guild.id, message.author.id);
 
-            message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${lgConfig.strikeLimit})`)
-              .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
+              message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${lgConfig.strikeLimit})`)
+                .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
-            await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
+              await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
 
-            if (strikesNow >= lgConfig.strikeLimit) {
-              const member = await message.guild.members.fetch(message.author.id);
-              if (member.moderatable) {
-                await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
-                resetStrikesFor(message.guild.id, message.author.id);
+              if (strikesNow >= lgConfig.strikeLimit) {
+                if (member && member.moderatable) {
+                  await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
+                  resetStrikesFor(message.guild.id, message.author.id);
+                }
               }
             }
           }
@@ -1650,6 +1703,114 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      case 'whitelist': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        
+        const subcommand = options.getSubcommand();
+        
+        if (subcommand === 'add') {
+          const role = options.getRole('role');
+          const user = options.getUser('member');
+          
+          if (!role && !user) {
+            return interaction.reply({ content: '❌ Please provide either a role or member.', ephemeral: true });
+          }
+          
+          if (role) {
+            const added = addWhitelistRole(guild.id, role.id);
+            if (!added) {
+              return interaction.reply({ content: `❌ ${role.name} is already whitelisted.`, ephemeral: true });
+            }
+            const embed = sapphireEmbed('✅ Role Whitelisted', `**${role.name}** is now exempt from moderation.`);
+            const buttons = new ActionRowBuilder()
+              .addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`whitelist_view_${guild.id}`)
+                  .setLabel('View Whitelist')
+                  .setStyle(ButtonStyle.Secondary)
+                  .setEmoji('📋'),
+                new ButtonBuilder()
+                  .setCustomId(`whitelist_remove_role_${role.id}`)
+                  .setLabel('Remove Role')
+                  .setStyle(ButtonStyle.Danger)
+                  .setEmoji('❌')
+              );
+            await interaction.reply({ embeds: [embed], components: [buttons] });
+          } else if (user) {
+            const added = addWhitelistMember(guild.id, user.id);
+            if (!added) {
+              return interaction.reply({ content: `❌ ${user.tag} is already whitelisted.`, ephemeral: true });
+            }
+            const embed = sapphireEmbed('✅ Member Whitelisted', `**${user.tag}** is now exempt from moderation.`);
+            const buttons = new ActionRowBuilder()
+              .addComponents(
+                new ButtonBuilder()
+                  .setCustomId(`whitelist_view_${guild.id}`)
+                  .setLabel('View Whitelist')
+                  .setStyle(ButtonStyle.Secondary)
+                  .setEmoji('📋'),
+                new ButtonBuilder()
+                  .setCustomId(`whitelist_remove_member_${user.id}`)
+                  .setLabel('Remove Member')
+                  .setStyle(ButtonStyle.Danger)
+                  .setEmoji('❌')
+              );
+            await interaction.reply({ embeds: [embed], components: [buttons] });
+          }
+        } else if (subcommand === 'remove') {
+          const role = options.getRole('role');
+          const user = options.getUser('member');
+          
+          if (!role && !user) {
+            return interaction.reply({ content: '❌ Please provide either a role or member.', ephemeral: true });
+          }
+          
+          if (role) {
+            const removed = removeWhitelistRole(guild.id, role.id);
+            if (!removed) {
+              return interaction.reply({ content: `❌ ${role.name} is not whitelisted.`, ephemeral: true });
+            }
+            const embed = sapphireEmbed('✅ Role Removed', `**${role.name}** is no longer whitelisted.`);
+            await interaction.reply({ embeds: [embed] });
+          } else if (user) {
+            const removed = removeWhitelistMember(guild.id, user.id);
+            if (!removed) {
+              return interaction.reply({ content: `❌ ${user.tag} is not whitelisted.`, ephemeral: true });
+            }
+            const embed = sapphireEmbed('✅ Member Removed', `**${user.tag}** is no longer whitelisted.`);
+            await interaction.reply({ embeds: [embed] });
+          }
+        } else if (subcommand === 'list') {
+          const whitelistRoles = getWhitelistRoles(guild.id);
+          const whitelistMembers = getWhitelistMembers(guild.id);
+          
+          let rolesList = '';
+          let membersList = '';
+          
+          if (whitelistRoles.length === 0) {
+            rolesList = 'No whitelisted roles.';
+          } else {
+            rolesList = whitelistRoles.map(id => `<@&${id}>`).join('\n');
+          }
+          
+          if (whitelistMembers.length === 0) {
+            membersList = 'No whitelisted members.';
+          } else {
+            membersList = whitelistMembers.map(id => `<@${id}>`).join('\n');
+          }
+          
+          const embed = sapphireEmbed('📋 Whitelist', '');
+          embed.addFields(
+            { name: '👥 Roles', value: rolesList, inline: false },
+            { name: '👤 Members', value: membersList, inline: false }
+          );
+          await interaction.reply({ embeds: [embed] });
+        }
+        break;
+      }
+
       case 'setup-language-guardian': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
@@ -2088,6 +2249,39 @@ client.on('interactionCreate', async interaction => {
       }
       removeAutoRole(guildId);
       const embed = sapphireEmbed('✅ Auto-Role Removed', 'Auto-role assignment has been disabled.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Whitelist Buttons
+    if (customId.startsWith('whitelist_view_')) {
+      const guildId = customId.replace('whitelist_view_', '');
+      const whitelistRoles = getWhitelistRoles(guildId);
+      const whitelistMembers = getWhitelistMembers(guildId);
+      
+      let rolesList = whitelistRoles.length === 0 ? 'No roles' : whitelistRoles.map(id => `<@&${id}>`).join(', ');
+      let membersList = whitelistMembers.length === 0 ? 'No members' : whitelistMembers.map(id => `<@${id}>`).join(', ');
+      
+      const embed = sapphireEmbed('📋 Current Whitelist', `**Roles:** ${rolesList}\n**Members:** ${membersList}`);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (customId.startsWith('whitelist_remove_role_')) {
+      const roleId = customId.replace('whitelist_remove_role_', '');
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+      }
+      removeWhitelistRole(interaction.guild.id, roleId);
+      const embed = sapphireEmbed('✅ Role Removed', 'Role has been removed from whitelist.');
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (customId.startsWith('whitelist_remove_member_')) {
+      const userId = customId.replace('whitelist_remove_member_', '');
+      if (!interaction.member.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+      }
+      removeWhitelistMember(interaction.guild.id, userId);
+      const embed = sapphireEmbed('✅ Member Removed', 'Member has been removed from whitelist.');
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
   } catch (error) {
