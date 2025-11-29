@@ -727,7 +727,7 @@ client.on('messageCreate', async message => {
     // Bot mention handler
     if (message.mentions.has(client.user.id)) {
       try {
-        await message.reply(`Hello ${message.author}, nice to meet you I am Daddy USSR pls use /help to get started!!`);
+        await message.reply(`Hello ${message.author}, ***nice to meet you I am Daddy USSR*** pls use \` /help \` to get started!!`);
       } catch (e) {
         console.error('Error sending mention reply:', e);
       }
@@ -1448,42 +1448,42 @@ client.on('interactionCreate', async interaction => {
         embed.addFields(
           {
             name: '⚖️ Moderation Commands',
-            value: '`/kick` - Kick Member\n`/ban` - Ban Member\n`/mute` - Mute Member\n`/warn` - Warn Member\n`/unwarn` - Remove Warning\n`/unban` - Unban User\n`/unmute` - Unmute Member',
+            value: '` /kick ` - Kick Member\n` /ban ` - Ban Member\n` /mute ` - Mute Member\n` /warn ` - Warn Member\n` /unwarn ` - Remove Warning\n` /unban ` - Unban User\n` /unmute ` - Unmute Member\n` /suspend ` - Suspend User\n` /unsuspend ` - Restore User',
             inline: false
           },
           {
             name: '👥 Role Management',
-            value: '`/add-role` - Add Role\n`/remove-role` - Remove Role\n`/nick` - Change Nickname\n`/change-role-name` - Rename Role',
+            value: '` /add-role ` - Add Role\n` /remove-role ` - Remove Role\n` /nick ` - Change Nickname\n` /change-role-name ` - Rename Role',
             inline: false
           },
           {
             name: '📊 Information',
-            value: '`/warns` - Show Warnings\n`/server-timeout-status` - Show Timed Out Users\n`/case` - View Case\n`/cases` - View Cases\n`/help` - Show Help',
+            value: '` /warns ` - Show Warnings\n` /server-timeout-status ` - Show Timed Out Users\n` /case ` - View Case\n` /cases ` - View Cases\n` /user-info ` - View User Details\n` /server-info ` - View Server Details\n` /ban-list ` - View All Banned Members\n` /help ` - Show Help',
             inline: false
           },
           {
             name: '🛡️ Automod Configuration',
-            value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod',
+            value: '` /set-channel ` - Set Log Channel\n` /enable-automod ` - Enable Automod\n` /disable-automod ` - Disable Automod\n` /enable-language-guardian ` - Enable Language Guardian\n` /disable-language-guardian ` - Disable Language Guardian',
             inline: false
           },
           {
-            name: '🛡️ Language Guardian',
-            value: '`/enable-language-guardian` - Enable Language Guardian\n`/disable-language-guardian` - Disable Language Guardian\n`/lgbl add` - Add Word to LGBL\n`/lgbl remove` - Remove Word from LGBL\n`/lgbl list` - List LGBL Words',
-            inline: false
-          },
-          {
-            name: '📊 Information',
-            value: '`/user-info` - View user details\n`/server-info` - View server details\n`/ban-list` - View all banned members',
+            name: '🛡️ Language Guardian (LGBL)',
+            value: '` /lgbl add ` - Add Word to Blacklist\n` /lgbl remove ` - Remove Word from Blacklist\n` /lgbl list ` - List Blacklisted Words',
             inline: false
           },
           {
             name: '🔧 Utilities',
-            value: '`/purge` - Delete Messages\n`/say` - Make Bot Say Something\n`/lock` - Lock Channel\n`/unlock` - Unlock Channel\n`/set-prefix` - Set Custom Prefix',
+            value: '` /purge ` - Delete Messages\n` /say ` - Make Bot Say Something\n` /lock ` - Lock Channel\n` /unlock ` - Unlock Channel\n` /set-prefix ` - Set Custom Prefix',
             inline: false
           },
           {
-            name: '🛡️ Protection',
-            value: '`/setup-anti-nuke` - Setup Anti-Nuke\n`/setup-anti-raid` - Setup Anti-Raid',
+            name: '🛡️ Protection & Configuration',
+            value: '` /setup-anti-nuke ` - Setup Anti-Nuke\n` /setup-anti-raid ` - Setup Anti-Raid\n` /setup-anti-spam ` - Configure Anti-Spam\n` /enable-anti-spam ` - Enable Anti-Spam\n` /disable-anti-spam ` - Disable Anti-Spam\n` /set-auto-role ` - Set Auto Role on Join\n` /remove-auto-role ` - Remove Auto Role\n` /server-config ` - Admin Config Panel\n` /server-report ` - View Audit Logs & Undo\n` /suspended-list ` - View Suspended Users',
+            inline: false
+          },
+          {
+            name: '⚙️ Whitelist Management',
+            value: '` /whitelist add ` - Add Role/Member to Whitelist\n` /whitelist remove ` - Remove from Whitelist\n` /whitelist list ` - View Whitelist',
             inline: false
           }
         );
