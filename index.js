@@ -578,18 +578,6 @@ client.on('messageCreate', async message => {
       return;
     }
 
-    // Discord Invite Detection
-    try {
-      const invitePattern = /(discord\.gg\/|discordapp\.com\/invite\/)[\w-]{2,}/gi;
-      if (invitePattern.test(message.content)) {
-        await message.delete().catch(() => {});
-        addWarning(message.guild.id, message.author.id, client.user.id, 'Posted Discord invite link', 1);
-        message.channel.send(`⚠️ ${message.author}, Discord invite links are not allowed here.`)
-          .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
-        return;
-      }
-    } catch (e) {}
-
     // Anti-Spam Detection
     try {
       const spamConfig = getAntiSpamConfig(message.guild.id);
