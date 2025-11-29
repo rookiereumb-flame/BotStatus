@@ -1,7 +1,7 @@
-const { getGuildConfig, addWarning } = require('../database');
+const { getGuildConfig, getBlacklistWords, addWarning } = require('../database');
 const { translateToEnglish } = require('./translation');
 const { logModeration } = require('../utils/logger');
-const { getWords, safeTranslate } = require('./language-guardian');
+const { safeTranslate } = require('./language-guardian');
 
 async function checkMessage(message) {
   if (message.author.bot) return;
@@ -12,8 +12,8 @@ async function checkMessage(message) {
     return;
   }
 
-  // Get the file-based blacklist (global, not per-guild)
-  const blacklistWords = getWords();
+  // Get per-guild blacklist from database
+  const blacklistWords = getBlacklistWords(message.guild.id);
   if (blacklistWords.length === 0) {
     return;
   }
