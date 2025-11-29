@@ -1913,10 +1913,23 @@ Click buttons below to toggle each system's whitelist bypass.
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
         suspendUser(guild.id, user.id, suspendRole.id, previousRoles, reason);
         
-        // Remove ALL roles and add suspend role only
-        await targetMember.roles.set([suspendRole.id], `User suspended - ${reason}`).catch((err) => {
-          console.error('Error setting roles for suspend:', err);
-        });
+        // Remove ALL roles first
+        try {
+          for (const role of targetMember.roles.cache.values()) {
+            if (role.id !== guild.id && role.id !== suspendRole.id) {
+              await targetMember.roles.remove(role, `User suspended - ${reason}`).catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.error('Error removing roles:', err);
+        }
+        
+        // Then add suspend role only
+        try {
+          await targetMember.roles.add(suspendRole, `User suspended - ${reason}`);
+        } catch (err) {
+          console.error('Error adding suspend role:', err);
+        }
         
         const embed = sapphireEmbed('⛔ User Suspended', 
           `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\n✅ All roles removed\n✅ Suspend role assigned\n✅ Can only access #suspended channel\n\nUse \`/unsuspend\` to restore.`
