@@ -755,8 +755,15 @@ client.on('messageCreate', async message => {
       }
     } catch (e) {}
 
-    // Language Guardian - Automatic bad word detection (only if LGBL enabled)
-    if (!message.content.startsWith(customPrefix)) {
+    // Check if message starts with prefix for command processing
+    const isCommand = message.content.startsWith(customPrefix);
+    
+    if (!isCommand) {
+      // Only run automod & LGBL on non-command messages
+      
+      // Anti-Spam Detection (already done above)
+      
+      // Language Guardian - Automatic bad word detection (only if LGBL enabled)
       try {
         const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
         if (guildConfig && guildConfig.lgbl_enabled) {
@@ -802,12 +809,11 @@ client.on('messageCreate', async message => {
       } catch (e) {
         console.error('Language Guardian error:', e);
       }
+      
+      // Automod check
+      await checkMessage(message);
       return;
     }
-
-    await checkMessage(message);
-    
-    if (!message.content.startsWith(customPrefix)) return;
     
     const args = message.content.slice(customPrefix.length).trim().split(/ +/);
     let cmd = args.shift().toLowerCase();
