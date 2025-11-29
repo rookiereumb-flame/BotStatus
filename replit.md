@@ -1,34 +1,29 @@
 # Discord Bot Host
 
 ## Overview
-This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, and Language Guardian system that detects bad words from all languages with auto-translation. **All settings are fully customizable by admins via commands.**
+This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
-- **November 29, 2025**: Full Admin Customization
-  - **Anti-Spam Customization**: `/setup-anti-spam` now lets admins set:
-    - Max messages (2-10)
-    - Time window (5-60 seconds)
-    - **Mute duration (1-60 minutes)** - NEW!
-  - **Language Guardian Customization**: NEW `/setup-language-guardian` command
-    - Strike limit (1-10 strikes)
-    - Timeout duration (1-60 minutes)
-  - All settings stored per-guild in database
-
+- **November 29, 2025**: Discord Invite Detection + Full Admin Customization
+  - **Discord Invite Detection**: Auto-detects `discord.gg/` and `discordapp.com/invite/` links
+    - Automatically deletes invite messages
+    - Issues warning to user
+    - Works on all prefixes (default & custom)
+  - **Full Admin Customization**: All systems now customizable per-guild via commands
+    - Anti-Spam: `/setup-anti-spam` (max messages, time window, mute duration)
+    - Language Guardian: `/setup-language-guardian` (strike limit, timeout)
+    - Auto-Role: `/set-auto-role` (choose any role)
+  - **Sapphire Buttons**: All config commands have view/disable buttons
+  
 - **November 29, 2025**: Anti-Spam + Auto-Role + Enhanced Protection
-  - Anti-Spam System with real-time tracking
-  - Auto-Role System with automatic assignment on join
-  - Enhanced info commands with Wick-style display
+  - Anti-Spam System with real-time tracking and customizable mute duration
+  - Auto-Role System with automatic assignment on member join
+  - Enhanced info commands with Wick-style display and interactive buttons
 
 ## Project Architecture
-- **index.js**: 46+ slash commands + event handlers + prefix commands
+- **index.js**: 46+ slash commands + event handlers + prefix commands (2100+ lines)
 - **server.js**: Express web server for Replit uptime
-- **src/database.js**: SQLite database with:
-  - Guild configuration (automod, lgbl, anti-spam, auto-role, language guardian)
-  - Anti-spam tracking and customizable settings
-  - Auto-role settings per guild
-  - **Language Guardian config (strike limit, timeout)** - NEW!
-  - Warning system, Case management, Anti-nuke/raid settings
-  - Join logs, moderation logs
+- **src/database.js**: SQLite database with guild configurations per setting
 - **src/services/**: Automod, Language Guardian, Translation, Logger utilities
 - **data/**: Blacklist words and user strikes storage
 
@@ -42,6 +37,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 
 ### Information (8)
 - `/warns`, `/server-timeout-status`, `/case`, `/cases`, `/user-info`, `/server-info`, `/ban-list`, `/help`
+- All include Sapphire buttons for quick access to details
 
 ### Automod (5)
 - `/set-channel`, `/enable-automod`, `/disable-automod`, `/enable-language-guardian`, `/disable-language-guardian`, `/lgbl`
@@ -54,59 +50,71 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 
 ### Protection & Configuration (7)
 - `/setup-anti-nuke`, `/setup-anti-raid`
-- `/enable-anti-spam`, `/disable-anti-spam`, `/setup-anti-spam` *(customizable)*
+- `/enable-anti-spam`, `/disable-anti-spam`, `/setup-anti-spam` *(with buttons)*
 - `/set-auto-role`, `/remove-auto-role`
-- **`/setup-language-guardian`** *(customizable)* - NEW!
+- `/setup-language-guardian` *(with buttons)*
 
-## All Admin-Customizable Settings
+## All Admin-Customizable Settings (Per-Guild)
 
-### Anti-Spam (per-guild)
-- **Max messages**: 2-10 messages
-- **Time window**: 5-60 seconds
-- **Mute duration**: 1-60 minutes
+### Anti-Spam
+- Max messages: 2-10
+- Time window: 5-60 seconds
+- Mute duration: 1-60 minutes
+- Buttons: View Settings, Disable
 
-### Language Guardian (per-guild)
-- **Strike limit**: 1-10 strikes
-- **Timeout duration**: 1-60 minutes
+### Language Guardian
+- Strike limit: 1-10 strikes
+- Timeout duration: 1-60 minutes
+- Buttons: View Settings, Disable
 
-### Auto-Role (per-guild)
-- **Role to assign**: Any server role
+### Auto-Role
+- Any server role can be auto-assigned on join
+- Buttons: View Setting, Remove
 
-### Custom Prefix (per-guild)
-- **Prefix**: 1-3 characters (letters, numbers, special chars)
-- **Cooldown**: 30 days between changes
+### Custom Prefix
+- 1-3 characters (letters, numbers, special chars)
+- 30-day cooldown between changes
 
-### Anti-Nuke/Raid (per-guild)
-- **Configurable thresholds**: Detection limits
-- **Action type**: Ban or kick
+### Anti-Nuke/Raid
+- Configurable thresholds
+- Separate setup commands
 
 ## Features
-✅ **100% Admin Customizable** - All protection settings via commands
-✅ **Anti-Spam** - Customizable message tracking and mute duration
+✅ **100% Admin Customizable** - All protection settings via slash commands
+✅ **Discord Invite Detection** - Auto-deletes discord.gg/ and discordapp.com/invite/ links
+✅ **Anti-Spam** - Customizable message tracking with auto-mute
 ✅ **Auto-Role** - Automatic role assignment on member join
 ✅ **Case Management** - Sapphire-style with interactive buttons
-✅ **Language Guardian** - Multilingual with customizable strikes/timeout
+✅ **Language Guardian** - Multilingual bad word detection with customizable strikes/timeout
 ✅ **LGBL** - Blacklist management in any language
-✅ **Custom Prefixes** - Per-server with cooldown
-✅ **Comprehensive Info** - Wick-style user/server/ban details
+✅ **Custom Prefixes** - Per-server with 30-day cooldown
+✅ **Comprehensive Info** - Wick-style user/server/ban details with buttons
 ✅ **Full Moderation** - Complete moderation suite
-✅ **Advanced Protection** - Anti-nuke, anti-raid, anti-spam
+✅ **Advanced Protection** - Anti-nuke, anti-raid, anti-spam with real-time tracking
+✅ **Sapphire UI** - Professional buttons on all config & info commands
 
 ## Configuration
 - Bot token: DISCORD_BOT_TOKEN (environment variable)
 - All settings customizable via slash commands (per-guild)
 - Admin-only configuration commands
 - SQLite database for persistent storage
+- All embeds use Sapphire theme (blurple #5865F2)
 
 ## User Preferences
-- Sapphire bot-style embeds (blurple #5865F2)
+- Sapphire bot-style embeds and buttons
 - Hyphenated command names
 - Interactive case management
-- Pagination (10 per page)
-- Real-time spam detection
-- Automatic role assignment
+- Pagination on all list commands (10 per page)
+- Real-time protection (spam, invites, bad words)
+- Automatic role assignment on join
 - 24/7 uptime on Replit
-- Full admin customization capability
+- Full admin customization via commands and buttons
 
 ## Deployment
-For 24/7 uptime, use Replit's Reserved VM deployment option. Currently running on workflow.
+For true 24/7 uptime, deploy using Replit's Reserved VM option. Currently running on workflow.
+
+## Future Enhancement Opportunities (Autonomous Mode)
+- AI content detection (toxicity, harassment, NSFW, threats, spam)
+- Image NSFW detection
+- Pattern detection (rapid messages, repeated text, ghost pings)
+- Customizable alert notifications (DM or channel)
