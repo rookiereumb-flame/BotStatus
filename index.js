@@ -14,6 +14,17 @@ const MOD_LOG_CHANNEL = process.env.MOD_LOG_CHANNEL || '';
 const STRIKE_LIMIT = parseInt(process.env.STRIKE_LIMIT || '3', 10);
 const TIMEOUT_SECONDS = parseInt(process.env.TIMEOUT_SECONDS || '600', 10);
 
+// Helper function to check if user's highest role is above bot's highest role
+const isUserAboveBot = (member, guild) => {
+  const botMember = guild.members.cache.get(client.user.id);
+  if (!botMember) return false;
+  
+  const userHighestRole = member.roles.highest;
+  const botHighestRole = botMember.roles.highest;
+  
+  return userHighestRole.position > botHighestRole.position;
+};
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -553,6 +564,10 @@ const commands = [
         type: 1
       }
     ]
+  },
+  {
+    name: 'server-config',
+    description: 'Advanced server configuration (admin only)'
   }
 ];
 
@@ -1700,6 +1715,19 @@ client.on('interactionCreate', async interaction => {
         removeAutoRole(guild.id);
         const embed = sapphireEmbed('👥 Auto-Role Removed', '✅ Auto-role assignment has been disabled.');
         await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'server-config': {
+        // Only allow users with roles above the bot
+        if (!isUserAboveBot(member, guild)) {
+          return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
+        }
+        
+        const embed = sapphireEmbed('⚙️ Server Configuration', 
+          `✅ Advanced server configuration panel.\n\n**Your Role Level:** ${member.roles.highest.name}\n**Bot Role Level:** ${guild.members.cache.get(client.user.id).roles.highest.name}\n\nYou have access to all advanced settings.`
+        );
+        await interaction.reply({ embeds: [embed], ephemeral: true });
         break;
       }
 
