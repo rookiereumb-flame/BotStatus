@@ -1107,12 +1107,21 @@ client.on('interactionCreate', async interaction => {
         }
         
         const prefix = options.getString('prefix');
-        const validChars = '#$_-+/*:!?~=\\';
-        const specialCharCount = prefix.split('').filter(c => validChars.includes(c)).length;
+        const validSpecialChars = '#$_-+/*:!?~=\\';
         
-        if (specialCharCount !== 1) {
+        // Check length (max 3 characters)
+        if (prefix.length === 0 || prefix.length > 3) {
           return interaction.reply({ 
-            content: `❌ Prefix must contain exactly ONE special character from: ${validChars}`, 
+            content: `❌ Prefix must be 1-3 characters long.`, 
+            ephemeral: true 
+          });
+        }
+        
+        // Check if all characters are valid (special chars or alphanumeric)
+        const validAllChars = validSpecialChars + 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        if (!prefix.split('').every(c => validAllChars.includes(c))) {
+          return interaction.reply({ 
+            content: `❌ Prefix can only contain letters, numbers, or special characters: ${validSpecialChars}`, 
             ephemeral: true 
           });
         }
