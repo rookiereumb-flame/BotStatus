@@ -1444,8 +1444,28 @@ client.on('interactionCreate', async interaction => {
           { name: '👥 Roles', value: member && member.roles.cache.size > 1 ? member.roles.cache.sort((a, b) => b.position - a.position).map(r => r.name).slice(0, 10).join(', ') + (member.roles.cache.size > 10 ? `\n... and ${member.roles.cache.size - 10} more` : '') : 'No roles', inline: false },
           { name: '⚠️ Statistics', value: `**Warnings:** ${getWarnings(guild.id, user.id).length}\n**Cases:** ${getCases(guild.id, user.id).length}`, inline: false }
         );
+        embed.setThumbnail(user.displayAvatarURL({ size: 256 }));
         
-        await interaction.reply({ embeds: [embed] });
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`userinfo_warns_${user.id}`)
+              .setLabel('Warnings')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⚠️'),
+            new ButtonBuilder()
+              .setCustomId(`userinfo_cases_${user.id}`)
+              .setLabel('Cases')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('📋'),
+            new ButtonBuilder()
+              .setURL(user.displayAvatarURL({ size: 1024 }))
+              .setLabel('Avatar')
+              .setStyle(ButtonStyle.Link)
+              .setEmoji('🖼️')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1465,8 +1485,28 @@ client.on('interactionCreate', async interaction => {
           { name: '🔒 Security', value: `**Verification Level:** ${guild.verificationLevel}\n**2FA:** ${guild.mfaLevel === 1 ? 'Enabled' : 'Disabled'}`, inline: false },
           { name: '✨ Features', value: guild.features.length > 0 ? guild.features.join(', ').toLowerCase() : 'None', inline: false }
         );
+        embed.setThumbnail(guild.iconURL({ size: 256 }));
         
-        await interaction.reply({ embeds: [embed] });
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`serverinfo_banlist_${guild.id}`)
+              .setLabel('Ban List')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('🔨'),
+            new ButtonBuilder()
+              .setCustomId(`serverinfo_timeouts_${guild.id}`)
+              .setLabel('Timeouts')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⏱️'),
+            new ButtonBuilder()
+              .setURL(guild.iconURL({ size: 1024 }))
+              .setLabel('Server Icon')
+              .setStyle(ButtonStyle.Link)
+              .setEmoji('🖼️')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
@@ -1899,6 +1939,55 @@ client.on('guildMemberAdd', async member => {
     }
   } catch (error) {
     console.error('Error assigning auto-role:', error);
+  }
+});
+
+// Handle Info Command Buttons
+client.on('interactionCreate', async interaction => {
+  if (!interaction.isButton()) return;
+  
+  try {
+    const customId = interaction.customId;
+    
+    if (customId.startsWith('userinfo_warns_')) {
+      const userId = customId.replace('userinfo_warns_', '');
+      const warnings = getWarnings(interaction.guild.id, userId);
+      const user = await client.users.fetch(userId);
+      
+      let list = '';
+      if (warnings.length === 0) {
+        list = 'No warnings.';
+      } else {
+        warnings.forEach((w, idx) => {
+          list += `${idx + 1}. **${w.reason}** <t:${Math.floor(w.timestamp / 1000)}:R>\n`;
+        });
+      }
+      
+      const embed = sapphireEmbed(`⚠️ ${user.tag}'s Warnings`, list);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    if (customId.startsWith('userinfo_cases_')) {
+      const userId = customId.replace('userinfo_cases_', '');
+      const cases = getCases(interaction.guild.id, userId);
+      const user = await client.users.fetch(userId);
+      
+      let list = '';
+      if (cases.length === 0) {
+        list = 'No cases.';
+      } else {
+        cases.slice(0, 10).forEach((c) => {
+          const emoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'warn': '⚠️', 'unmute': '🔊', 'unban': '✅' }[c.action] || '⚙️';
+          list += `${emoji} Case #${c.case_id}: **${c.action.toUpperCase()}** - ${c.reason}\n`;
+        });
+        if (cases.length > 10) list += `\n... and ${cases.length - 10} more cases`;
+      }
+      
+      const embed = sapphireEmbed(`📋 ${user.tag}'s Cases`, list);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+  } catch (error) {
+    console.error('Button interaction error:', error);
   }
 });
 
