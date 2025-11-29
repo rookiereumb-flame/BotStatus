@@ -11,10 +11,11 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
   - Prefix settings saved per guild in database with timestamp tracking
   - Falls back to default `!` if no custom prefix set
   - Smart mention handler: Bot replies when mentioned with welcome message
-  - Language Guardian system: multilingual bad word detection with automatic translation
+  - **Language Guardian Blacklist Library (LGBL)**: Unified multilingual bad word detection with automatic translation
+  - Admins can add/remove custom words via `/lgbl add/remove/list`
   - Detects blacklisted words from any language (translates to English automatically)
   - Strike system: 3 strikes = automatic timeout
-  - New prefix commands: `!blacklist add/remove/list` and `!purgebad`
+  - Prefix commands: `!blacklist add/remove/list` and `!purgebad`
   - Real-time message filtering on all non-command messages
   - Customizable strike limit and timeout duration via environment variables
   - Optional moderation log channel for all violations
@@ -43,7 +44,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **data/strikes.json**: User strike tracking per guild
 - **package.json**: Dependencies (discord.js, express, better-sqlite3, axios, dotenv, translate-google, fs-extra)
 
-## Commands (31 Total)
+## Commands (29 Total)
 
 ### Moderation (7 commands)
 - `/kick` - Kick member with reason (creates case)
@@ -67,13 +68,11 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - `/cases [user]` - View case history with pagination (10 per page)
 - `/help` - Show all commands
 
-### Automod (6 commands)
+### Automod (4 commands)
 - `/set-channel` - Set moderation log channel
 - `/enable-automod` - Enable translation-based content filter
 - `/disable-automod` - Disable automod
-- `/add-blacklist-word` - Add word to blacklist
-- `/remove-blacklist-word` - Remove word from blacklist
-- `/blacklist-library` - View all blacklisted words
+- `/lgbl` - Language Guardian Blacklist Library (add/remove/list words - works in any language!)
 
 ### Utilities (5)
 - `/purge` - Delete messages (1-100)
@@ -88,7 +87,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 
 ### Prefix Commands & Aliases
 - All commands support short aliases: `k` (kick), `b` (ban), `m` (mute), `um` (unmute), `ub` (unban), `w` (warn), `uw` (unwarn), `p` (purge), `l` (lock), `ul` (unlock), `sp` (set-prefix)
-- `!blacklist <add/remove/list> [word]` - Manage blacklist (Admin only)
+- `!blacklist <add/remove/list> [word]` - Manage LGBL (Admin only)
 - `!purgebad [limit]` - Delete bad messages from channel (Admin only)
 - Smart error handling: Typos show suggestions (private to user)
 

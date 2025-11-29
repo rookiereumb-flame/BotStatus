@@ -228,32 +228,41 @@ const commands = [
     description: 'Disable automod system'
   },
   {
-    name: 'add-blacklist-word',
-    description: 'Add word to blacklist',
+    name: 'lgbl',
+    description: 'Language Guardian Blacklist Library - manage blacklisted words',
     options: [
       {
-        name: 'word',
-        description: 'The word to blacklist',
-        type: 3,
-        required: true
-      }
-    ]
-  },
-  {
-    name: 'remove-blacklist-word',
-    description: 'Remove word from blacklist',
-    options: [
+        name: 'add',
+        description: 'Add a word to the blacklist (works in any language)',
+        type: 1,
+        options: [
+          {
+            name: 'word',
+            description: 'The word to blacklist',
+            type: 3,
+            required: true
+          }
+        ]
+      },
       {
-        name: 'word',
-        description: 'The word to remove from blacklist',
-        type: 3,
-        required: true
+        name: 'remove',
+        description: 'Remove a word from the blacklist',
+        type: 1,
+        options: [
+          {
+            name: 'word',
+            description: 'The word to remove from blacklist',
+            type: 3,
+            required: true
+          }
+        ]
+      },
+      {
+        name: 'list',
+        description: 'List all blacklisted words',
+        type: 1
       }
     ]
-  },
-  {
-    name: 'blacklist-library',
-    description: 'List all blacklisted words'
   },
   {
     name: 'nick',
@@ -430,9 +439,7 @@ client.once('ready', async () => {
     console.log('  /set-channel');
     console.log('  /enable-automod');
     console.log('  /disable-automod');
-    console.log('  /add-blacklist-word');
-    console.log('  /remove-blacklist-word');
-    console.log('  /blacklist-library');
+    console.log('  /lgbl');
     console.log('\n🔧 UTILITIES:');
     console.log('  /purge');
     console.log('  /say');
@@ -504,7 +511,7 @@ client.on('messageCreate', async message => {
       'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
       'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
       'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
-      'ea': 'enable-automod', 'da': 'disable-automod', 'abw': 'add-blacklist-word', 'rbw': 'remove-blacklist-word'
+      'ea': 'enable-automod', 'da': 'disable-automod'
     };
     
     // Resolve alias to full command
@@ -740,7 +747,7 @@ client.on('messageCreate', async message => {
       
       default: {
         // Suggest correct command
-        const allCommands = ['kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'nick', 'change-role-name', 'say', 'purge', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 'add-blacklist-word', 'remove-blacklist-word', 'blacklist', 'purgebad'];
+        const allCommands = ['kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'nick', 'change-role-name', 'say', 'purge', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 'blacklist', 'purgebad'];
         
         // Find closest match
         const suggestions = allCommands.filter(c => c.startsWith(cmd.charAt(0))).slice(0, 3);
@@ -1024,54 +1031,44 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'add-blacklist-word': {
+      case 'lgbl': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
             content: '❌ You need the "Administrator" permission to use this command.', 
             ephemeral: true 
           });
         }
-        const word = options.getString('word');
-        if (addBlacklistWord(guild.id, word)) {
-          const embed = sapphireEmbed('✅ Word Added', `**${word}** has been added to the blacklist.`);
-          await interaction.reply({ embeds: [embed] });
-        } else {
-          await interaction.reply({ content: '❌ Word already in blacklist.', ephemeral: true });
-        }
-        break;
-      }
 
-      case 'remove-blacklist-word': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        const word = options.getString('word');
-        if (removeBlacklistWord(guild.id, word)) {
-          const embed = sapphireEmbed('✅ Word Removed', `**${word}** has been removed from the blacklist.`);
+        const subcommand = options.getSubcommand();
+        
+        if (subcommand === 'add') {
+          const word = options.getString('word');
+          if (addBlacklistWord(guild.id, word)) {
+            const embed = sapphireEmbed('✅ Added to LGBL', `**${word}** has been added to the Language Guardian Blacklist Library.\n\n*This word will be detected in any language!*`);
+            await interaction.reply({ embeds: [embed] });
+          } else {
+            await interaction.reply({ content: '❌ Word already in LGBL.', ephemeral: true });
+          }
+        } 
+        else if (subcommand === 'remove') {
+          const word = options.getString('word');
+          if (removeBlacklistWord(guild.id, word)) {
+            const embed = sapphireEmbed('✅ Removed from LGBL', `**${word}** has been removed from the Language Guardian Blacklist Library.`);
+            await interaction.reply({ embeds: [embed] });
+          } else {
+            await interaction.reply({ content: '❌ Word not found in LGBL.', ephemeral: true });
+          }
+        } 
+        else if (subcommand === 'list') {
+          const words = getBlacklistWords(guild.id);
+          if (words.length === 0) {
+            const embed = sapphireEmbed('📚 Language Guardian Blacklist Library', 'No blacklisted words yet.');
+            return await interaction.reply({ embeds: [embed] });
+          }
+          const wordList = words.slice(0, 50).join(', ') + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : '');
+          const embed = sapphireEmbed('📚 Language Guardian Blacklist Library', `**${words.length} words:** (works in any language!)\n\n${wordList}`);
           await interaction.reply({ embeds: [embed] });
-        } else {
-          await interaction.reply({ content: '❌ Word not found in blacklist.', ephemeral: true });
         }
-        break;
-      }
-
-      case 'blacklist-library': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        const words = getBlacklistWords(guild.id);
-        if (words.length === 0) {
-          const embed = sapphireEmbed('📚 Blacklist Library', 'No blacklisted words yet.');
-          return await interaction.reply({ embeds: [embed] });
-        }
-        const embed = sapphireEmbed('📚 Blacklist Library', `**${words.length} words:**\n${words.join(', ')}`);
-        await interaction.reply({ embeds: [embed] });
         break;
       }
 
@@ -1151,7 +1148,7 @@ client.on('interactionCreate', async interaction => {
           },
           {
             name: '🛡️ Automod Configuration',
-            value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod\n`/add-blacklist-word` - Add Blacklist Word\n`/remove-blacklist-word` - Remove Blacklist Word\n`/blacklist-library` - List Blacklist Words',
+            value: '`/set-channel` - Set Log Channel\n`/enable-automod` - Enable Automod\n`/disable-automod` - Disable Automod\n`/lgbl add` - Add Word to LGBL\n`/lgbl remove` - Remove Word from LGBL\n`/lgbl list` - List LGBL Words',
             inline: false
           },
           {
