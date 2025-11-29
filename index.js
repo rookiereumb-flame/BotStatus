@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -456,6 +456,36 @@ const commands = [
         required: false,
         min_value: 5,
         max_value: 60
+      },
+      {
+        name: 'mute_duration',
+        description: 'Mute duration in minutes',
+        type: 4,
+        required: false,
+        min_value: 1,
+        max_value: 60
+      }
+    ]
+  },
+  {
+    name: 'setup-language-guardian',
+    description: 'Configure Language Guardian settings',
+    options: [
+      {
+        name: 'strike_limit',
+        description: 'Number of strikes before timeout',
+        type: 4,
+        required: false,
+        min_value: 1,
+        max_value: 10
+      },
+      {
+        name: 'timeout_minutes',
+        description: 'Timeout duration in minutes',
+        type: 4,
+        required: false,
+        min_value: 1,
+        max_value: 60
       }
     ]
   },
@@ -572,6 +602,7 @@ client.on('messageCreate', async message => {
       try {
         const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
         if (guildConfig && guildConfig.lgbl_enabled) {
+          const lgConfig = getLanguageGuardianConfig(message.guild.id);
           const translated = await safeTranslate(message.content);
           const bad = matchesBlacklist(translated);
 
@@ -579,15 +610,15 @@ client.on('messageCreate', async message => {
             await message.delete().catch(() => {});
             const strikesNow = addStrike(message.guild.id, message.author.id);
 
-            message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${STRIKE_LIMIT})`)
+            message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${lgConfig.strikeLimit})`)
               .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
             await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${bad}`);
 
-            if (strikesNow >= STRIKE_LIMIT) {
+            if (strikesNow >= lgConfig.strikeLimit) {
               const member = await message.guild.members.fetch(message.author.id);
               if (member.moderatable) {
-                await member.timeout(TIMEOUT_SECONDS * 1000, "Blacklist strikes exceeded");
+                await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
                 resetStrikesFor(message.guild.id, message.author.id);
               }
             }
@@ -1513,16 +1544,17 @@ client.on('interactionCreate', async interaction => {
         }
         const maxMessages = options.getInteger('max_messages') || 5;
         const timeWindow = options.getInteger('time_window') || 10;
+        const muteDuration = (options.getInteger('mute_duration') || 5) * 60;
         
         setAntiSpamConfig(guild.id, {
           enabled: 1,
           maxMessages,
           timeWindow,
           action: 'mute',
-          muteDuration: 300
+          muteDuration
         });
         
-        const embed = sapphireEmbed('⚙️ Anti-Spam Configured', `✅ Anti-spam settings updated.\n**Max messages:** ${maxMessages}\n**Time window:** ${timeWindow}s\n**Action:** Mute for 5 minutes`);
+        const embed = sapphireEmbed('⚙️ Anti-Spam Configured', `✅ Anti-spam settings updated.\n**Max messages:** ${maxMessages}\n**Time window:** ${timeWindow}s\n**Mute duration:** ${muteDuration / 60} minutes`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -1544,6 +1576,23 @@ client.on('interactionCreate', async interaction => {
         }
         removeAutoRole(guild.id);
         const embed = sapphireEmbed('👥 Auto-Role Removed', '✅ Auto-role assignment has been disabled.');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'setup-language-guardian': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
+        }
+        const strikeLimit = options.getInteger('strike_limit') || DEFAULT_STRIKE_LIMIT;
+        const timeoutMinutes = options.getInteger('timeout_minutes') || Math.floor(DEFAULT_TIMEOUT_SECONDS / 60);
+        
+        setLanguageGuardianConfig(guild.id, {
+          strikeLimit,
+          timeoutSeconds: timeoutMinutes * 60
+        });
+        
+        const embed = sapphireEmbed('🛡️ Language Guardian Configured', `✅ Settings updated.\n**Strike limit:** ${strikeLimit} strikes\n**Timeout duration:** ${timeoutMinutes} minutes`);
         await interaction.reply({ embeds: [embed] });
         break;
       }

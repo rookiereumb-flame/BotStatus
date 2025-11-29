@@ -408,6 +408,34 @@ const getAutoRole = (guildId) => {
   return result?.role_id || null;
 };
 
+// Add language_guardian_config table if it doesn't exist
+try {
+  db.prepare('SELECT * FROM language_guardian_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS language_guardian_config (
+      guild_id TEXT PRIMARY KEY,
+      strike_limit INTEGER DEFAULT 3,
+      timeout_seconds INTEGER DEFAULT 600
+    );
+  `);
+}
+
+const setLanguageGuardianConfig = (guildId, config) => {
+  const stmt = db.prepare(`
+    INSERT INTO language_guardian_config (guild_id, strike_limit, timeout_seconds) 
+    VALUES (?, ?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET strike_limit = ?, timeout_seconds = ?
+  `);
+  stmt.run(guildId, config.strikeLimit, config.timeoutSeconds, config.strikeLimit, config.timeoutSeconds);
+};
+
+const getLanguageGuardianConfig = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM language_guardian_config WHERE guild_id = ?');
+  const result = stmt.get(guildId);
+  return result || { strikeLimit: 3, timeoutSeconds: 600 };
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -445,5 +473,7 @@ module.exports = {
   cleanupSpamTracking,
   setAutoRole,
   removeAutoRole,
-  getAutoRole
+  getAutoRole,
+  setLanguageGuardianConfig,
+  getLanguageGuardianConfig
 };

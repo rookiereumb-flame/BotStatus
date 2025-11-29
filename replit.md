@@ -1,108 +1,112 @@
 # Discord Bot Host
 
 ## Overview
-This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, and Language Guardian system that detects bad words from all languages with auto-translation.
+This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, and Language Guardian system that detects bad words from all languages with auto-translation. **All settings are fully customizable by admins via commands.**
 
 ## Recent Changes
+- **November 29, 2025**: Full Admin Customization
+  - **Anti-Spam Customization**: `/setup-anti-spam` now lets admins set:
+    - Max messages (2-10)
+    - Time window (5-60 seconds)
+    - **Mute duration (1-60 minutes)** - NEW!
+  - **Language Guardian Customization**: NEW `/setup-language-guardian` command
+    - Strike limit (1-10 strikes)
+    - Timeout duration (1-60 minutes)
+  - All settings stored per-guild in database
+
 - **November 29, 2025**: Anti-Spam + Auto-Role + Enhanced Protection
-  - **Anti-Spam System**: Real-time message spam detection
-    - `/enable-anti-spam` - Activate anti-spam (5 messages/10 seconds default)
-    - `/disable-anti-spam` - Deactivate anti-spam
-    - `/setup-anti-spam` - Configure thresholds and time windows
-    - Auto-mutes users who exceed message limit (5 min mute by default)
-    - Tracks messages in real-time database table
-  - **Auto-Role System**: Automatic role assignment on member join
-    - `/set-auto-role <role>` - Set the role to auto-assign
-    - `/remove-auto-role` - Remove auto-role assignment
-    - Automatically assigns role when new members join
-    - Integrates with guildMemberAdd event handler
-  - Enhanced info commands now display Wick-style comprehensive details:
-    - `/user-info` - Shows account age, join age, roles, warnings, cases
-    - `/server-info` - Shows members breakdown (humans/bots), channels, security, features
-    - `/ban-list` - Shows combined ban & kick history with pagination
-  
-- **November 29, 2025**: Per-server custom prefix + Language Guardian + Smart Mention Handler
-  - Added `/set-prefix` command for per-server custom prefixes (1-3 characters)
-  - 30-day cooldown on prefix changes
-  - Smart mention handler replies with welcome message
-  - Language Guardian & LGBL systems fully separated and documented
+  - Anti-Spam System with real-time tracking
+  - Auto-Role System with automatic assignment on join
+  - Enhanced info commands with Wick-style display
 
 ## Project Architecture
-- **index.js**: Main bot file with 45+ slash commands + event handlers + prefix commands
-- **server.js**: Express web server for keeping bot alive on Replit
+- **index.js**: 46+ slash commands + event handlers + prefix commands
+- **server.js**: Express web server for Replit uptime
 - **src/database.js**: SQLite database with:
-  - Guild configuration (automod, lgbl, anti-spam, auto-role)
-  - Anti-spam tracking and settings
+  - Guild configuration (automod, lgbl, anti-spam, auto-role, language guardian)
+  - Anti-spam tracking and customizable settings
   - Auto-role settings per guild
+  - **Language Guardian config (strike limit, timeout)** - NEW!
   - Warning system, Case management, Anti-nuke/raid settings
   - Join logs, moderation logs
-- **src/services/automod.js**: Translation-based content filtering
-- **src/services/language-guardian.js**: Multilingual bad word detection
-- **src/services/translation.js**: LibreTranslate API integration
-- **src/utils/logger.js**: Moderation action logging
-- **data/blacklist.json**: Customizable blacklist words
-- **data/strikes.json**: User strike tracking per guild
-- **package.json**: Dependencies (discord.js, express, better-sqlite3, etc.)
+- **src/services/**: Automod, Language Guardian, Translation, Logger utilities
+- **data/**: Blacklist words and user strikes storage
 
-## Commands (44 Total)
+## Commands (46 Total)
 
-### Moderation (7 commands)
+### Moderation (7)
 - `/kick`, `/ban`, `/mute`, `/warn`, `/unwarn`, `/unban`, `/unmute`
 
-### Role Management (4 commands)
+### Role Management (4)
 - `/add-role`, `/remove-role`, `/nick`, `/change-role-name`
 
-### Information (8 commands)
+### Information (8)
 - `/warns`, `/server-timeout-status`, `/case`, `/cases`, `/user-info`, `/server-info`, `/ban-list`, `/help`
 
-### Automod (5 commands)
+### Automod (5)
 - `/set-channel`, `/enable-automod`, `/disable-automod`, `/enable-language-guardian`, `/disable-language-guardian`, `/lgbl`
 
-### Language Guardian - LGBL (3 commands)
+### Language Guardian - LGBL (3)
 - `/lgbl add`, `/lgbl remove`, `/lgbl list`
 
-### Utilities (5 commands)
+### Utilities (5)
 - `/purge`, `/say`, `/lock`, `/unlock`, `/set-prefix`
 
-### Protection (5 commands)
-- `/setup-anti-nuke`, `/setup-anti-raid`, `/enable-anti-spam`, `/disable-anti-spam`, `/setup-anti-spam`
-
-### Auto-Role (2 commands)
+### Protection & Configuration (7)
+- `/setup-anti-nuke`, `/setup-anti-raid`
+- `/enable-anti-spam`, `/disable-anti-spam`, `/setup-anti-spam` *(customizable)*
 - `/set-auto-role`, `/remove-auto-role`
+- **`/setup-language-guardian`** *(customizable)* - NEW!
+
+## All Admin-Customizable Settings
+
+### Anti-Spam (per-guild)
+- **Max messages**: 2-10 messages
+- **Time window**: 5-60 seconds
+- **Mute duration**: 1-60 minutes
+
+### Language Guardian (per-guild)
+- **Strike limit**: 1-10 strikes
+- **Timeout duration**: 1-60 minutes
+
+### Auto-Role (per-guild)
+- **Role to assign**: Any server role
+
+### Custom Prefix (per-guild)
+- **Prefix**: 1-3 characters (letters, numbers, special chars)
+- **Cooldown**: 30 days between changes
+
+### Anti-Nuke/Raid (per-guild)
+- **Configurable thresholds**: Detection limits
+- **Action type**: Ban or kick
 
 ## Features
-✅ **Anti-Spam**: Tracks rapid messages, auto-mutes spammers
-✅ **Auto-Role**: Assigns roles to new members automatically
-✅ **Case Management**: Sapphire-style case system with interactive buttons
-✅ **Language Guardian**: Multilingual bad word detection with auto-translation
-✅ **LGBL**: Manage blacklist words in any language
-✅ **Custom Prefixes**: Per-server custom prefixes with 30-day cooldown
-✅ **Comprehensive Info Commands**: Wick-style detailed user/server/ban information
-✅ **Full Moderation Suite**: Kick, ban, mute, warn, case management
-✅ **Anti-Nuke & Anti-Raid**: Advanced protection systems
+✅ **100% Admin Customizable** - All protection settings via commands
+✅ **Anti-Spam** - Customizable message tracking and mute duration
+✅ **Auto-Role** - Automatic role assignment on member join
+✅ **Case Management** - Sapphire-style with interactive buttons
+✅ **Language Guardian** - Multilingual with customizable strikes/timeout
+✅ **LGBL** - Blacklist management in any language
+✅ **Custom Prefixes** - Per-server with cooldown
+✅ **Comprehensive Info** - Wick-style user/server/ban details
+✅ **Full Moderation** - Complete moderation suite
+✅ **Advanced Protection** - Anti-nuke, anti-raid, anti-spam
 
 ## Configuration
 - Bot token: DISCORD_BOT_TOKEN (environment variable)
-- Customizable via commands: Anti-spam thresholds, auto-role, custom prefix
-- Environment variables: STRIKE_LIMIT, TIMEOUT_SECONDS, MOD_LOG_CHANNEL
-
-## Database Schema
-- Cases (per-server auto-incrementing IDs)
-- Warnings (manual warnings only)
-- Anti-Spam (settings + real-time tracking)
-- Auto-Role (role assignment settings)
-- Anti-Nuke/Raid settings
-- User strikes tracking
-- Join and moderation logs
+- All settings customizable via slash commands (per-guild)
+- Admin-only configuration commands
+- SQLite database for persistent storage
 
 ## User Preferences
 - Sapphire bot-style embeds (blurple #5865F2)
 - Hyphenated command names
-- Interactive case management with buttons
-- Pagination on all list commands (10 per page)
-- Real-time spam detection and blocking
-- Automatic role assignment on member join
+- Interactive case management
+- Pagination (10 per page)
+- Real-time spam detection
+- Automatic role assignment
 - 24/7 uptime on Replit
+- Full admin customization capability
 
 ## Deployment
-For true 24/7 uptime, deploy using Replit's Reserved VM option. Currently running on workflow.
+For 24/7 uptime, use Replit's Reserved VM deployment option. Currently running on workflow.
