@@ -1338,53 +1338,39 @@ client.on('interactionCreate', async interaction => {
       case 'user-info': {
         const user = options.getUser('user');
         const member = await guild.members.fetch(user.id).catch(() => null);
+        const accountAge = Math.floor((Date.now() - user.createdTimestamp) / (1000 * 60 * 60 * 24));
+        const joinAge = member ? Math.floor((Date.now() - member.joinedTimestamp) / (1000 * 60 * 60 * 24)) : 0;
         
-        const embed = sapphireEmbed(`👤 User Info - ${user.tag}`,
-          `**Username:** ${user.username}\n**ID:** ${user.id}\n**Bot:** ${user.bot ? 'Yes' : 'No'}\n**Created:** <t:${Math.floor(user.createdTimestamp / 1000)}>\n${member ? `**Joined:** <t:${Math.floor(member.joinedTimestamp / 1000)}>\n**Roles:** ${member.roles.cache.size > 1 ? member.roles.cache.map(r => r.name).slice(0, 5).join(', ') : 'No roles'}` : ''}`
+        const embed = sapphireEmbed(`👤 ${user.tag}`, '');
+        embed.addFields(
+          { name: '📋 Account Info', value: `**Username:** ${user.username}\n**ID:** ${user.id}\n**Bot:** ${user.bot ? 'Yes ✓' : 'No'}`, inline: false },
+          { name: '📅 Dates', value: `**Created:** <t:${Math.floor(user.createdTimestamp / 1000)}:R> (${accountAge} days)\n${member ? `**Joined:** <t:${Math.floor(member.joinedTimestamp / 1000)}:R> (${joinAge} days)` : 'Not a member'}`, inline: false },
+          { name: '👥 Roles', value: member && member.roles.cache.size > 1 ? member.roles.cache.sort((a, b) => b.position - a.position).map(r => r.name).slice(0, 10).join(', ') + (member.roles.cache.size > 10 ? `\n... and ${member.roles.cache.size - 10} more` : '') : 'No roles', inline: false },
+          { name: '⚠️ Statistics', value: `**Warnings:** ${getWarnings(guild.id, user.id).length}\n**Cases:** ${getCases(guild.id, user.id).length}`, inline: false }
         );
         
-        const buttons = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId(`userinfo_prev_${user.id}`)
-              .setLabel('Previous')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('⬅️')
-              .setDisabled(true),
-            new ButtonBuilder()
-              .setCustomId(`userinfo_next_${user.id}`)
-              .setLabel('Next')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('➡️')
-              .setDisabled(true)
-          );
-        
-        await interaction.reply({ embeds: [embed], components: [buttons] });
+        await interaction.reply({ embeds: [embed] });
         break;
       }
 
       case 'server-info': {
-        const embed = sapphireEmbed(`🏰 Server Info - ${guild.name}`,
-          `**ID:** ${guild.id}\n**Owner:** ${(await guild.fetchOwner()).user.tag}\n**Members:** ${guild.memberCount}\n**Channels:** ${guild.channels.cache.size}\n**Roles:** ${guild.roles.cache.size}\n**Created:** <t:${Math.floor(guild.createdTimestamp / 1000)}>\n**Verification:** ${guild.verificationLevel}`
+        const owner = await guild.fetchOwner();
+        const textChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildText).size;
+        const voiceChannels = guild.channels.cache.filter(c => c.type === ChannelType.GuildVoice).size;
+        const members = await guild.members.fetch();
+        const botCount = members.filter(m => m.user.bot).size;
+        const humanCount = guild.memberCount - botCount;
+        
+        const embed = sapphireEmbed(`🏰 ${guild.name}`, '');
+        embed.addFields(
+          { name: '📋 Server Info', value: `**ID:** ${guild.id}\n**Owner:** ${owner.user.tag}\n**Created:** <t:${Math.floor(guild.createdTimestamp / 1000)}:R>`, inline: false },
+          { name: '👥 Members', value: `**Total:** ${guild.memberCount}\n**Humans:** ${humanCount}\n**Bots:** ${botCount}`, inline: false },
+          { name: '📢 Channels', value: `**Text:** ${textChannels}\n**Voice:** ${voiceChannels}\n**Total Roles:** ${guild.roles.cache.size}`, inline: false },
+          { name: '🔒 Security', value: `**Verification Level:** ${guild.verificationLevel}\n**2FA:** ${guild.mfaLevel === 1 ? 'Enabled' : 'Disabled'}`, inline: false },
+          { name: '✨ Features', value: guild.features.length > 0 ? guild.features.join(', ').toLowerCase() : 'None', inline: false }
         );
         
-        const buttons = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId(`serverinfo_prev_${guild.id}`)
-              .setLabel('Previous')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('⬅️')
-              .setDisabled(true),
-            new ButtonBuilder()
-              .setCustomId(`serverinfo_next_${guild.id}`)
-              .setLabel('Next')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('➡️')
-              .setDisabled(true)
-          );
-        
-        await interaction.reply({ embeds: [embed], components: [buttons] });
+        await interaction.reply({ embeds: [embed] });
         break;
       }
 
