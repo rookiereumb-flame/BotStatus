@@ -673,7 +673,7 @@ const commands = [
   },
   {
     name: 'suspend',
-    description: 'Suspend a user (removes all roles, only for roles above bot)',
+    description: 'Suspend a user (removes all roles)',
     options: [
       {
         name: 'user',
@@ -691,7 +691,7 @@ const commands = [
   },
   {
     name: 'unsuspend',
-    description: 'Restore a suspended user (only for roles above bot)',
+    description: 'Restore a suspended user',
     options: [
       {
         name: 'user',
@@ -1872,7 +1872,7 @@ client.on('interactionCreate', async interaction => {
           'ban': { emoji: '🔨', title: 'Ban Command', desc: 'Permanently ban a member from the server.', usage: '/ban <@user> [reason]', example: '/ban @hacker Breaking rules', perms: 'Ban Members', notes: 'User cannot rejoin. Use /unban to remove ban.' },
           'mute': { emoji: '🔇', title: 'Mute Command', desc: 'Timeout a member for a set duration.', usage: '/mute <@user> <minutes> [reason]', example: '/mute @offender 15 Excessive caps', perms: 'Moderate Members', notes: 'Duration: 1-40320 minutes (28 days max). User cannot message or react.' },
           'warn': { emoji: '⚠️', title: 'Warn Command', desc: 'Give a warning to a member (tracked in profile).', usage: '/warn <@user> [reason]', example: '/warn @rude Disrespecting members', perms: 'Warn Members', notes: 'Track user warnings. Get warns with /warns <@user>.' },
-          'suspend': { emoji: '⛔', title: 'Suspend Command', desc: 'Suspend user (Wick-style) - removes all roles instantly.', usage: '/suspend <@user> [reason]', example: '/suspend @raider Raiding server', perms: 'Kick Members', notes: 'Only for roles ABOVE bot. Use /unsuspend to restore all roles.' },
+          'suspend': { emoji: '⛔', title: 'Suspend Command', desc: 'Suspend user (Wick-style) - removes all roles instantly.', usage: '/suspend <@user> [reason]', example: '/suspend @raider Raiding server', perms: 'Any Member', notes: 'Equal ranks will trigger abuse prevention (both suspended). Use /unsuspend to restore all roles.' },
           'add-role': { emoji: '🎫', title: 'Add Role Command', desc: 'Give a role to a member.', usage: '/add-role <@user> <@role>', example: '/add-role @newmember @Member', perms: 'Manage Roles', notes: 'Can only add roles below bot\'s highest role.' },
           'purge': { emoji: '🗑️', title: 'Purge Command', desc: 'Delete multiple messages from a channel.', usage: '/purge <amount>', example: '/purge 50', perms: 'Manage Messages', notes: 'Deletes up to 100 messages. Cannot delete messages >14 days old.' },
           'setup-language-guardian': { emoji: '🛡️', title: 'Setup Language Guardian', desc: 'Configure Language Guardian settings (strikes, timeout, action).', usage: '/setup-language-guardian [strike_limit] [timeout_minutes] [action]', example: '/setup-language-guardian 3 10 ban', perms: 'Administrator', notes: 'Actions: mute (default), kick, ban, suspend. Strikes reset after action taken.' },
