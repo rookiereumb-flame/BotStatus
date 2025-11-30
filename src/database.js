@@ -7,6 +7,7 @@ db.exec(`
   CREATE TABLE IF NOT EXISTS guild_config (
     guild_id TEXT PRIMARY KEY,
     log_channel_id TEXT,
+    lg_log_channel_id TEXT,
     automod_enabled INTEGER DEFAULT 0,
     lgbl_enabled INTEGER DEFAULT 0,
     custom_prefix TEXT,
@@ -25,6 +26,12 @@ try {
   db.prepare('SELECT prefix_set_timestamp FROM guild_config LIMIT 1').get();
 } catch (e) {
   db.exec(`ALTER TABLE guild_config ADD COLUMN prefix_set_timestamp INTEGER;`);
+}
+
+try {
+  db.prepare('SELECT lg_log_channel_id FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN lg_log_channel_id TEXT;`);
 }
 
 try {
@@ -138,6 +145,15 @@ const setLogChannel = (guildId, channelId) => {
     INSERT INTO guild_config (guild_id, log_channel_id) 
     VALUES (?, ?) 
     ON CONFLICT(guild_id) DO UPDATE SET log_channel_id = ?
+  `);
+  stmt.run(guildId, channelId, channelId);
+};
+
+const setLgLogChannel = (guildId, channelId) => {
+  const stmt = db.prepare(`
+    INSERT INTO guild_config (guild_id, lg_log_channel_id) 
+    VALUES (?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET lg_log_channel_id = ?
   `);
   stmt.run(guildId, channelId, channelId);
 };
@@ -674,6 +690,7 @@ module.exports = {
   db,
   getGuildConfig,
   setLogChannel,
+  setLgLogChannel,
   enableAutomod,
   disableAutomod,
   enableLGBL,

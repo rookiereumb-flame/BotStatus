@@ -1,8 +1,8 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended } = require('./src/database');
-const { logModeration } = require('./src/utils/logger');
+const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended } = require('./src/database');
+const { logModeration, logLanguageGuardian } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
 
@@ -249,6 +249,18 @@ const commands = [
       {
         name: 'channel',
         description: 'The channel to log moderation actions',
+        type: 7,
+        required: true
+      }
+    ]
+  },
+  {
+    name: 'set-lg-channel',
+    description: 'Set log channel for Language Guardian actions (translations & strikes)',
+    options: [
+      {
+        name: 'channel',
+        description: 'The channel to log LG actions',
         type: 7,
         required: true
       }
@@ -831,6 +843,14 @@ client.on('messageCreate', async message => {
                   .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
                 await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${foundBadWord}`);
+                
+                // Log to Language Guardian channel
+                await logLanguageGuardian(message.guild, {
+                  user: message.author,
+                  action: 'warning',
+                  reason: `Banned word detected: ${foundBadWord}`,
+                  translation: translated
+                });
 
                 if (strikeResult.hitLimit) {
                   if (member && member.moderatable) {
@@ -850,6 +870,14 @@ client.on('messageCreate', async message => {
                       }
                       resetStrikesFor(message.guild.id, message.author.id);
                       await sendModLog(message.guild, `⚠️ **${message.author.tag}** hit strike limit (${lgConfig.strikeLimit}) - **${action.toUpperCase()}** applied`);
+                      
+                      // Log action to Language Guardian channel
+                      await logLanguageGuardian(message.guild, {
+                        user: message.author,
+                        action: action,
+                        reason: `Hit ${lgConfig.strikeLimit} strikes on Language Guardian`,
+                        translation: translated
+                      });
                     } catch (e) {
                       console.error('Error applying LG action:', e);
                     }
@@ -1527,6 +1555,20 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      case 'set-lg-channel': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const channel = options.getChannel('channel');
+        setLgLogChannel(guild.id, channel.id);
+        const embed = sapphireEmbed('✅ Language Guardian Log Channel Set', `LG actions and translations will now be sent to ${channel}.`);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
       case 'enable-automod': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
@@ -1621,15 +1663,9 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'purge': {
-        if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Manage Messages" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
         const amount = options.getInteger('amount');
         await interaction.channel.bulkDelete(amount);
-        const embed = sapphireEmbed('🗑️ Messages Purged', `Deleted ${amount} messages.`);
+        const embed = sapphireEmbed('🗑️ Messages Purged', `Deleted ${amount} messages by ${interaction.user.tag}.`);
         await interaction.reply({ embeds: [embed], ephemeral: true });
         break;
       }

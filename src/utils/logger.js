@@ -67,7 +67,46 @@ async function logModeration(guild, action, options) {
   return embed;
 }
 
+async function logLanguageGuardian(guild, options) {
+  try {
+    const config = getGuildConfig(guild.id);
+    if (!config || !config.lg_log_channel_id) {
+      return;
+    }
+
+    const { user, action, reason, translation } = options;
+    const logChannel = await guild.channels.fetch(config.lg_log_channel_id);
+    if (!logChannel || !logChannel.isTextBased()) return;
+
+    const embed = new EmbedBuilder()
+      .setColor(0x7289DA)
+      .setTitle('🛡️ Language Guardian Action')
+      .setTimestamp();
+
+    if (user) {
+      embed.addFields({ name: 'User', value: `${user.tag} (${user.id})`, inline: true });
+    }
+
+    if (action) {
+      embed.addFields({ name: 'Action', value: action.toUpperCase(), inline: true });
+    }
+
+    if (translation) {
+      embed.addFields({ name: 'Translation', value: translation, inline: false });
+    }
+
+    if (reason) {
+      embed.addFields({ name: 'Reason', value: reason, inline: false });
+    }
+
+    await logChannel.send({ embeds: [embed] });
+  } catch (error) {
+    console.error('Error logging to LG channel:', error);
+  }
+}
+
 module.exports = {
   logToChannel,
-  logModeration
+  logModeration,
+  logLanguageGuardian
 };
