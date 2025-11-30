@@ -208,7 +208,12 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
   - `/unsuspend` (restore suspended users)
 
 ## Deployment
-For true 24/7 uptime, deploy using Replit's Reserved VM option. Currently running on workflow.
+✅ **Reserved VM Deployment Configured** (November 30, 2025)
+- Deployment target: VM (always-on, never sleeps)
+- Run command: `bash -c "node server.js & node index.js"`
+- Server (port 5000): UptimeRobot pings every 5 minutes to keep instance awake
+- Bot (index.js): Stays connected to Discord 24/7
+- **Status:** True 24/7 uptime enabled!
 
 ## Future Enhancement Opportunities (Autonomous Mode)
 - AI content detection (toxicity, harassment, NSFW, threats, spam)

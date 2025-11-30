@@ -18,13 +18,12 @@ args = "discord-bot"
 name = "discord-bot"
 author = "agent"
 
-[[workflows.workflow.tasks]]
-task = "shell.exec"
-args = "node index.js"
-waitForPort = 5000
-
 [workflows.workflow.metadata]
 outputType = "webview"
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "bash -c \"node server.js & node index.js\""
 
 [[ports]]
 localPort = 5000
@@ -56,7 +55,7 @@ externalPort = 3001
 
 [deployment]
 deploymentTarget = "vm"
-run = ["node"]
+run = ["bash", "-c", "node server.js & node index.js"]
 
 [nix]
 channel = "stable-25_05"
