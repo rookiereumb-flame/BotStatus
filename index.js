@@ -1275,9 +1275,6 @@ client.on('messageCreate', async message => {
       }
       
       case 'suspend': {
-        if (!isUserAboveBot(message.member, message.guild)) {
-          return message.reply('❌ Your role must be above the bot\'s highest role to use this command.');
-        }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to suspend.');
         const reason = args.join(' ') || 'No reason provided';
@@ -1355,9 +1352,6 @@ client.on('messageCreate', async message => {
       }
       
       case 'unsuspend': {
-        if (!isUserAboveBot(message.member, message.guild)) {
-          return message.reply('❌ Your role must be above the bot\'s highest role to use this command.');
-        }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to unsuspend.');
         if (!isUserSuspended(message.guild.id, user.id)) return message.reply('❌ This user is not suspended.');
@@ -2270,11 +2264,6 @@ Click buttons below to toggle each system's whitelist bypass.
       }
 
       case 'suspend': {
-        // Only allow users with roles above the bot
-        if (!isUserAboveBot(member, guild)) {
-          return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
-        }
-        
         const user = options.getUser('user');
         const reason = options.getString('reason') || 'No reason provided';
         
@@ -2378,11 +2367,6 @@ Click buttons below to toggle each system's whitelist bypass.
       }
 
       case 'unsuspend': {
-        // Only allow users with roles above the bot
-        if (!isUserAboveBot(member, guild)) {
-          return interaction.reply({ content: '❌ Your role must be above the bot\'s highest role to use this command.', ephemeral: true });
-        }
-        
         const user = options.getUser('user');
         
         if (!isUserSuspended(guild.id, user.id)) {
