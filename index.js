@@ -826,16 +826,6 @@ client.on('messageCreate', async message => {
     // Get custom prefix for this guild
     const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
 
-    // Bot mention handler - ONLY reply if bot is directly mentioned (not a reply to another message)
-    if (message.mentions.has(client.user.id) && !message.reference) {
-      try {
-        await message.reply(`Hello ${message.author}, ***nice to meet you I am Daddy USSR*** pls use \` /help \` to get started!!`);
-      } catch (e) {
-        console.error('Error sending mention reply:', e);
-      }
-      return;
-    }
-
     // Anti-Spam Detection
     try {
       const spamConfig = getAntiSpamConfig(message.guild.id);
