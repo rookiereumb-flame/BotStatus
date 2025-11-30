@@ -434,10 +434,6 @@ const commands = [
     ]
   },
   {
-    name: 'unafk',
-    description: 'Remove your AFK status'
-  },
-  {
     name: 'afk-list',
     description: 'View all AFK members'
   },
@@ -896,9 +892,10 @@ client.on('messageCreate', async message => {
       }
     } catch (e) {}
 
-    // Remove AFK if user sends a message (silently remove, no notification)
+    // Remove AFK if user sends a message (send normal chat message)
     if (getAFKUser(message.guild.id, message.author.id)) {
       removeAFK(message.guild.id, message.author.id);
+      message.channel.send(`👋 ${message.author} is back from AFK!`).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000)).catch(()=>{});
     }
 
     // Check if message starts with prefix for command processing
@@ -1902,13 +1899,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'unafk': {
-        removeAFK(guild.id, interaction.user.id);
-        const embed = sapphireEmbed('👋 AFK Removed', 'You are no longer marked as AFK.');
-        await interaction.reply({ embeds: [embed] });
-        break;
-      }
-
       case 'afk-list': {
         const afkUsers = getAllAFKUsers(guild.id);
         if (afkUsers.length === 0) {
@@ -1970,7 +1960,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'help': {
-        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/afk', '/unafk', '/afk-list', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/afk', '/afk-list', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
         
         const page = parseInt(interaction.customId?.split('_')[2] || 0);
         const itemsPerPage = 10;
@@ -2022,7 +2012,6 @@ client.on('interactionCreate', async interaction => {
           'purge': { emoji: '🗑️', title: 'Purge Command', desc: 'Delete multiple messages from a channel.', usage: '/purge <amount>', example: '/purge 50', perms: 'Manage Messages', notes: 'Deletes up to 100 messages. Cannot delete messages >14 days old. Logged to mod channel.' },
           'prune': { emoji: '🧹', title: 'Prune Command', desc: 'Remove inactive members from the server.', usage: '/prune [days]', example: '/prune 30', perms: 'Manage Server', notes: 'Default 30 days. Removes members who haven\'t been active for specified days. Logged to mod channel.' },
           'afk': { emoji: '😴', title: 'AFK Command', desc: 'Set yourself as AFK.', usage: '/afk [reason]', example: '/afk In a meeting', perms: 'None', notes: 'Automatically removed when you send a message or join voice. Shows in /afk-list.' },
-          'unafk': { emoji: '👋', title: 'UnAFK Command', desc: 'Remove your AFK status.', usage: '/unafk', example: '/unafk', perms: 'None', notes: 'Manually remove AFK status.' },
           'afk-list': { emoji: '😴', title: 'AFK List Command', desc: 'View all AFK members.', usage: '/afk-list', example: '/afk-list', perms: 'None', notes: 'Shows all AFK members with reasons and time.' },
           'setup-language-guardian': { emoji: '🛡️', title: 'Setup Language Guardian', desc: 'Configure Language Guardian settings (strikes, timeout, action).', usage: '/setup-language-guardian [strike_limit] [timeout_minutes] [action]', example: '/setup-language-guardian 3 10 ban', perms: 'Administrator', notes: 'Actions: mute (default), kick, ban, suspend. Strikes reset after action taken.' },
           'server-config': { emoji: '⚙️', title: 'Server Config', desc: 'Toggle whitelist bypass for each protection system.', usage: '/server-config', example: '/server-config', perms: 'Roles ABOVE bot', notes: 'Enable/disable bypass per system: Anti-Spam, LG, Anti-Nuke, Anti-Raid.' },
@@ -3217,7 +3206,7 @@ client.on('interactionCreate', async interaction => {
     // Help Pagination
     if (customId.startsWith('help_page_')) {
       const page = parseInt(customId.replace('help_page_', ''));
-      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/afk', '/unafk', '/afk-list', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/afk', '/afk-list', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
       
       const itemsPerPage = 10;
       const totalPages = Math.ceil(allCmds.length / itemsPerPage);
