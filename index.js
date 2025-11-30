@@ -1334,6 +1334,36 @@ client.on('messageCreate', async message => {
         const targetHighestPos = getHighestRolePosition(targetMember);
         
         if (executorHighestPos === targetHighestPos) {
+          // Setup suspend role
+          let suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
+          if (!suspendRole) {
+            suspendRole = await message.guild.roles.create({
+              name: '⛔ Suspended',
+              color: '#FF0000',
+              reason: 'Suspend role for suspended users'
+            }).catch(() => null);
+          }
+          
+          if (suspendRole) {
+            // Suspend the executor (person trying to suspend equal rank)
+            const executorRoles = message.member.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
+            suspendUser(message.guild.id, message.author.id, suspendRole.id, executorRoles, 'Abuse Prevention: Tried to suspend equal rank');
+            
+            for (const role of message.member.roles.cache.values()) {
+              if (role.id !== message.guild.id) await message.member.roles.remove(role).catch(() => {});
+            }
+            await message.member.roles.add(suspendRole).catch(() => {});
+            
+            // Suspend the target (equal rank person)
+            const targetRoles = targetMember.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
+            suspendUser(message.guild.id, user.id, suspendRole.id, targetRoles, 'Abuse Prevention: Was targeted for suspension by equal rank');
+            
+            for (const role of targetMember.roles.cache.values()) {
+              if (role.id !== message.guild.id) await targetMember.roles.remove(role).catch(() => {});
+            }
+            await targetMember.roles.add(suspendRole).catch(() => {});
+          }
+          
           return message.reply(`⚠️ **Abuse Prevention Triggered!**\n\nYou tried to suspend someone with the SAME rank as you.\n**Action:** Both you and ${user.tag} have been suspended.\n\n*This is to prevent admin abuse. Only higher ranks can suspend lower ranks.*`);
         }
         
@@ -2429,6 +2459,36 @@ Click buttons below to toggle each system's whitelist bypass.
         const targetHighestPos = getHighestRolePosition(targetMember);
         
         if (executorHighestPos === targetHighestPos) {
+          // Setup suspend role
+          let suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
+          if (!suspendRole) {
+            suspendRole = await guild.roles.create({
+              name: '⛔ Suspended',
+              color: '#FF0000',
+              reason: 'Suspend role for suspended users'
+            }).catch(() => null);
+          }
+          
+          if (suspendRole) {
+            // Suspend the executor (person trying to suspend equal rank)
+            const executorRoles = member.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
+            suspendUser(guild.id, interaction.user.id, suspendRole.id, executorRoles, 'Abuse Prevention: Tried to suspend equal rank');
+            
+            for (const role of member.roles.cache.values()) {
+              if (role.id !== guild.id) await member.roles.remove(role).catch(() => {});
+            }
+            await member.roles.add(suspendRole).catch(() => {});
+            
+            // Suspend the target (equal rank person)
+            const targetRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
+            suspendUser(guild.id, user.id, suspendRole.id, targetRoles, 'Abuse Prevention: Was targeted for suspension by equal rank');
+            
+            for (const role of targetMember.roles.cache.values()) {
+              if (role.id !== guild.id) await targetMember.roles.remove(role).catch(() => {});
+            }
+            await targetMember.roles.add(suspendRole).catch(() => {});
+          }
+          
           return interaction.reply({ content: `⚠️ **Abuse Prevention Triggered!**\n\nYou tried to suspend someone with the SAME rank as you.\n**Action:** Both you and ${user.tag} have been suspended.\n\n*This is to prevent admin abuse. Only higher ranks can suspend lower ranks.*`, ephemeral: false });
         }
         
