@@ -1643,7 +1643,7 @@ client.on('interactionCreate', async interaction => {
           },
           {
             name: '🛡️ Automod Configuration',
-            value: '` /set-channel ` - Set Log Channel\n` /enable-automod ` - Enable Automod\n` /disable-automod ` - Disable Automod\n` /enable-language-guardian ` - Enable Language Guardian\n` /disable-language-guardian ` - Disable Language Guardian',
+            value: '` /set-channel ` - Set Log Channel\n` /enable-automod ` - Enable Automod\n` /disable-automod ` - Disable Automod\n` /enable-language-guardian ` - Enable Language Guardian\n` /disable-language-guardian ` - Disable Language Guardian\n` /setup-language-guardian ` - Customize LG (Strikes, Timeout)',
             inline: false
           },
           {
