@@ -1337,7 +1337,14 @@ client.on('messageCreate', async message => {
         if (!isUserSuspended(message.guild.id, user.id)) return message.reply('❌ This user is not suspended.');
         const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
         if (!targetMember) return message.reply('❌ User not found.');
+        
         const previousRoles = unsuspendUser(message.guild.id, user.id);
+        // Remove suspended role
+        const suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
+        if (suspendRole) {
+          await targetMember.roles.remove(suspendRole).catch(() => {});
+        }
+        // Restore previous roles
         await targetMember.roles.set(previousRoles).catch(() => {});
         
         const logChannelId = getGuildConfig(message.guild.id)?.log_channel_id;
@@ -2330,6 +2337,12 @@ Click buttons below to toggle each system's whitelist bypass.
         
         // Restore previous roles
         const previousRoles = unsuspendUser(guild.id, user.id);
+        // Remove suspended role
+        const suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
+        if (suspendRole) {
+          await targetMember.roles.remove(suspendRole).catch(() => {});
+        }
+        // Restore previous roles
         await targetMember.roles.set(previousRoles, 'User unsuspended').catch(() => {});
         
         const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
