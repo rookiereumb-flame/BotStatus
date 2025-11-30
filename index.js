@@ -1308,6 +1308,19 @@ client.on('messageCreate', async message => {
           }).catch(() => null);
         }
         
+        // Deny suspended role from all other channels (except suspended channel)
+        try {
+          for (const channel of message.guild.channels.cache.values()) {
+            if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
+              if (channel.id !== suspendChannel?.id) {
+                await channel.permissionOverwrites.create(suspendRole, { ViewChannel: false }).catch(() => {});
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error setting channel permissions:', err);
+        }
+        
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
         suspendUser(message.guild.id, user.id, suspendRole.id, previousRoles, reason);
         for (const role of targetMember.roles.cache.values()) {
@@ -2289,6 +2302,19 @@ Click buttons below to toggle each system's whitelist bypass.
               }
             ]
           }).catch(() => null);
+        }
+        
+        // Deny suspended role from all other channels (except suspended channel)
+        try {
+          for (const channel of guild.channels.cache.values()) {
+            if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
+              if (channel.id !== suspendChannel?.id) {
+                await channel.permissionOverwrites.create(suspendRole, { ViewChannel: false }).catch(() => {});
+              }
+            }
+          }
+        } catch (err) {
+          console.error('Error setting channel permissions:', err);
         }
         
         // Store previous roles
