@@ -40,6 +40,13 @@ try {
   db.exec(`ALTER TABLE guild_config ADD COLUMN lgbl_enabled INTEGER DEFAULT 0;`);
 }
 
+// Add missing columns to warnings table if they don't exist
+try {
+  db.prepare('SELECT is_manual FROM warnings LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE warnings ADD COLUMN is_manual INTEGER DEFAULT 1;`);
+}
+
 db.exec(`
 
   CREATE TABLE IF NOT EXISTS warnings (
