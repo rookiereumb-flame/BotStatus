@@ -1724,7 +1724,7 @@ client.on('interactionCreate', async interaction => {
         const pageCommands = allCmds.slice(start, end);
         
         const embed = sapphireEmbed('🤖 Bot Commands', `Page ${page + 1}/${totalPages} • Total: ${allCmds.length} commands\n\n💡 **Use** \` /help-command <command-name> \` **for detailed help**`);
-        embed.addField('📋 Commands', pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), false);
+        embed.addFields({ name: '📋 Commands', value: pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), inline: false });
         
         const buttons = new ActionRowBuilder();
         if (page > 0) {
@@ -2878,7 +2878,7 @@ client.on('interactionCreate', async interaction => {
       const pageCommands = allCmds.slice(start, end);
       
       const embed = sapphireEmbed('🤖 Bot Commands', `Page ${page + 1}/${totalPages} • Total: ${allCmds.length} commands\n\n💡 **Use** \` /help-command <command-name> \` **for detailed help**`);
-      embed.addField('📋 Commands', pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), false);
+      embed.addFields({ name: '📋 Commands', value: pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), inline: false });
       
       const buttons = new ActionRowBuilder();
       if (page > 0) {
