@@ -1,6 +1,7 @@
 const fs = require('fs-extra');
 const path = require('path');
 const translate = require('translate-google');
+const { getLgblWords } = require('../database');
 
 const DATA_DIR = path.resolve('./data');
 const BLACKLIST_FILE = path.join(DATA_DIR, 'blacklist.json');

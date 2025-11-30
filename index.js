@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -966,7 +966,7 @@ client.on('messageCreate', async message => {
 
         if (action === "add") {
           if (!word) return message.reply("❌ Please provide a word to add.");
-          if (addBlacklistWord(message.guild.id, word)) {
+          if (addLgblWord(message.guild.id, word)) {
             return message.reply(`✅ Added \`${word}\` to Language Guardian Blacklist Library.`);
           } else {
             return message.reply(`❌ \`${word}\` is already in LGBL.`);
@@ -975,7 +975,7 @@ client.on('messageCreate', async message => {
 
         if (action === "remove") {
           if (!word) return message.reply("❌ Please provide a word to remove.");
-          if (removeBlacklistWord(message.guild.id, word)) {
+          if (removeLgblWord(message.guild.id, word)) {
             return message.reply(`✅ Removed \`${word}\` from Language Guardian Blacklist Library.`);
           } else {
             return message.reply(`❌ \`${word}\` is not in LGBL.`);
@@ -983,7 +983,7 @@ client.on('messageCreate', async message => {
         }
 
         if (action === "list") {
-          const words = getBlacklistWords(message.guild.id);
+          const words = getLgblWords(message.guild.id);
           if (words.length === 0) {
             return message.reply("📚 **Language Guardian Blacklist Library:** No words added yet.");
           }
@@ -1538,7 +1538,7 @@ client.on('interactionCreate', async interaction => {
         
         if (subcommand === 'add') {
           const word = options.getString('word');
-          if (addBlacklistWord(guild.id, word)) {
+          if (addLgblWord(guild.id, word)) {
             const embed = sapphireEmbed('✅ Added to LGBL', `**${word}** has been added to the Language Guardian Blacklist Library.\n\n*This word will be detected in any language!*`);
             await interaction.reply({ embeds: [embed] });
           } else {
@@ -1547,7 +1547,7 @@ client.on('interactionCreate', async interaction => {
         } 
         else if (subcommand === 'remove') {
           const word = options.getString('word');
-          if (removeBlacklistWord(guild.id, word)) {
+          if (removeLgblWord(guild.id, word)) {
             const embed = sapphireEmbed('✅ Removed from LGBL', `**${word}** has been removed from the Language Guardian Blacklist Library.`);
             await interaction.reply({ embeds: [embed] });
           } else {
@@ -1555,7 +1555,7 @@ client.on('interactionCreate', async interaction => {
           }
         } 
         else if (subcommand === 'list') {
-          const words = getBlacklistWords(guild.id);
+          const words = getLgblWords(guild.id);
           if (words.length === 0) {
             const embed = sapphireEmbed('📚 Language Guardian Blacklist Library', 'No blacklisted words yet.');
             return await interaction.reply({ embeds: [embed] });

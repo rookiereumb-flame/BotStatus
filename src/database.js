@@ -52,6 +52,13 @@ db.exec(`
     UNIQUE(guild_id, word)
   );
 
+  CREATE TABLE IF NOT EXISTS lgbl_words (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id TEXT NOT NULL,
+    word TEXT NOT NULL,
+    UNIQUE(guild_id, word)
+  );
+
   CREATE TABLE IF NOT EXISTS anti_nuke_settings (
     guild_id TEXT PRIMARY KEY,
     enabled INTEGER DEFAULT 0,
@@ -254,6 +261,30 @@ const removeBlacklistWord = (guildId, word) => {
 
 const getBlacklistWords = (guildId) => {
   const stmt = db.prepare('SELECT word FROM blacklist_words WHERE guild_id = ?');
+  return stmt.all(guildId).map(row => row.word);
+};
+
+const addLgblWord = (guildId, word) => {
+  try {
+    const stmt = db.prepare('INSERT INTO lgbl_words (guild_id, word) VALUES (?, ?)');
+    stmt.run(guildId, word.toLowerCase());
+    return true;
+  } catch (error) {
+    if (error.code === 'SQLITE_CONSTRAINT') {
+      return false;
+    }
+    throw error;
+  }
+};
+
+const removeLgblWord = (guildId, word) => {
+  const stmt = db.prepare('DELETE FROM lgbl_words WHERE guild_id = ? AND word = ?');
+  const info = stmt.run(guildId, word.toLowerCase());
+  return info.changes > 0;
+};
+
+const getLgblWords = (guildId) => {
+  const stmt = db.prepare('SELECT word FROM lgbl_words WHERE guild_id = ?');
   return stmt.all(guildId).map(row => row.word);
 };
 
@@ -648,6 +679,9 @@ module.exports = {
   addBlacklistWord,
   removeBlacklistWord,
   getBlacklistWords,
+  addLgblWord,
+  removeLgblWord,
+  getLgblWords,
   getAntiNukeConfig,
   setAntiNukeConfig,
   getAntiRaidConfig,
