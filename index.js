@@ -2431,12 +2431,14 @@ Click buttons below to toggle each system's whitelist bypass.
         };
         
         filtered.forEach(log => {
+          const timestamp = Math.floor(log.createdTimestamp / 1000);
           const logInfo = {
             id: log.id,
             action: log.action,
             target: log.targetType,
             user: log.executor?.tag || 'Unknown',
-            time: new Date(log.createdTimestamp).toLocaleTimeString(),
+            time: `<t:${timestamp}:t>`,
+            timestamp: timestamp,
             details: `${log.targetType === 'Channel' ? '📁' : log.targetType === 'Role' ? '🔰' : log.targetType === 'User' ? '👤' : '💬'} ${log.action} - ${log.target?.name || 'Unknown'}`
           };
           
@@ -2448,13 +2450,16 @@ Click buttons below to toggle each system's whitelist bypass.
         
         const total = Object.values(categories).reduce((sum, cat) => sum + cat.events.length, 0);
         
-        const embed = sapphireEmbed('📊 Server Report', 
-          `**Time Range:** ${fromHour}:${String(fromMinute).padStart(2, '0')} ${fromMeridian} - ${toHour}:${String(toMinute).padStart(2, '0')} ${toMeridian}\n**Total Events:** ${total}\n\n${
-            Object.entries(categories)
-              .map(([num, cat]) => `**${cat.name}:** ${cat.events.length} events`)
-              .join('\n')
-          }\n\nSelect events below to undo them.`
-        );
+        const embed = sapphireEmbed('📊 Server Report', `**Time Range:** ${fromHour}:${String(fromMinute).padStart(2, '0')} ${fromMeridian} - ${toHour}:${String(toMinute).padStart(2, '0')} ${toMeridian}\n**Total Events:** ${total}`);
+        
+        Object.entries(categories).forEach(([num, cat]) => {
+          if (cat.events.length > 0) {
+            const eventList = cat.events.slice(0, 25).map((e, idx) => `${idx + 1}. ${e.details} (${e.time})`).join('\n');
+            embed.addFields({ name: `${cat.name} (${cat.events.length})`, value: eventList || 'No events', inline: false });
+          }
+        });
+        
+        embed.setDescription('Select events below to undo them.');
         
         // Store events for button interactions
         if (!global.reportCache) global.reportCache = {};
@@ -2474,9 +2479,9 @@ Click buttons below to toggle each system's whitelist bypass.
                   .setMaxValues(Math.min(25, categories[i].events.length))
                   .addOptions(
                     categories[i].events.slice(0, 25).map((e, idx) => ({
-                      label: e.details.substring(0, 100),
+                      label: `${e.action.substring(0, 30)} - ${e.details.substring(0, 40)}`,
                       value: `${i}_${idx}`,
-                      description: `By ${e.user} at ${e.time}`
+                      description: `By ${e.user} | ${e.time}`
                     }))
                   )
               );
@@ -2650,11 +2655,24 @@ Click buttons below to toggle each system's whitelist bypass.
 
         const user = await client.users.fetch(caseData.user_id);
         const moderator = await client.users.fetch(caseData.moderator_id);
-        const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'delete': '🗑️' }[caseData.action] || '⚙️';
+        const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'suspend': '⛔', 'delete': '🗑️' }[caseData.action] || '⚙️';
+        const timestamp = Math.floor(caseData.timestamp / 1000);
         
-        const embed = sapphireEmbed(`${actionEmoji} Case #${caseId}`, 
-          `**Action:** ${caseData.action.toUpperCase()}\n**User:** ${user.tag}\n**Moderator:** ${moderator.tag}\n**Reason:** ${caseData.reason}\n${caseData.duration ? `**Duration:** ${caseData.duration} minutes\n` : ''}**Status:** ${caseData.status}\n**Date:** <t:${Math.floor(caseData.timestamp / 1000)}>`
+        const embed = sapphireEmbed(`${actionEmoji} Case #${caseId}`, '');
+        embed.addFields(
+          { name: '📋 Action', value: caseData.action.toUpperCase(), inline: true },
+          { name: '⏰ Time', value: `<t:${timestamp}:F>`, inline: true },
+          { name: '✅ Status', value: caseData.status.toUpperCase(), inline: true },
+          { name: '👤 User', value: user.tag, inline: true },
+          { name: '🛡️ Moderator', value: moderator.tag, inline: true },
+          { name: '📝 Reason', value: caseData.reason || 'No reason', inline: false }
         );
+        
+        if (caseData.duration) {
+          embed.addFields(
+            { name: '⏳ Duration', value: `${caseData.duration} minutes`, inline: true }
+          );
+        }
 
         const buttons = new ActionRowBuilder()
           .addComponents(
@@ -2697,8 +2715,9 @@ Click buttons below to toggle each system's whitelist bypass.
           const startIdx = page * 10;
           const endIdx = startIdx + 10;
           userCases.slice(startIdx, endIdx).forEach(c => {
-            const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
-            caseList += `${actionEmoji} **Case #${c.case_id}** | ${c.action.toUpperCase()} | ${c.reason.substring(0, 40)}\n`;
+            const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'suspend': '⛔' }[c.action] || '⚙️';
+            const time = `<t:${Math.floor(c.timestamp / 1000)}:t>`;
+            caseList += `${actionEmoji} **#${c.case_id}** | ${c.action.toUpperCase()} | ${time} | ${c.reason.substring(0, 30)}\n`;
           });
           const desc = targetUser 
             ? `Cases for ${targetUser}: (Page ${page + 1}/${totalPages})\n\n${caseList}` 
