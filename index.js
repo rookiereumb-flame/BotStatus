@@ -41,12 +41,14 @@ const client = new Client({
 });
 
 // Helper function for Sapphire embeds (used everywhere)
-const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR) => {
-  return new EmbedBuilder()
+const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR, fields = []) => {
+  const embed = new EmbedBuilder()
     .setTitle(title)
     .setDescription(desc)
     .setColor(color)
     .setTimestamp();
+  if (fields.length > 0) embed.addFields(fields);
+  return embed;
 };
 
 // Convert time to milliseconds
@@ -2159,7 +2161,13 @@ client.on('interactionCreate', async interaction => {
           muteDuration
         });
         
-        const embed = sapphireEmbed('⚙️ Anti-Spam Configured', `✅ Anti-spam settings updated.\n**Max messages:** ${maxMessages}\n**Time window:** ${timeWindow}s\n**Mute duration:** ${muteDuration / 60} minutes`);
+        const embed = sapphireEmbed('⚙️ Anti-Spam Configured', '✅ Anti-spam protection is now active!', SAPPHIRE_COLOR, [
+          { name: '📊 Max Messages', value: `${maxMessages}`, inline: true },
+          { name: '⏱️ Time Window', value: `${timeWindow}s`, inline: true },
+          { name: '🔇 Mute Duration', value: `${Math.floor(muteDuration / 60)} min`, inline: true },
+          { name: '📍 Violation Location', value: 'Same channel as violation', inline: false },
+          { name: '💡 Tip', value: 'Use "Configure Logging" button to change where violations are reported.', inline: false }
+        ]);
         
         const buttons = new ActionRowBuilder()
           .addComponents(
@@ -2168,6 +2176,11 @@ client.on('interactionCreate', async interaction => {
               .setLabel('View Settings')
               .setStyle(ButtonStyle.Secondary)
               .setEmoji('⚙️'),
+            new ButtonBuilder()
+              .setCustomId(`antispam_log_config_${guild.id}`)
+              .setLabel('Configure Logging')
+              .setStyle(ButtonStyle.Primary)
+              .setEmoji('📋'),
             new ButtonBuilder()
               .setCustomId(`antispam_disable_${guild.id}`)
               .setLabel('Disable')
@@ -2185,7 +2198,10 @@ client.on('interactionCreate', async interaction => {
         }
         const role = options.getRole('role');
         setAutoRole(guild.id, role.id);
-        const embed = sapphireEmbed('👥 Auto-Role Set', `✅ New members will receive the ${role.name} role.`);
+        const embed = sapphireEmbed('👥 Auto-Role Set', '✅ New members will be automatically assigned a role!', SAPPHIRE_COLOR, [
+          { name: '🎯 Assigned Role', value: role.toString(), inline: false },
+          { name: '📝 Action', value: 'All new members who join will receive this role', inline: false }
+        ]);
         
         const buttons = new ActionRowBuilder()
           .addComponents(
@@ -2683,7 +2699,13 @@ Click buttons below to toggle each system's whitelist bypass.
           action
         });
         
-        const embed = sapphireEmbed('🛡️ Language Guardian Configured', `✅ Settings updated.\n**Strike limit:** ${strikeLimit} strikes\n**Timeout duration:** ${timeoutMinutes} minutes\n**Action on limit:** ${action.toUpperCase()}`);
+        const embed = sapphireEmbed('🛡️ Language Guardian Configured', '✅ Bad word detection is now active!', SAPPHIRE_COLOR, [
+          { name: '⚠️ Strike Limit', value: `${strikeLimit} strikes`, inline: true },
+          { name: '⏰ Timeout Duration', value: `${timeoutMinutes} min`, inline: true },
+          { name: '🎯 Action on Limit', value: action.toUpperCase(), inline: true },
+          { name: '🌍 Coverage', value: 'Detects offensive words from all languages', inline: false },
+          { name: '💡 Tip', value: 'Use "Configure Logging" to choose where violations are logged (DM or channel).', inline: false }
+        ]);
         
         const buttons = new ActionRowBuilder()
           .addComponents(
@@ -2692,6 +2714,11 @@ Click buttons below to toggle each system's whitelist bypass.
               .setLabel('View Settings')
               .setStyle(ButtonStyle.Secondary)
               .setEmoji('⚙️'),
+            new ButtonBuilder()
+              .setCustomId(`lguardian_log_config_${guild.id}`)
+              .setLabel('Configure Logging')
+              .setStyle(ButtonStyle.Primary)
+              .setEmoji('📋'),
             new ButtonBuilder()
               .setCustomId(`lguardian_disable_${guild.id}`)
               .setLabel('Disable')
@@ -3102,8 +3129,22 @@ client.on('interactionCreate', async interaction => {
     if (customId.startsWith('antispam_status_')) {
       const guildId = customId.replace('antispam_status_', '');
       const config = getAntiSpamConfig(guildId);
-      const settings = config ? `**Max messages:** ${config.max_messages}\n**Time window:** ${config.time_window}s\n**Mute duration:** ${Math.floor(config.mute_duration / 60)} minutes\n**Status:** ${config.enabled ? '✅ Enabled' : '❌ Disabled'}` : 'Not configured yet.';
-      const embed = sapphireEmbed('⚙️ Anti-Spam Settings', settings);
+      const embed = sapphireEmbed('⚙️ Anti-Spam Settings', 'Current configuration:', SAPPHIRE_COLOR, [
+        { name: '📊 Max Messages', value: config ? `${config.max_messages}` : 'N/A', inline: true },
+        { name: '⏱️ Time Window', value: config ? `${config.time_window}s` : 'N/A', inline: true },
+        { name: '🔇 Mute Duration', value: config ? `${Math.floor(config.mute_duration / 60)} min` : 'N/A', inline: true },
+        { name: '✅ Status', value: config && config.enabled ? '✅ Enabled' : '❌ Disabled', inline: false }
+      ]);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Logging Configuration for Anti-Spam
+    if (customId.startsWith('antispam_log_config_')) {
+      const embed = sapphireEmbed('📋 Configure Anti-Spam Logging', 'Where should spam violations be reported?', SAPPHIRE_COLOR, [
+        { name: '📌 Option 1: Same Channel', value: 'Report violations in the channel where spam occurs', inline: false },
+        { name: '💬 Option 2: DM to User', value: 'Send spam warning via direct message to the offender', inline: false },
+        { name: 'ℹ️ Current', value: 'Currently: Same channel as violation', inline: false }
+      ]);
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
     
@@ -3121,8 +3162,24 @@ client.on('interactionCreate', async interaction => {
     if (customId.startsWith('lguardian_status_')) {
       const guildId = customId.replace('lguardian_status_', '');
       const config = getLanguageGuardianConfig(guildId);
-      const settings = `**Strike limit:** ${config.strikeLimit}\n**Timeout duration:** ${Math.floor(config.timeoutSeconds / 60)} minutes\n**Action on limit:** ${(config.action || 'mute').toUpperCase()}\n**Status:** ✅ Configured`;
-      const embed = sapphireEmbed('⚙️ Language Guardian Settings', settings);
+      const embed = sapphireEmbed('⚙️ Language Guardian Settings', 'Current configuration:', SAPPHIRE_COLOR, [
+        { name: '⚠️ Strike Limit', value: `${config.strikeLimit} strikes`, inline: true },
+        { name: '⏰ Timeout Duration', value: `${Math.floor(config.timeoutSeconds / 60)} min`, inline: true },
+        { name: '🎯 Action on Limit', value: (config.action || 'mute').toUpperCase(), inline: true },
+        { name: '🌍 Detection', value: 'All languages with auto-translate', inline: false },
+        { name: '✅ Status', value: '✅ Active', inline: false }
+      ]);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+    }
+    
+    // Logging Configuration for Language Guardian
+    if (customId.startsWith('lguardian_log_config_')) {
+      const embed = sapphireEmbed('📋 Configure Language Guardian Logging', 'Where should bad word violations be reported?', SAPPHIRE_COLOR, [
+        { name: '📌 Option 1: Dedicated Log Channel', value: 'Create/use a specific channel for all LG violations', inline: false },
+        { name: '💬 Option 2: DM to Admin', value: 'Send violation alerts directly to server admins', inline: false },
+        { name: '⚠️ Option 3: DM to Offender', value: 'Notify the user who violated the rules', inline: false },
+        { name: 'ℹ️ Current', value: 'Currently: Configured logging enabled', inline: false }
+      ]);
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }
     
