@@ -35,6 +35,15 @@ const client = new Client({
   ]
 });
 
+// Helper function for Sapphire embeds (used everywhere)
+const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR) => {
+  return new EmbedBuilder()
+    .setTitle(title)
+    .setDescription(desc)
+    .setColor(color)
+    .setTimestamp();
+};
+
 const commands = [
   {
     name: 'kick',
@@ -1320,13 +1329,6 @@ client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
   
   const { commandName, options, member, guild } = interaction;
-  const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR) => {
-    return new EmbedBuilder()
-      .setTitle(title)
-      .setDescription(desc)
-      .setColor(color)
-      .setTimestamp();
-  };
 
   try {
     switch(commandName) {
