@@ -976,13 +976,20 @@ client.on('messageCreate', async message => {
       const knownCommands = [
         'kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'purge', 'say', 'blacklist', 'purgebad',
         'change-role-name', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 
-        'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list'
+        'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list', 'nick', 'lgbl'
       ];
       if (knownCommands.includes(multiWordCmd)) {
         cmd = multiWordCmd;
         args.shift(); // Remove the second word from args
       }
     }
+    
+    // Full list of valid commands (for better error checking)
+    const validPrefixCommands = [
+      'kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'purge', 'say', 'blacklist', 'purgebad',
+      'change-role-name', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 
+      'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list', 'nick', 'lgbl', 'help'
+    ];
     
     switch(cmd) {
       case 'kick': {
@@ -1406,17 +1413,19 @@ client.on('messageCreate', async message => {
       }
       
       default: {
-        // Suggest correct command
-        const allCommands = ['kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'nick', 'change-role-name', 'say', 'purge', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 'enable-language-guardian', 'disable-language-guardian', 'blacklist', 'purgebad'];
+        // Check if the command is valid but not in switch (shouldn't happen)
+        if (validPrefixCommands.includes(cmd)) {
+          return message.reply(`❌ Command \`${cmd}\` encountered an error. Please try again or use \`${customPrefix}help\`.`);
+        }
         
-        // Find closest match
-        const suggestions = allCommands.filter(c => c.startsWith(cmd.charAt(0))).slice(0, 3);
+        // Suggest correct command
+        const suggestions = validPrefixCommands.filter(c => c.startsWith(cmd.charAt(0))).slice(0, 3);
         
         if (suggestions.length > 0) {
           const suggestionText = suggestions.map(s => `\`${customPrefix}${s}\``).join(', ');
-          return message.reply({ content: `❌ Unknown command \`${cmd}\`. Did you mean: ${suggestionText}?`, ephemeral: true });
+          return message.reply({ content: `❌ Unknown command \`${cmd}\`. Did you mean: ${suggestionText}?` });
         } else {
-          return message.reply({ content: `❌ Unknown command \`${cmd}\`. Use \`${customPrefix}help\` for a list of commands.`, ephemeral: true });
+          return message.reply({ content: `❌ Unknown command \`${cmd}\`. Use \`${customPrefix}help\` for a list of commands.` });
         }
       }
     }
