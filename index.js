@@ -896,17 +896,9 @@ client.on('messageCreate', async message => {
       }
     } catch (e) {}
 
-    // Remove AFK if user sends a message (send as DM to not interrupt chat)
-    const afkUser = getAFKUser(message.guild.id, message.author.id);
-    if (afkUser) {
+    // Remove AFK if user sends a message (silently remove, no notification)
+    if (getAFKUser(message.guild.id, message.author.id)) {
       removeAFK(message.guild.id, message.author.id);
-      const afkDuration = formatTime(Date.now() - afkUser.afk_timestamp);
-      const embed = sapphireEmbed('👋 Welcome Back!', `You are no longer AFK in **${message.guild.name}**.`, SAPPHIRE_COLOR, [
-        { name: '⏱️ AFK Duration', value: afkDuration, inline: true },
-        { name: '📝 Reason', value: afkUser.reason || 'No reason', inline: true },
-        { name: '💬 Status', value: '✅ Back Online', inline: true }
-      ]);
-      message.author.send({ embeds: [embed] }).catch(() => {});
     }
 
     // Check if message starts with prefix for command processing
