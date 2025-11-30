@@ -929,28 +929,28 @@ client.on('messageCreate', async message => {
         if (action === "add") {
           if (!word) return message.reply("❌ Please provide a word to add.");
           if (addBlacklistWord(message.guild.id, word)) {
-            return message.reply(`✅ Added \`${word}\` to blacklist for this server.`);
+            return message.reply(`✅ Added \`${word}\` to Automod Blacklist Library for this server.`);
           } else {
-            return message.reply(`❌ \`${word}\` is already in the blacklist.`);
+            return message.reply(`❌ \`${word}\` is already in the Blacklist Library.`);
           }
         }
 
         if (action === "remove") {
           if (!word) return message.reply("❌ Please provide a word to remove.");
           if (removeBlacklistWord(message.guild.id, word)) {
-            return message.reply(`✅ Removed \`${word}\` from blacklist for this server.`);
+            return message.reply(`✅ Removed \`${word}\` from Automod Blacklist Library for this server.`);
           } else {
-            return message.reply(`❌ \`${word}\` is not in the blacklist.`);
+            return message.reply(`❌ \`${word}\` is not in the Blacklist Library.`);
           }
         }
 
         if (action === "list") {
           const words = getBlacklistWords(message.guild.id);
           if (words.length === 0) {
-            return message.reply("📚 **Blacklist:** No words added yet.");
+            return message.reply("📚 **Automod Blacklist Library:** No words added yet.");
           }
           const wordList = words.slice(0, 50).join(", ") + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : "");
-          return message.reply(`📚 **Blacklist (${words.length} words):**\n${wordList}`);
+          return message.reply(`📚 **Automod Blacklist Library (${words.length} words):**\n${wordList}`);
         }
 
         return message.reply("Usage: `!blacklist <add/remove/list> [word]`");
