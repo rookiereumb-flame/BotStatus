@@ -138,9 +138,25 @@ app.get('/', (req, res) => {
   res.send(html);
 });
 
-app.listen(PORT, '0.0.0.0', () => {
+const server = app.listen(PORT, '0.0.0.0', () => {
   console.log(`🌐 Web server running on http://0.0.0.0:${PORT}`);
   console.log(`📊 Bot status page available at http://0.0.0.0:${PORT}`);
+});
+
+// Handle port already in use error
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.log(`⚠️ Port ${PORT} already in use. Retrying in 2 seconds...`);
+    setTimeout(() => {
+      server.close();
+      const newServer = app.listen(PORT, '0.0.0.0', () => {
+        console.log(`🌐 Web server running on http://0.0.0.0:${PORT}`);
+      });
+      newServer.on('error', console.error);
+    }, 2000);
+  } else {
+    console.error(err);
+  }
 });
 
 module.exports = app;

@@ -18,12 +18,9 @@ args = "discord-bot"
 name = "discord-bot"
 author = "agent"
 
-[workflows.workflow.metadata]
-outputType = "webview"
-
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "bash -c \"node server.js & node index.js\""
+args = "bash -c \"fuser -k 5000/tcp 2>/dev/null || true; sleep 1; node server.js & node index.js\""
 
 [[ports]]
 localPort = 5000
