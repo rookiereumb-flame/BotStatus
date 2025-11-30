@@ -44,6 +44,33 @@ const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR) => {
     .setTimestamp();
 };
 
+// Convert time to milliseconds
+const convertTimeToMs = (amount, unit) => {
+  const times = {
+    'm': 60 * 1000,
+    'h': 60 * 60 * 1000,
+    'd': 24 * 60 * 60 * 1000,
+    'w': 7 * 24 * 60 * 60 * 1000,
+    'y': 365 * 24 * 60 * 60 * 1000
+  };
+  return amount * (times[unit.toLowerCase()] || times['m']);
+};
+
+// Format milliseconds to readable time
+const formatTime = (ms) => {
+  const seconds = Math.floor(ms / 1000);
+  const minutes = Math.floor(seconds / 60);
+  const hours = Math.floor(minutes / 60);
+  const days = Math.floor(hours / 24);
+  const weeks = Math.floor(days / 7);
+  
+  if (weeks > 0) return `${weeks}w ${days % 7}d`;
+  if (days > 0) return `${days}d ${hours % 24}h`;
+  if (hours > 0) return `${hours}h ${minutes % 60}m`;
+  if (minutes > 0) return `${minutes}m`;
+  return `${seconds}s`;
+};
+
 const commands = [
   {
     name: 'kick',
@@ -93,9 +120,22 @@ const commands = [
       },
       {
         name: 'duration',
-        description: 'Duration in minutes (max 40320)',
+        description: 'Duration number (e.g., 5)',
         type: 4,
         required: true
+      },
+      {
+        name: 'unit',
+        description: 'Time unit',
+        type: 3,
+        required: true,
+        choices: [
+          { name: 'Minutes (m)', value: 'm' },
+          { name: 'Hours (h)', value: 'h' },
+          { name: 'Days (d)', value: 'd' },
+          { name: 'Weeks (w)', value: 'w' },
+          { name: 'Years (y)', value: 'y' }
+        ]
       },
       {
         name: 'reason',
@@ -971,13 +1011,30 @@ client.on('messageCreate', async message => {
         }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to mute.');
-        const duration = parseInt(args[0]);
-        if (!duration || duration > 40320) return message.reply('❌ Duration must be 1-40320 minutes.');
-        const reason = args.slice(1).join(' ') || 'No reason provided';
-        const targetMember = await message.guild.members.fetch(user.id);
-        await targetMember.timeout(duration * 60 * 1000, reason);
-        addWarning(message.guild.id, user.id, message.author.id, `Muted (${duration}m): ${reason}`);
-        message.reply(`✅ Muted ${user.tag} for ${duration} minutes - ${reason}`);
+        
+        const durationStr = args[0];
+        if (!durationStr) return message.reply('❌ Usage: `=mute @user 5h reason` (m/h/d/w/y)');
+        
+        const match = durationStr.match(/^(\d+)([mhdwy])$/i);
+        if (!match) return message.reply('❌ Invalid format. Use: `=mute @user 5h reason` (m/h/d/w/y)');
+        
+        const amount = parseInt(match[1]);
+        const unit = match[2].toLowerCase();
+        const ms = convertTimeToMs(amount, unit);
+        
+        if (ms > 40320 * 60 * 1000) return message.reply('❌ Duration cannot exceed 40320 minutes (28 days).');
+        
+        try {
+          const reason = args.slice(1).join(' ') || 'No reason provided';
+          const targetMember = await message.guild.members.fetch(user.id);
+          await targetMember.timeout(ms, reason);
+          const durationFormatted = formatTime(ms);
+          addWarning(message.guild.id, user.id, message.author.id, `Muted (${durationFormatted}): ${reason}`);
+          message.reply(`✅ Muted ${user.tag} for ${durationFormatted} - ${reason}`);
+        } catch (error) {
+          console.error('Prefix mute error:', error);
+          message.reply('❌ Could not mute this user. Make sure bot has permission.');
+        }
         break;
       }
       
@@ -1379,14 +1436,27 @@ client.on('interactionCreate', async interaction => {
         }
         const user = options.getUser('user');
         const duration = options.getInteger('duration');
+        const unit = options.getString('unit') || 'm';
         const reason = options.getString('reason') || 'No reason provided';
-        if (duration > 40320) return interaction.reply({ content: '❌ Duration cannot exceed 40320 minutes.', ephemeral: true });
-        const targetMember = await guild.members.fetch(user.id);
-        await targetMember.timeout(duration * 60 * 1000, reason);
-        addWarning(guild.id, user.id, member.id, `Muted (${duration}m): ${reason}`);
-        const caseId = createCase(guild.id, user.id, member.id, 'mute', reason, duration);
-        const embed = sapphireEmbed('🔇 Member Muted', `${user} has been muted for ${duration} minutes.\n**Reason:** ${reason}\n**Case #${caseId}**`);
-        await interaction.reply({ embeds: [embed] });
+        
+        const ms = convertTimeToMs(duration, unit);
+        if (ms > 40320 * 60 * 1000) return interaction.reply({ content: '❌ Duration cannot exceed 40320 minutes (28 days).', ephemeral: true });
+        
+        try {
+          const targetMember = await guild.members.fetch(user.id);
+          await targetMember.timeout(ms, reason);
+          const durationStr = formatTime(ms);
+          addWarning(guild.id, user.id, member.id, `Muted (${durationStr}): ${reason}`);
+          const caseId = createCase(guild.id, user.id, member.id, 'mute', reason, Math.floor(ms / 1000 / 60));
+          const embed = sapphireEmbed('🔇 Member Muted', `${user} has been muted for **${durationStr}**.\n**Reason:** ${reason}\n**Case #${caseId}**`);
+          await interaction.reply({ embeds: [embed] });
+        } catch (error) {
+          console.error('Mute error:', error);
+          if (error.code === 50013) {
+            return interaction.reply({ content: '❌ Bot is missing permissions. Make sure the bot has "Moderate Members" permission.', ephemeral: true });
+          }
+          return interaction.reply({ content: '❌ Could not mute this user.', ephemeral: true });
+        }
         break;
       }
 
@@ -1534,8 +1604,9 @@ client.on('interactionCreate', async interaction => {
         
         let statusText = '';
         timedOutMembers.forEach(m => {
-          const timeLeft = Math.ceil((m.communicationDisabledUntilTimestamp - Date.now()) / 1000 / 60);
-          statusText += `${m.user.tag} - ${timeLeft} minutes left\n`;
+          const timeLeftMs = m.communicationDisabledUntilTimestamp - Date.now();
+          const timeLeft = formatTime(timeLeftMs);
+          statusText += `${m.user.tag} - **${timeLeft}** left\n`;
         });
         
         const embed = sapphireEmbed(`⏱️ Timed Out Members (${timedOutMembers.size})`, statusText);
