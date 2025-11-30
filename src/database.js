@@ -447,9 +447,17 @@ try {
     CREATE TABLE IF NOT EXISTS language_guardian_config (
       guild_id TEXT PRIMARY KEY,
       strike_limit INTEGER DEFAULT 3,
-      timeout_seconds INTEGER DEFAULT 600
+      timeout_seconds INTEGER DEFAULT 600,
+      action TEXT DEFAULT 'mute'
     );
   `);
+}
+
+// Add action column if it doesn't exist
+try {
+  db.prepare('SELECT action FROM language_guardian_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE language_guardian_config ADD COLUMN action TEXT DEFAULT 'mute';`);
 }
 
 // Add whitelist tables
@@ -483,17 +491,17 @@ try {
 
 const setLanguageGuardianConfig = (guildId, config) => {
   const stmt = db.prepare(`
-    INSERT INTO language_guardian_config (guild_id, strike_limit, timeout_seconds) 
-    VALUES (?, ?, ?) 
-    ON CONFLICT(guild_id) DO UPDATE SET strike_limit = ?, timeout_seconds = ?
+    INSERT INTO language_guardian_config (guild_id, strike_limit, timeout_seconds, action) 
+    VALUES (?, ?, ?, ?) 
+    ON CONFLICT(guild_id) DO UPDATE SET strike_limit = ?, timeout_seconds = ?, action = ?
   `);
-  stmt.run(guildId, config.strikeLimit, config.timeoutSeconds, config.strikeLimit, config.timeoutSeconds);
+  stmt.run(guildId, config.strikeLimit, config.timeoutSeconds, config.action || 'mute', config.strikeLimit, config.timeoutSeconds, config.action || 'mute');
 };
 
 const getLanguageGuardianConfig = (guildId) => {
   const stmt = db.prepare('SELECT * FROM language_guardian_config WHERE guild_id = ?');
   const result = stmt.get(guildId);
-  return result || { strikeLimit: 3, timeoutSeconds: 600 };
+  return result || { strikeLimit: 3, timeoutSeconds: 600, action: 'mute' };
 };
 
 const addWhitelistRole = (guildId, roleId) => {

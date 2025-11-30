@@ -497,6 +497,18 @@ const commands = [
         required: false,
         min_value: 1,
         max_value: 60
+      },
+      {
+        name: 'action',
+        description: 'Action to take on strike limit: mute, kick, ban, or suspend',
+        type: 3,
+        required: false,
+        choices: [
+          { name: 'Mute', value: 'mute' },
+          { name: 'Kick', value: 'kick' },
+          { name: 'Ban', value: 'ban' },
+          { name: 'Suspend', value: 'suspend' }
+        ]
       }
     ]
   },
@@ -789,17 +801,34 @@ client.on('messageCreate', async message => {
 
               if (foundBadWord) {
                 await message.delete().catch(() => {});
-                const strikesNow = addStrike(message.guild.id, message.author.id);
+                const strikeResult = addStrike(message.guild.id, message.author.id, lgConfig.strikeLimit, lgConfig.action || 'mute');
 
-                message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikesNow}/${lgConfig.strikeLimit})`)
+                message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikeResult.strikeCount}/${lgConfig.strikeLimit})`)
                   .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
 
                 await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${foundBadWord}`);
 
-                if (strikesNow >= lgConfig.strikeLimit) {
+                if (strikeResult.hitLimit) {
                   if (member && member.moderatable) {
-                    await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
-                    resetStrikesFor(message.guild.id, message.author.id);
+                    const action = strikeResult.action || 'mute';
+                    try {
+                      if (action === 'mute') {
+                        await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
+                      } else if (action === 'kick') {
+                        await member.kick("Blacklist strikes exceeded");
+                      } else if (action === 'ban') {
+                        await message.guild.members.ban(message.author.id, { reason: "Blacklist strikes exceeded" });
+                      } else if (action === 'suspend') {
+                        const suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended') || await message.guild.roles.create({ name: '⛔ Suspended', color: '#FF0000' });
+                        const previousRoles = member.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
+                        await member.roles.set([suspendRole.id]);
+                        suspendUser(message.guild.id, message.author.id, suspendRole.id, previousRoles, `Language Guardian - Strikes exceeded`);
+                      }
+                      resetStrikesFor(message.guild.id, message.author.id);
+                      await sendModLog(message.guild, `⚠️ **${message.author.tag}** hit strike limit (${lgConfig.strikeLimit}) - **${action.toUpperCase()}** applied`);
+                    } catch (e) {
+                      console.error('Error applying LG action:', e);
+                    }
                   }
                 }
               }
@@ -2416,13 +2445,15 @@ Click buttons below to toggle each system's whitelist bypass.
         }
         const strikeLimit = options.getInteger('strike_limit') || DEFAULT_STRIKE_LIMIT;
         const timeoutMinutes = options.getInteger('timeout_minutes') || Math.floor(DEFAULT_TIMEOUT_SECONDS / 60);
+        const action = options.getString('action') || 'mute';
         
         setLanguageGuardianConfig(guild.id, {
           strikeLimit,
-          timeoutSeconds: timeoutMinutes * 60
+          timeoutSeconds: timeoutMinutes * 60,
+          action
         });
         
-        const embed = sapphireEmbed('🛡️ Language Guardian Configured', `✅ Settings updated.\n**Strike limit:** ${strikeLimit} strikes\n**Timeout duration:** ${timeoutMinutes} minutes`);
+        const embed = sapphireEmbed('🛡️ Language Guardian Configured', `✅ Settings updated.\n**Strike limit:** ${strikeLimit} strikes\n**Timeout duration:** ${timeoutMinutes} minutes\n**Action on limit:** ${action.toUpperCase()}`);
         
         const buttons = new ActionRowBuilder()
           .addComponents(
@@ -2816,7 +2847,7 @@ client.on('interactionCreate', async interaction => {
     if (customId.startsWith('lguardian_status_')) {
       const guildId = customId.replace('lguardian_status_', '');
       const config = getLanguageGuardianConfig(guildId);
-      const settings = `**Strike limit:** ${config.strikeLimit}\n**Timeout duration:** ${Math.floor(config.timeoutSeconds / 60)} minutes\n**Status:** ✅ Configured`;
+      const settings = `**Strike limit:** ${config.strikeLimit}\n**Timeout duration:** ${Math.floor(config.timeoutSeconds / 60)} minutes\n**Action on limit:** ${(config.action || 'mute').toUpperCase()}\n**Status:** ✅ Configured`;
       const embed = sapphireEmbed('⚙️ Language Guardian Settings', settings);
       await interaction.reply({ embeds: [embed], ephemeral: true });
     }

@@ -37,11 +37,18 @@ async function sendModLog(guild, text) {
   } catch (e) {}
 }
 
-function addStrike(guildId, userId) {
+function addStrike(guildId, userId, strikeLimit = 3, action = 'mute') {
   if (!strikes[guildId]) strikes[guildId] = {};
   strikes[guildId][userId] = (strikes[guildId][userId] || 0) + 1;
   saveStrikes();
-  return strikes[guildId][userId];
+  const currentStrikes = strikes[guildId][userId];
+  
+  // If strike limit reached, return object with action info
+  if (currentStrikes >= strikeLimit) {
+    return { strikeCount: currentStrikes, hitLimit: true, action };
+  }
+  
+  return { strikeCount: currentStrikes, hitLimit: false };
 }
 
 function resetStrikesFor(guildId, userId) {
