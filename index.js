@@ -1339,13 +1339,25 @@ client.on('messageCreate', async message => {
         if (!targetMember) return message.reply('❌ User not found.');
         
         const previousRoles = unsuspendUser(message.guild.id, user.id);
-        // Remove suspended role
-        const suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
-        if (suspendRole) {
-          await targetMember.roles.remove(suspendRole).catch(() => {});
+        
+        try {
+          // Remove ALL roles first (except @everyone)
+          for (const role of targetMember.roles.cache.values()) {
+            if (role.id !== message.guild.id) {
+              await targetMember.roles.remove(role, 'User unsuspended').catch(() => {});
+            }
+          }
+          
+          // Now add back the previous roles
+          for (const roleId of previousRoles) {
+            const role = message.guild.roles.cache.get(roleId);
+            if (role) {
+              await targetMember.roles.add(role, 'User unsuspended').catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.error('Error unsuspending user:', err);
         }
-        // Restore previous roles
-        await targetMember.roles.set(previousRoles).catch(() => {});
         
         const logChannelId = getGuildConfig(message.guild.id)?.log_channel_id;
         if (logChannelId) {
@@ -2337,13 +2349,25 @@ Click buttons below to toggle each system's whitelist bypass.
         
         // Restore previous roles
         const previousRoles = unsuspendUser(guild.id, user.id);
-        // Remove suspended role
-        const suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
-        if (suspendRole) {
-          await targetMember.roles.remove(suspendRole).catch(() => {});
+        
+        try {
+          // Remove ALL roles first (except @everyone)
+          for (const role of targetMember.roles.cache.values()) {
+            if (role.id !== guild.id) {
+              await targetMember.roles.remove(role, 'User unsuspended').catch(() => {});
+            }
+          }
+          
+          // Now add back the previous roles
+          for (const roleId of previousRoles) {
+            const role = guild.roles.cache.get(roleId);
+            if (role) {
+              await targetMember.roles.add(role, 'User unsuspended').catch(() => {});
+            }
+          }
+        } catch (err) {
+          console.error('Error unsuspending user:', err);
         }
-        // Restore previous roles
-        await targetMember.roles.set(previousRoles, 'User unsuspended').catch(() => {});
         
         const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
         if (logChannelId) {
