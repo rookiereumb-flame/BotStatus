@@ -1130,7 +1130,14 @@ client.on('messageCreate', async message => {
         }
         await targetMember.roles.add(suspendRole).catch(() => {});
         
-        await sendModLog(message.guild, `⛔ ${user.tag} has been suspended.\n**Reason:** ${reason}`);
+        const logChannelId = getGuildConfig(message.guild.id)?.log_channel_id;
+        if (logChannelId) {
+          const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel) {
+            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}`);
+            logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
+          }
+        }
         
         message.reply(`✅ ${user.tag} suspended. Reason: ${reason}`);
         break;
@@ -1147,7 +1154,16 @@ client.on('messageCreate', async message => {
         if (!targetMember) return message.reply('❌ User not found.');
         const previousRoles = unsuspendUser(message.guild.id, user.id);
         await targetMember.roles.set(previousRoles).catch(() => {});
-        await sendModLog(message.guild, `✅ ${user.tag} has been unsuspended.`);
+        
+        const logChannelId = getGuildConfig(message.guild.id)?.log_channel_id;
+        if (logChannelId) {
+          const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel) {
+            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `${targetMember} has been unsuspended.`);
+            logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
+          }
+        }
+        
         message.reply(`✅ ${user.tag} restored.`);
         break;
       }
@@ -2057,7 +2073,14 @@ Click buttons below to toggle each system's whitelist bypass.
           console.error('Error adding suspend role:', err);
         }
         
-        await sendModLog(guild, `⛔ ${user.tag} has been suspended.\n**Reason:** ${reason}`);
+        const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
+        if (logChannelId) {
+          const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel) {
+            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}`);
+            logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
+          }
+        }
         
         const embed = sapphireEmbed('⛔ User Suspended', 
           `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\n✅ All roles removed\n✅ Suspend role assigned\n✅ Can only access #suspended channel\n\nUse \`/unsuspend\` to restore.`
@@ -2088,7 +2111,14 @@ Click buttons below to toggle each system's whitelist bypass.
         const previousRoles = unsuspendUser(guild.id, user.id);
         await targetMember.roles.set(previousRoles, 'User unsuspended').catch(() => {});
         
-        await sendModLog(guild, `✅ ${user.tag} has been unsuspended.`);
+        const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
+        if (logChannelId) {
+          const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel) {
+            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `${targetMember} has been unsuspended.`);
+            logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
+          }
+        }
         
         const embed = sapphireEmbed('✅ User Restored', 
           `**User:** ${user.tag}\n**Status:** Restored\n\nPrevious roles have been restored.`
