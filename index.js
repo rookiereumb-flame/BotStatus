@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
 const { logModeration, logLanguageGuardian } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
@@ -420,6 +420,26 @@ const commands = [
         max_value: 365
       }
     ]
+  },
+  {
+    name: 'afk',
+    description: 'Set yourself as AFK with a reason',
+    options: [
+      {
+        name: 'reason',
+        description: 'Why are you AFK?',
+        type: 3,
+        required: false
+      }
+    ]
+  },
+  {
+    name: 'unafk',
+    description: 'Remove your AFK status'
+  },
+  {
+    name: 'afk-list',
+    description: 'View all AFK members'
   },
   {
     name: 'unwarn',
@@ -875,6 +895,13 @@ client.on('messageCreate', async message => {
         }
       }
     } catch (e) {}
+
+    // Remove AFK if user sends a message
+    if (getAFKUser(message.guild.id, message.author.id)) {
+      removeAFK(message.guild.id, message.author.id);
+      message.reply({ content: `👋 Welcome back ${message.author}! Removed from AFK.` })
+        .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000)).catch(()=>{});
+    }
 
     // Check if message starts with prefix for command processing
     const isCommand = message.content.startsWith(customPrefix);
@@ -1866,6 +1893,42 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      case 'afk': {
+        const reason = options.getString('reason') || 'AFK';
+        setAFK(guild.id, interaction.user.id, reason);
+        const embed = sapphireEmbed('😴 AFK Set', `You are now marked as AFK.`, SAPPHIRE_COLOR, [
+          { name: '📝 Reason', value: reason, inline: false },
+          { name: '💡 Tip', value: 'You\'ll be automatically removed from AFK when you send a message or join voice.', inline: false }
+        ]);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'unafk': {
+        removeAFK(guild.id, interaction.user.id);
+        const embed = sapphireEmbed('👋 AFK Removed', 'You are no longer marked as AFK.');
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'afk-list': {
+        const afkUsers = getAllAFKUsers(guild.id);
+        if (afkUsers.length === 0) {
+          return interaction.reply({ content: '✅ No one is AFK right now!', ephemeral: true });
+        }
+        let list = '';
+        for (const afkUser of afkUsers.slice(0, 20)) {
+          const user = await client.users.fetch(afkUser.user_id).catch(() => null);
+          const afkTime = Math.floor((Date.now() - afkUser.afk_timestamp) / 1000);
+          list += `👤 **${user ? user.tag : afkUser.user_id}** - ${afkUser.reason} (<t:${Math.floor(afkUser.afk_timestamp / 1000)}:R>)\n`;
+        }
+        const embed = sapphireEmbed('😴 AFK Members', list, SAPPHIRE_COLOR, [
+          { name: '📊 Count', value: `${afkUsers.length} member${afkUsers.length !== 1 ? 's' : ''}`, inline: false }
+        ]);
+        await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
       case 'set-prefix': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
@@ -1909,7 +1972,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'help': {
-        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/afk', '/unafk', '/afk-list', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
         
         const page = parseInt(interaction.customId?.split('_')[2] || 0);
         const itemsPerPage = 10;
@@ -1960,6 +2023,9 @@ client.on('interactionCreate', async interaction => {
           'add-role': { emoji: '🎫', title: 'Add Role Command', desc: 'Give a role to a member.', usage: '/add-role <@user> <@role>', example: '/add-role @newmember @Member', perms: 'Manage Roles', notes: 'Can only add roles below bot\'s highest role.' },
           'purge': { emoji: '🗑️', title: 'Purge Command', desc: 'Delete multiple messages from a channel.', usage: '/purge <amount>', example: '/purge 50', perms: 'Manage Messages', notes: 'Deletes up to 100 messages. Cannot delete messages >14 days old. Logged to mod channel.' },
           'prune': { emoji: '🧹', title: 'Prune Command', desc: 'Remove inactive members from the server.', usage: '/prune [days]', example: '/prune 30', perms: 'Manage Server', notes: 'Default 30 days. Removes members who haven\'t been active for specified days. Logged to mod channel.' },
+          'afk': { emoji: '😴', title: 'AFK Command', desc: 'Set yourself as AFK.', usage: '/afk [reason]', example: '/afk In a meeting', perms: 'None', notes: 'Automatically removed when you send a message or join voice. Shows in /afk-list.' },
+          'unafk': { emoji: '👋', title: 'UnAFK Command', desc: 'Remove your AFK status.', usage: '/unafk', example: '/unafk', perms: 'None', notes: 'Manually remove AFK status.' },
+          'afk-list': { emoji: '😴', title: 'AFK List Command', desc: 'View all AFK members.', usage: '/afk-list', example: '/afk-list', perms: 'None', notes: 'Shows all AFK members with reasons and time.' },
           'setup-language-guardian': { emoji: '🛡️', title: 'Setup Language Guardian', desc: 'Configure Language Guardian settings (strikes, timeout, action).', usage: '/setup-language-guardian [strike_limit] [timeout_minutes] [action]', example: '/setup-language-guardian 3 10 ban', perms: 'Administrator', notes: 'Actions: mute (default), kick, ban, suspend. Strikes reset after action taken.' },
           'server-config': { emoji: '⚙️', title: 'Server Config', desc: 'Toggle whitelist bypass for each protection system.', usage: '/server-config', example: '/server-config', perms: 'Roles ABOVE bot', notes: 'Enable/disable bypass per system: Anti-Spam, LG, Anti-Nuke, Anti-Raid.' },
           'server-report': { emoji: '📊', title: 'Server Report', desc: 'View audit logs for time-range and selectively undo actions.', usage: '/server-report <from-time> <to-time>', example: '/server-report 2:30 PM 3:45 PM', perms: 'Roles ABOVE bot', notes: 'Shows: channels, roles, member events, messages. Click events to undo.' }
@@ -3129,6 +3195,20 @@ client.on('guildMemberAdd', async member => {
   }
 });
 
+// Remove AFK when user joins voice
+client.on('voiceStateUpdate', async (oldState, newState) => {
+  if (!oldState.channelId && newState.channelId) {
+    // User joined voice channel
+    const afkUser = getAFKUser(newState.guild.id, newState.member.id);
+    if (afkUser) {
+      removeAFK(newState.guild.id, newState.member.id);
+      try {
+        await newState.member.user.send(`👋 Removed from AFK as you joined voice channel.`).catch(()=>{});
+      } catch (e) {}
+    }
+  }
+});
+
 // Handle Info Command Buttons
 client.on('interactionCreate', async interaction => {
   if (!interaction.isButton()) return;
@@ -3139,7 +3219,7 @@ client.on('interactionCreate', async interaction => {
     // Help Pagination
     if (customId.startsWith('help_page_')) {
       const page = parseInt(customId.replace('help_page_', ''));
-      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/afk', '/unafk', '/afk-list', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
       
       const itemsPerPage = 10;
       const totalPages = Math.ceil(allCmds.length / itemsPerPage);

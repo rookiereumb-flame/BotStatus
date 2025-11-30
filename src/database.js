@@ -693,6 +693,45 @@ const isUserSuspended = (guildId, userId) => {
   return stmt.get(guildId, userId) !== undefined;
 };
 
+// AFK system
+try {
+  db.prepare('SELECT * FROM afk_users LIMIT 1').get();
+} catch (e) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS afk_users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id TEXT NOT NULL,
+      user_id TEXT NOT NULL,
+      reason TEXT,
+      afk_timestamp INTEGER NOT NULL,
+      UNIQUE(guild_id, user_id)
+    );
+  `);
+}
+
+const setAFK = (guildId, userId, reason) => {
+  const stmt = db.prepare(`
+    INSERT OR REPLACE INTO afk_users (guild_id, user_id, reason, afk_timestamp)
+    VALUES (?, ?, ?, ?)
+  `);
+  stmt.run(guildId, userId, reason || 'No reason provided', Date.now());
+};
+
+const removeAFK = (guildId, userId) => {
+  const stmt = db.prepare('DELETE FROM afk_users WHERE guild_id = ? AND user_id = ?');
+  stmt.run(guildId, userId);
+};
+
+const getAFKUser = (guildId, userId) => {
+  const stmt = db.prepare('SELECT * FROM afk_users WHERE guild_id = ? AND user_id = ?');
+  return stmt.get(guildId, userId);
+};
+
+const getAllAFKUsers = (guildId) => {
+  const stmt = db.prepare('SELECT * FROM afk_users WHERE guild_id = ? ORDER BY afk_timestamp DESC');
+  return stmt.all(guildId);
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -751,5 +790,9 @@ module.exports = {
   suspendUser,
   unsuspendUser,
   getSuspendedUsers,
-  isUserSuspended
+  isUserSuspended,
+  setAFK,
+  removeAFK,
+  getAFKUser,
+  getAllAFKUsers
 };
