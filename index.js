@@ -408,6 +408,20 @@ const commands = [
     ]
   },
   {
+    name: 'prune',
+    description: 'Remove inactive members from the server',
+    options: [
+      {
+        name: 'days',
+        description: 'Remove members inactive for X days (default 30)',
+        type: 4,
+        required: false,
+        min_value: 1,
+        max_value: 365
+      }
+    ]
+  },
+  {
     name: 'unwarn',
     description: 'Remove a warning from a user',
     options: [
@@ -1789,10 +1803,66 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'purge': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Messages" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
         const amount = options.getInteger('amount');
         await interaction.channel.bulkDelete(amount);
-        const embed = sapphireEmbed('🗑️ Messages Purged', `Deleted ${amount} messages by ${interaction.user.tag}.`);
-        await interaction.reply({ embeds: [embed], ephemeral: true });
+        
+        const embed = sapphireEmbed('🗑️ Messages Purged', `${amount} messages have been deleted from ${interaction.channel}.`, SAPPHIRE_COLOR, [
+          { name: '📊 Amount Deleted', value: `${amount} messages`, inline: true },
+          { name: '👤 Moderator', value: interaction.user.tag, inline: true },
+          { name: '📍 Channel', value: interaction.channel.toString(), inline: true },
+          { name: '⏰ Time', value: `<t:${Math.floor(Date.now() / 1000)}:T>`, inline: false }
+        ]);
+        
+        await interaction.reply({ embeds: [embed] });
+        
+        // Log to mod log channel
+        const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
+        if (logChannelId) {
+          const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel) {
+            const logEmbed = sapphireEmbed('🗑️ Purge Logged', `**Moderator:** ${interaction.user.tag}\n**Channel:** ${interaction.channel}\n**Amount:** ${amount} messages`);
+            logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+          }
+        }
+        break;
+      }
+      
+      case 'prune': {
+        if (!member.permissions.has(PermissionFlagsBits.ManageGuild)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Manage Server" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        
+        await interaction.deferReply();
+        const days = options.getInteger('days') || 30;
+        const pruned = await guild.prune({ days, dry: false });
+        
+        const embed = sapphireEmbed('🧹 Server Pruned', `Inactive members have been removed from the server.`, SAPPHIRE_COLOR, [
+          { name: '👥 Members Removed', value: `${pruned} member${pruned !== 1 ? 's' : ''}`, inline: true },
+          { name: '📅 Inactive For', value: `${days} day${days !== 1 ? 's' : ''}`, inline: true },
+          { name: '👤 Moderator', value: interaction.user.tag, inline: true },
+          { name: '⏰ Time', value: `<t:${Math.floor(Date.now() / 1000)}:T>`, inline: false }
+        ]);
+        
+        await interaction.editReply({ embeds: [embed] });
+        
+        // Log to mod log channel
+        const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
+        if (logChannelId) {
+          const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
+          if (logChannel) {
+            const logEmbed = sapphireEmbed('🧹 Prune Logged', `**Moderator:** ${interaction.user.tag}\n**Members Removed:** ${pruned}\n**Inactive For:** ${days} days`);
+            logChannel.send({ embeds: [logEmbed] }).catch(() => {});
+          }
+        }
         break;
       }
 
@@ -1839,7 +1909,7 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'help': {
-        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
         
         const page = parseInt(interaction.customId?.split('_')[2] || 0);
         const itemsPerPage = 10;
@@ -1888,7 +1958,8 @@ client.on('interactionCreate', async interaction => {
           'warn': { emoji: '⚠️', title: 'Warn Command', desc: 'Give a warning to a member (tracked in profile).', usage: '/warn <@user> [reason]', example: '/warn @rude Disrespecting members', perms: 'Warn Members', notes: 'Track user warnings. Get warns with /warns <@user>.' },
           'suspend': { emoji: '⛔', title: 'Suspend Command', desc: 'Suspend user (Wick-style) - removes all roles instantly.', usage: '/suspend <@user> [reason]', example: '/suspend @raider Raiding server', perms: 'admin only', notes: 'Equal ranks will trigger abuse prevention (both suspended). Use /unsuspend to restore all roles.' },
           'add-role': { emoji: '🎫', title: 'Add Role Command', desc: 'Give a role to a member.', usage: '/add-role <@user> <@role>', example: '/add-role @newmember @Member', perms: 'Manage Roles', notes: 'Can only add roles below bot\'s highest role.' },
-          'purge': { emoji: '🗑️', title: 'Purge Command', desc: 'Delete multiple messages from a channel.', usage: '/purge <amount>', example: '/purge 50', perms: 'Manage Messages', notes: 'Deletes up to 100 messages. Cannot delete messages >14 days old.' },
+          'purge': { emoji: '🗑️', title: 'Purge Command', desc: 'Delete multiple messages from a channel.', usage: '/purge <amount>', example: '/purge 50', perms: 'Manage Messages', notes: 'Deletes up to 100 messages. Cannot delete messages >14 days old. Logged to mod channel.' },
+          'prune': { emoji: '🧹', title: 'Prune Command', desc: 'Remove inactive members from the server.', usage: '/prune [days]', example: '/prune 30', perms: 'Manage Server', notes: 'Default 30 days. Removes members who haven\'t been active for specified days. Logged to mod channel.' },
           'setup-language-guardian': { emoji: '🛡️', title: 'Setup Language Guardian', desc: 'Configure Language Guardian settings (strikes, timeout, action).', usage: '/setup-language-guardian [strike_limit] [timeout_minutes] [action]', example: '/setup-language-guardian 3 10 ban', perms: 'Administrator', notes: 'Actions: mute (default), kick, ban, suspend. Strikes reset after action taken.' },
           'server-config': { emoji: '⚙️', title: 'Server Config', desc: 'Toggle whitelist bypass for each protection system.', usage: '/server-config', example: '/server-config', perms: 'Roles ABOVE bot', notes: 'Enable/disable bypass per system: Anti-Spam, LG, Anti-Nuke, Anti-Raid.' },
           'server-report': { emoji: '📊', title: 'Server Report', desc: 'View audit logs for time-range and selectively undo actions.', usage: '/server-report <from-time> <to-time>', example: '/server-report 2:30 PM 3:45 PM', perms: 'Roles ABOVE bot', notes: 'Shows: channels, roles, member events, messages. Click events to undo.' }
@@ -3068,7 +3139,7 @@ client.on('interactionCreate', async interaction => {
     // Help Pagination
     if (customId.startsWith('help_page_')) {
       const page = parseInt(customId.replace('help_page_', ''));
-      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/prune', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
       
       const itemsPerPage = 10;
       const totalPages = Math.ceil(allCmds.length / itemsPerPage);
