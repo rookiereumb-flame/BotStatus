@@ -956,6 +956,44 @@ client.on('messageCreate', async message => {
         return message.reply("Usage: `!blacklist <add/remove/list> [word]`");
       }
 
+      case 'lgbl': {
+        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return message.reply("❌ You need admin permissions.");
+        }
+
+        const action = args.shift()?.toLowerCase();
+        const word = args.join(" ").toLowerCase();
+
+        if (action === "add") {
+          if (!word) return message.reply("❌ Please provide a word to add.");
+          if (addBlacklistWord(message.guild.id, word)) {
+            return message.reply(`✅ Added \`${word}\` to Language Guardian Blacklist Library.`);
+          } else {
+            return message.reply(`❌ \`${word}\` is already in LGBL.`);
+          }
+        }
+
+        if (action === "remove") {
+          if (!word) return message.reply("❌ Please provide a word to remove.");
+          if (removeBlacklistWord(message.guild.id, word)) {
+            return message.reply(`✅ Removed \`${word}\` from Language Guardian Blacklist Library.`);
+          } else {
+            return message.reply(`❌ \`${word}\` is not in LGBL.`);
+          }
+        }
+
+        if (action === "list") {
+          const words = getBlacklistWords(message.guild.id);
+          if (words.length === 0) {
+            return message.reply("📚 **Language Guardian Blacklist Library:** No words added yet.");
+          }
+          const wordList = words.slice(0, 50).join(", ") + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : "");
+          return message.reply(`📚 **LGBL (${words.length} words):**\n${wordList}`);
+        }
+
+        return message.reply("Usage: `!lgbl <add/remove/list> [word]`");
+      }
+
       case 'purgebad': {
         if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
           return message.reply("You need admin permissions.");
