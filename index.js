@@ -768,6 +768,9 @@ const commands = [
 client.once('ready', async () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   
+  // Set bot activity/status
+  client.user.setActivity('Daddy USSR - Moderation Bot\nFull server protection & management\ncreator -@k4giroi\nFor suggestions & issues DM support creator -@kur4yamii', { type: 'WATCHING' });
+  
   const rest = new REST({ version: '10' }).setToken(TOKEN);
   
   try {
