@@ -207,6 +207,30 @@ const commands = [
     description: 'Show bot information and all commands'
   },
   {
+    name: 'help-command',
+    description: 'Get detailed help about a specific command',
+    options: [
+      {
+        name: 'command',
+        description: 'The command to get help with',
+        type: 3,
+        required: true,
+        choices: [
+          { name: 'kick', value: 'kick' },
+          { name: 'ban', value: 'ban' },
+          { name: 'mute', value: 'mute' },
+          { name: 'warn', value: 'warn' },
+          { name: 'suspend', value: 'suspend' },
+          { name: 'add-role', value: 'add-role' },
+          { name: 'purge', value: 'purge' },
+          { name: 'setup-language-guardian', value: 'setup-language-guardian' },
+          { name: 'server-config', value: 'server-config' },
+          { name: 'server-report', value: 'server-report' }
+        ]
+      }
+    ]
+  },
+  {
     name: 'set-prefix',
     description: 'Set custom prefix for your server (2-3 chars, must include #$_-+/*:!?~=\\)',
     options: [
@@ -1653,50 +1677,71 @@ client.on('interactionCreate', async interaction => {
       }
 
       case 'help': {
-        const embed = sapphireEmbed('🤖 Bot Help', 'All available commands:');
+        const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+        
+        const page = parseInt(interaction.customId?.split('_')[2] || 0);
+        const itemsPerPage = 10;
+        const totalPages = Math.ceil(allCmds.length / itemsPerPage);
+        
+        const start = page * itemsPerPage;
+        const end = start + itemsPerPage;
+        const pageCommands = allCmds.slice(start, end);
+        
+        const embed = sapphireEmbed('🤖 Bot Commands', `Page ${page + 1}/${totalPages} • Total: ${allCmds.length} commands\n\n💡 **Use** \` /help-command <command-name> \` **for detailed help**`);
+        embed.addField('📋 Commands', pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), false);
+        
+        const buttons = new ActionRowBuilder();
+        if (page > 0) {
+          buttons.addComponents(
+            new ButtonBuilder()
+              .setCustomId(`help_page_${page - 1}`)
+              .setLabel('← Previous')
+              .setStyle(ButtonStyle.Secondary)
+          );
+        }
+        if (page < totalPages - 1) {
+          buttons.addComponents(
+            new ButtonBuilder()
+              .setCustomId(`help_page_${page + 1}`)
+              .setLabel('Next →')
+              .setStyle(ButtonStyle.Secondary)
+          );
+        }
+        
+        if (interaction.isButton?.()) {
+          await interaction.update({ embeds: [embed], components: buttons.components.length > 0 ? [buttons] : [] });
+        } else {
+          await interaction.reply({ embeds: [embed], components: buttons.components.length > 0 ? [buttons] : [] });
+        }
+        break;
+      }
+
+      case 'help-command': {
+        const cmdName = options.getString('command');
+        
+        const cmdDetails = {
+          'kick': { emoji: '👢', title: 'Kick Command', desc: 'Remove a member from the server temporarily.', usage: '/kick <@user> [reason]', example: '/kick @spammer Spamming messages', perms: 'Kick Members', notes: 'User can rejoin, members stay banned from channels.' },
+          'ban': { emoji: '🔨', title: 'Ban Command', desc: 'Permanently ban a member from the server.', usage: '/ban <@user> [reason]', example: '/ban @hacker Breaking rules', perms: 'Ban Members', notes: 'User cannot rejoin. Use /unban to remove ban.' },
+          'mute': { emoji: '🔇', title: 'Mute Command', desc: 'Timeout a member for a set duration.', usage: '/mute <@user> <minutes> [reason]', example: '/mute @offender 15 Excessive caps', perms: 'Moderate Members', notes: 'Duration: 1-40320 minutes (28 days max). User cannot message or react.' },
+          'warn': { emoji: '⚠️', title: 'Warn Command', desc: 'Give a warning to a member (tracked in profile).', usage: '/warn <@user> [reason]', example: '/warn @rude Disrespecting members', perms: 'Warn Members', notes: 'Track user warnings. Get warns with /warns <@user>.' },
+          'suspend': { emoji: '⛔', title: 'Suspend Command', desc: 'Suspend user (Wick-style) - removes all roles instantly.', usage: '/suspend <@user> [reason]', example: '/suspend @raider Raiding server', perms: 'Kick Members', notes: 'Only for roles ABOVE bot. Use /unsuspend to restore all roles.' },
+          'add-role': { emoji: '🎫', title: 'Add Role Command', desc: 'Give a role to a member.', usage: '/add-role <@user> <@role>', example: '/add-role @newmember @Member', perms: 'Manage Roles', notes: 'Can only add roles below bot\'s highest role.' },
+          'purge': { emoji: '🗑️', title: 'Purge Command', desc: 'Delete multiple messages from a channel.', usage: '/purge <amount>', example: '/purge 50', perms: 'Manage Messages', notes: 'Deletes up to 100 messages. Cannot delete messages >14 days old.' },
+          'setup-language-guardian': { emoji: '🛡️', title: 'Setup Language Guardian', desc: 'Configure Language Guardian settings (strikes, timeout, action).', usage: '/setup-language-guardian [strike_limit] [timeout_minutes] [action]', example: '/setup-language-guardian 3 10 ban', perms: 'Administrator', notes: 'Actions: mute (default), kick, ban, suspend. Strikes reset after action taken.' },
+          'server-config': { emoji: '⚙️', title: 'Server Config', desc: 'Toggle whitelist bypass for each protection system.', usage: '/server-config', example: '/server-config', perms: 'Roles ABOVE bot', notes: 'Enable/disable bypass per system: Anti-Spam, LG, Anti-Nuke, Anti-Raid.' },
+          'server-report': { emoji: '📊', title: 'Server Report', desc: 'View audit logs for time-range and selectively undo actions.', usage: '/server-report <from-time> <to-time>', example: '/server-report 2:30 PM 3:45 PM', perms: 'Roles ABOVE bot', notes: 'Shows: channels, roles, member events, messages. Click events to undo.' }
+        };
+        
+        const detail = cmdDetails[cmdName] || { emoji: '❓', title: 'Command', desc: 'No details available.', usage: 'N/A', example: 'N/A', perms: 'N/A', notes: 'N/A' };
+        const embed = sapphireEmbed(`${detail.emoji} ${detail.title}`, detail.desc);
         embed.addFields(
-          {
-            name: '⚖️ Moderation Commands',
-            value: '` /kick ` - Kick Member\n` /ban ` - Ban Member\n` /mute ` - Mute Member\n` /warn ` - Warn Member\n` /unwarn ` - Remove Warning\n` /unban ` - Unban User\n` /unmute ` - Unmute Member\n` /suspend ` - Suspend User\n` /unsuspend ` - Restore User',
-            inline: false
-          },
-          {
-            name: '👥 Role Management',
-            value: '` /add-role ` - Add Role\n` /remove-role ` - Remove Role\n` /nick ` - Change Nickname\n` /change-role-name ` - Rename Role',
-            inline: false
-          },
-          {
-            name: '📊 Information',
-            value: '` /warns ` - Show Warnings\n` /server-timeout-status ` - Show Timed Out Users\n` /case ` - View Case\n` /cases ` - View Cases\n` /user-info ` - View User Details\n` /server-info ` - View Server Details\n` /ban-list ` - View All Banned Members\n` /help ` - Show Help',
-            inline: false
-          },
-          {
-            name: '🛡️ Automod Configuration',
-            value: '` /set-channel ` - Set Log Channel\n` /enable-automod ` - Enable Automod\n` /disable-automod ` - Disable Automod\n` /enable-language-guardian ` - Enable Language Guardian\n` /disable-language-guardian ` - Disable Language Guardian\n` /setup-language-guardian ` - Customize LG (Strikes, Timeout)',
-            inline: false
-          },
-          {
-            name: '🛡️ Language Guardian (LGBL)',
-            value: '` /lgbl add ` - Add Word to Blacklist\n` /lgbl remove ` - Remove Word from Blacklist\n` /lgbl list ` - List Blacklisted Words',
-            inline: false
-          },
-          {
-            name: '🔧 Utilities',
-            value: '` /purge ` - Delete Messages\n` /say ` - Make Bot Say Something\n` /lock ` - Lock Channel\n` /unlock ` - Unlock Channel\n` /set-prefix ` - Set Custom Prefix',
-            inline: false
-          },
-          {
-            name: '🛡️ Protection & Configuration',
-            value: '` /setup-anti-nuke ` - Setup Anti-Nuke\n` /setup-anti-raid ` - Setup Anti-Raid\n` /setup-anti-spam ` - Configure Anti-Spam\n` /enable-anti-spam ` - Enable Anti-Spam\n` /disable-anti-spam ` - Disable Anti-Spam\n` /set-auto-role ` - Set Auto Role on Join\n` /remove-auto-role ` - Remove Auto Role\n` /server-config ` - Admin Config Panel\n` /server-report ` - View Audit Logs & Undo\n` /suspended-list ` - View Suspended Users',
-            inline: false
-          },
-          {
-            name: '⚙️ Whitelist Management',
-            value: '` /whitelist add ` - Add Role/Member to Whitelist\n` /whitelist remove ` - Remove from Whitelist\n` /whitelist list ` - View Whitelist',
-            inline: false
-          }
+          { name: '📝 Usage', value: `\`${detail.usage}\``, inline: false },
+          { name: '📌 Example', value: `\`${detail.example}\``, inline: false },
+          { name: '🔐 Permission', value: detail.perms, inline: true },
+          { name: '💡 Notes', value: detail.notes, inline: false }
         );
-        await interaction.reply({ embeds: [embed] });
+        
+        await interaction.reply({ embeds: [embed], ephemeral: true });
         break;
       }
 
@@ -2784,6 +2829,36 @@ client.on('interactionCreate', async interaction => {
   
   try {
     const customId = interaction.customId;
+    
+    // Help Pagination
+    if (customId.startsWith('help_page_')) {
+      const page = parseInt(customId.replace('help_page_', ''));
+      const allCmds = ['/kick', '/ban', '/mute', '/warn', '/unwarn', '/unban', '/unmute', '/suspend', '/unsuspend', '/suspended-list', '/add-role', '/remove-role', '/nick', '/change-role-name', '/warns', '/server-timeout-status', '/case', '/cases', '/user-info', '/server-info', '/ban-list', '/set-channel', '/enable-automod', '/disable-automod', '/enable-language-guardian', '/disable-language-guardian', '/setup-language-guardian', '/lgbl add', '/lgbl remove', '/lgbl list', '/purge', '/say', '/lock', '/unlock', '/set-prefix', '/help-command', '/setup-anti-nuke', '/setup-anti-raid', '/setup-anti-spam', '/enable-anti-spam', '/disable-anti-spam', '/set-auto-role', '/remove-auto-role', '/server-config', '/server-report', '/whitelist add', '/whitelist remove', '/whitelist list'];
+      
+      const itemsPerPage = 10;
+      const totalPages = Math.ceil(allCmds.length / itemsPerPage);
+      const start = page * itemsPerPage;
+      const end = start + itemsPerPage;
+      const pageCommands = allCmds.slice(start, end);
+      
+      const embed = sapphireEmbed('🤖 Bot Commands', `Page ${page + 1}/${totalPages} • Total: ${allCmds.length} commands\n\n💡 **Use** \` /help-command <command-name> \` **for detailed help**`);
+      embed.addField('📋 Commands', pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), false);
+      
+      const buttons = new ActionRowBuilder();
+      if (page > 0) {
+        buttons.addComponents(
+          new ButtonBuilder().setCustomId(`help_page_${page - 1}`).setLabel('← Previous').setStyle(ButtonStyle.Secondary)
+        );
+      }
+      if (page < totalPages - 1) {
+        buttons.addComponents(
+          new ButtonBuilder().setCustomId(`help_page_${page + 1}`).setLabel('Next →').setStyle(ButtonStyle.Secondary)
+        );
+      }
+      
+      await interaction.update({ embeds: [embed], components: buttons.components.length > 0 ? [buttons] : [] });
+      return;
+    }
     
     // User Info Buttons
     if (customId.startsWith('userinfo_warns_')) {

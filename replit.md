@@ -4,6 +4,20 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
+- **November 30, 2025**: Pageable Help + Detailed Command Assistance + Customizable LG Actions (LATEST!)
+  - **Pageable `/help` Command**: Shows 10 commands per page with Next/Previous buttons
+    - Navigate through all 46+ commands easily
+    - Page indicator (e.g., "Page 1/5")
+  - **`/help-command <name>` Command**: Detailed help for specific commands
+    - Shows usage, examples, permissions, and notes
+    - 10 featured commands with full details (kick, ban, mute, warn, suspend, add-role, purge, setup-language-guardian, server-config, server-report)
+    - Users can understand exactly how to use each command
+  - **Language Guardian Customizable Actions**: Admin can choose action when strikes hit limit
+    - Options: Mute (default), Kick, Ban, or Suspend
+    - `/setup-language-guardian strike_limit:3 timeout_minutes:10 action:ban`
+    - Strikes automatically reset after action taken
+  - **Prune Command Added**: Now documented in utilities section
+
 - **November 29, 2025**: Prefix Commands Enhanced + Admin-Only Suspend (LATEST!)
   - **Multi-Word Prefix Commands**: All commands now work with spaces instead of hyphens
     - `=set prefix` works the same as `=set-prefix`
@@ -97,8 +111,8 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 ### Language Guardian - LGBL (3)
 - `/lgbl add`, `/lgbl remove`, `/lgbl list`
 
-### Utilities (5)
-- `/purge`, `/say`, `/lock`, `/unlock`, `/set-prefix`
+### Utilities (6)
+- `/purge`, `/say`, `/lock`, `/unlock`, `/set-prefix`, `/help-command`
 
 ### Protection & Configuration (9)
 - `/setup-anti-nuke`, `/setup-anti-raid`
@@ -163,7 +177,7 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 ✅ **Anti-Spam** - Customizable message tracking with auto-mute
 ✅ **Auto-Role** - Automatic role assignment on member join
 ✅ **Case Management** - Sapphire-style with interactive buttons
-✅ **Language Guardian** - Multilingual bad word detection with customizable strikes/timeout
+✅ **Language Guardian** - Multilingual bad word detection with customizable strikes/timeout/action (mute, kick, ban, suspend)
 ✅ **LGBL** - Blacklist management in any language
 ✅ **Custom Prefixes** - Per-server with 30-day cooldown
 ✅ **Comprehensive Info** - Wick-style user/server/ban details with buttons
