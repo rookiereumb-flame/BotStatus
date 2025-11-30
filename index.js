@@ -1364,7 +1364,7 @@ client.on('messageCreate', async message => {
             await targetMember.roles.add(suspendRole).catch(() => {});
           }
           
-          return message.reply(`⚠️ **Abuse Prevention Triggered!**\n\nYou tried to suspend someone with the SAME rank as you.\n**Action:** Both you and ${user.tag} have been suspended.\n\n*This is to prevent admin abuse. Only higher ranks can suspend lower ranks.*`);
+          return message.reply(`🛡️ **ANTI-NUKE DEFENSE ACTIVATED!**\n\n❌ Equal rank suspension detected - Potential admin nuke attempt!\n\n**SECURITY ACTION:** Both you and ${user.tag} have been suspended immediately.\n\n🚫 *Only admins with higher authority can suspend lower ranks. Attempting to suspend equals = nuke attempt.*`);
         }
         
         let suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
@@ -2489,7 +2489,7 @@ Click buttons below to toggle each system's whitelist bypass.
             await targetMember.roles.add(suspendRole).catch(() => {});
           }
           
-          return interaction.reply({ content: `⚠️ **Abuse Prevention Triggered!**\n\nYou tried to suspend someone with the SAME rank as you.\n**Action:** Both you and ${user.tag} have been suspended.\n\n*This is to prevent admin abuse. Only higher ranks can suspend lower ranks.*`, ephemeral: false });
+          return interaction.reply({ content: `🛡️ **ANTI-NUKE DEFENSE ACTIVATED!**\n\n❌ Equal rank suspension detected - Potential admin nuke attempt!\n\n**SECURITY ACTION:** Both you and ${user.tag} have been suspended immediately.\n\n🚫 *Only admins with higher authority can suspend lower ranks. Attempting to suspend equals = nuke attempt.*`, ephemeral: false });
         }
         
         // Get or create suspend role
