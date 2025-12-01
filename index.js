@@ -583,40 +583,6 @@ const commands = [
     ]
   },
   {
-    name: 'setup-language-guardian',
-    description: 'Configure Language Guardian settings',
-    options: [
-      {
-        name: 'strike_limit',
-        description: 'Number of strikes before timeout',
-        type: 4,
-        required: false,
-        min_value: 1,
-        max_value: 10
-      },
-      {
-        name: 'timeout_minutes',
-        description: 'Timeout duration in minutes',
-        type: 4,
-        required: false,
-        min_value: 1,
-        max_value: 60
-      },
-      {
-        name: 'action',
-        description: 'Action to take on strike limit: mute, kick, ban, or suspend',
-        type: 3,
-        required: false,
-        choices: [
-          { name: 'Mute', value: 'mute' },
-          { name: 'Kick', value: 'kick' },
-          { name: 'Ban', value: 'ban' },
-          { name: 'Suspend', value: 'suspend' }
-        ]
-      }
-    ]
-  },
-  {
     name: 'set-auto-role',
     description: 'Set role to auto-assign to new members',
     options: [
@@ -788,52 +754,26 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(TOKEN);
   
   try {
-    console.log('🔄 Started refreshing application (/) commands.');
+    console.log('🔄 Clearing Discord cache and refreshing commands...');
     
+    // First, clear all commands to force Discord to update
+    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
+    console.log('✅ Cleared old commands from Discord cache');
+    
+    // Wait a moment for Discord to process
+    await new Promise(r => setTimeout(r, 1000));
+    
+    // Now register the new commands
     await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
     
-    console.log('✅ Successfully reloaded application (/) commands.');
-    console.log('\n📋 Registered Commands:');
-    console.log('\n⚖️  MODERATION:');
-    console.log('  /kick');
-    console.log('  /ban');
-    console.log('  /mute');
-    console.log('  /warn');
-    console.log('  /unban');
-    console.log('  /unmute');
-    console.log('  /unwarn');
-    console.log('\n👥 ROLE MANAGEMENT:');
-    console.log('  /add-role');
-    console.log('  /remove-role');
-    console.log('  /nick');
-    console.log('  /change-role-name');
-    console.log('\n📊 INFORMATION:');
-    console.log('  /warns');
-    console.log('  /server-timeout-status');
-    console.log('  /help');
-    console.log('\n🛡️  AUTOMOD & PROTECTION:');
-    console.log('  /set-channel');
-    console.log('  /enable-automod');
-    console.log('  /disable-automod');
-    console.log('  /blacklist (manage Automod words)');
-    console.log('  /enable-language-guardian');
-    console.log('  /disable-language-guardian');
-    console.log('  /lgbl (manage LG words)');
-    console.log('  /setup-anti-nuke');
-    console.log('  /setup-anti-raid');
-    console.log('  /setup-anti-spam');
-    console.log('\n🔧 UTILITIES:');
-    console.log('  /purge');
-    console.log('  /say');
-    console.log('  /lock');
-    console.log('  /unlock');
-    console.log('  /set-prefix');
-    console.log('\n🛡️  PROTECTION:');
-    console.log('  /setup-anti-nuke');
-    console.log('  /setup-anti-raid');
+    console.log('✅ Successfully registered new application (/) commands.');
+    console.log('\n📋 Registered Commands (' + commands.length + ' total):');
+    commands.forEach(cmd => {
+      console.log(`  /${cmd.name}`);
+    });
   } catch (error) {
     console.error('❌ Error registering commands:', error);
   }
