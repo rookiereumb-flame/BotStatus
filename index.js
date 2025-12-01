@@ -2262,16 +2262,6 @@ client.on('interactionCreate', async interaction => {
         const buttons = new ActionRowBuilder()
           .addComponents(
             new ButtonBuilder()
-              .setCustomId(`serverinfo_banlist_${guild.id}`)
-              .setLabel('Ban List')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('🔨'),
-            new ButtonBuilder()
-              .setCustomId(`serverinfo_timeouts_${guild.id}`)
-              .setLabel('Timeouts')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('⏱️'),
-            new ButtonBuilder()
               .setURL(guild.iconURL({ size: 1024 }))
               .setLabel('Server Icon')
               .setStyle(ButtonStyle.Link)
