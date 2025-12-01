@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 
@@ -315,6 +315,10 @@ const commands = [
   {
     name: 'disable-automod',
     description: 'Disable automod system'
+  },
+  {
+    name: 'setup-automod',
+    description: 'Configure automod with Language Guardian option'
   },
   {
     name: 'blacklist',
@@ -1715,6 +1719,36 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
+      case 'setup-automod': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        enableAutomod(guild.id);
+        const config = getGuildConfig(guild.id);
+        const multilingualEnabled = config?.automod_multilingual ? '✅ Enabled' : '❌ Disabled';
+        const embed = sapphireEmbed('⚙️ Automod Configuration', `**Status:** Enabled\n**Multilingual Detection:** ${multilingualEnabled}\n\nMultilingual mode allows automod to detect blacklisted words in ANY language by automatically translating messages.`);
+        
+        const buttons = new ActionRowBuilder()
+          .addComponents(
+            new ButtonBuilder()
+              .setCustomId(`automod_enable_multilingual_${guild.id}`)
+              .setLabel('Enable Language Guardian')
+              .setStyle(ButtonStyle.Success)
+              .setEmoji('🌍'),
+            new ButtonBuilder()
+              .setCustomId(`automod_disable_multilingual_${guild.id}`)
+              .setLabel('Disable Language Guardian')
+              .setStyle(ButtonStyle.Danger)
+              .setEmoji('❌')
+          );
+        
+        await interaction.reply({ embeds: [embed], components: [buttons] });
+        break;
+      }
+
       case 'blacklist': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
@@ -2914,7 +2948,15 @@ client.on('interactionCreate', async interaction => {
   try {
     const customId = interaction.customId;
 
-    if (customId.startsWith('close_case_')) {
+    if (customId.startsWith('automod_enable_multilingual_')) {
+      const guildId = customId.split('_')[3];
+      enableAutomodMultilingual(guildId);
+      await interaction.reply({ content: '✅ Language Guardian enabled! Automod now detects words in all languages.', ephemeral: true });
+    } else if (customId.startsWith('automod_disable_multilingual_')) {
+      const guildId = customId.split('_')[3];
+      disableAutomodMultilingual(guildId);
+      await interaction.reply({ content: '❌ Language Guardian disabled. Automod now only detects exact matches.', ephemeral: true });
+    } else if (customId.startsWith('close_case_')) {
       const caseId = parseInt(customId.split('_')[2]);
       const member = await guild.members.fetch(interaction.user.id);
       if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) {

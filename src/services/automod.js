@@ -1,7 +1,15 @@
-const { getGuildConfig, getBlacklistWords, addWarning } = require('../database');
+const { getGuildConfig, getBlacklistWords } = require('../database');
 const { translateToEnglish } = require('./translation');
 const { logModeration } = require('../utils/logger');
-const { safeTranslate } = require('./language-guardian');
+
+async function safeTranslate(text) {
+  try {
+    const translated = await translateToEnglish(text);
+    return typeof translated === 'string' ? translated : text;
+  } catch {
+    return text;
+  }
+}
 
 async function checkMessage(message) {
   if (message.author.bot) return;
@@ -12,19 +20,20 @@ async function checkMessage(message) {
     return;
   }
 
-  // Get per-guild blacklist from database
   const blacklistWords = getBlacklistWords(message.guild.id);
   if (blacklistWords.length === 0) {
     return;
   }
 
-  // Translate message
-  const translatedText = await safeTranslate(message.content);
-  const lowerText = translatedText.toLowerCase();
+  let textToCheck = message.content.toLowerCase();
+  if (config.automod_multilingual) {
+    const translatedText = await safeTranslate(message.content);
+    textToCheck = translatedText.toLowerCase();
+  }
   
   for (const word of blacklistWords) {
     const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-    if (regex.test(lowerText)) {
+    if (regex.test(textToCheck)) {
       try {
         const messageContent = message.content;
         await message.delete();

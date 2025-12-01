@@ -183,6 +183,24 @@ const disableAutomod = (guildId) => {
   stmt.run(guildId);
 };
 
+const enableAutomodMultilingual = (guildId) => {
+  const stmt = db.prepare(`
+    INSERT INTO guild_config (guild_id, automod_multilingual) 
+    VALUES (?, 1) 
+    ON CONFLICT(guild_id) DO UPDATE SET automod_multilingual = 1
+  `);
+  stmt.run(guildId);
+};
+
+const disableAutomodMultilingual = (guildId) => {
+  const stmt = db.prepare(`
+    INSERT INTO guild_config (guild_id, automod_multilingual) 
+    VALUES (?, 0) 
+    ON CONFLICT(guild_id) DO UPDATE SET automod_multilingual = 0
+  `);
+  stmt.run(guildId);
+};
+
 const enableLGBL = (guildId) => {
   const stmt = db.prepare(`
     INSERT INTO guild_config (guild_id, lgbl_enabled) 
@@ -739,6 +757,8 @@ module.exports = {
   setLgLogChannel,
   enableAutomod,
   disableAutomod,
+  enableAutomodMultilingual,
+  disableAutomodMultilingual,
   enableLGBL,
   disableLGBL,
   setCustomPrefix,
