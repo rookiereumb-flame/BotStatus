@@ -1605,8 +1605,15 @@ client.on('interactionCreate', async interaction => {
           const targetMember = await guild.members.fetch(user.id);
           await targetMember.timeout(ms, reason);
           const durationStr = formatTime(ms);
+          const durationMinutes = Math.floor(ms / 1000 / 60);
           addWarning(guild.id, user.id, member.id, `Muted (${durationStr}): ${reason}`);
-          const caseId = createCase(guild.id, user.id, member.id, 'mute', reason, Math.floor(ms / 1000 / 60));
+          const caseId = createCase(guild.id, user.id, member.id, 'mute', reason, durationMinutes);
+          await logModeration(guild, 'mute', {
+            user: user,
+            moderator: member.user,
+            reason: reason,
+            duration: durationMinutes
+          });
           const embed = sapphireEmbed('🔇 Member Muted', `${user} has been muted for **${durationStr}**.\n**Reason:** ${reason}\n**Case #${caseId}**`);
           await interaction.reply({ embeds: [embed] });
         } catch (error) {
