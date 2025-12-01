@@ -988,6 +988,7 @@ client.on('messageCreate', async message => {
                     }
                   }
                 }
+                return; // Skip automod check - LG already handled this
               }
             }
           }
@@ -996,7 +997,7 @@ client.on('messageCreate', async message => {
         console.error('Language Guardian error:', e);
       }
       
-      // Automod check
+      // Automod check (only runs if LG didn't already handle it)
       await checkMessage(message);
       return;
     }
