@@ -30,7 +30,7 @@ async function logModeration(guild, action, options) {
     unwarn: 0x2ECC71,
     suspend: 0xFF0000,
     unsuspend: 0x2ECC71,
-    automod: 0xFF0000
+    automod: 0x3498DB
   };
 
   const icons = {

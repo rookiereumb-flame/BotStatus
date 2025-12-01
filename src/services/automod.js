@@ -29,14 +29,14 @@ async function checkMessage(message) {
         const messageContent = message.content;
         await message.delete();
 
-        message.channel.send(`⚠️ **${message.author}** - Message deleted for blacklisted word:\n\`\`\`${messageContent}\`\`\``)
+        message.channel.send(`⚠️ **${message.author}** - Message deleted for violation:\n\`\`\`${messageContent}\`\`\``)
           .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
           .catch(()=>{});
 
         await logModeration(message.guild, 'automod', {
           user: message.author,
           moderator: message.client.user,
-          reason: `Used blacklisted word: "${word}"`
+          reason: `Used blacklisted word in message`
         });
 
         return true;
