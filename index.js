@@ -2262,6 +2262,16 @@ client.on('interactionCreate', async interaction => {
         const buttons = new ActionRowBuilder()
           .addComponents(
             new ButtonBuilder()
+              .setCustomId(`serverinfo_banlist_${guild.id}`)
+              .setLabel('Ban List')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('🔨'),
+            new ButtonBuilder()
+              .setCustomId(`serverinfo_timeouts_${guild.id}`)
+              .setLabel('Timeouts')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⏱️'),
+            new ButtonBuilder()
               .setURL(guild.iconURL({ size: 1024 }))
               .setLabel('Server Icon')
               .setStyle(ButtonStyle.Link)
@@ -3303,6 +3313,44 @@ client.on('interactionCreate', async interaction => {
   
   try {
     const customId = interaction.customId;
+    
+    // Server Info Buttons
+    if (customId.startsWith('serverinfo_banlist_')) {
+      const guild = interaction.guild;
+      const bans = await guild.bans.fetch().catch(() => null);
+      if (!bans || bans.size === 0) {
+        return interaction.reply({ content: '✅ No bans on this server.', ephemeral: true });
+      }
+      
+      let banList = '';
+      bans.forEach((ban, idx) => {
+        banList += `🔨 **${ban.user.tag}** - ${ban.reason || 'No reason'}\n`;
+      });
+      
+      const embed = sapphireEmbed('🔨 Ban List', banList);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
+    
+    if (customId.startsWith('serverinfo_timeouts_')) {
+      const guild = interaction.guild;
+      const members = await guild.members.fetch();
+      const timedOutMembers = members.filter(m => m.communicationDisabledUntil && m.communicationDisabledUntil > new Date());
+      
+      if (timedOutMembers.size === 0) {
+        return interaction.reply({ content: '✅ No members are currently timed out.', ephemeral: true });
+      }
+      
+      let timeoutList = '';
+      timedOutMembers.forEach((member, idx) => {
+        const timeRemaining = Math.ceil((member.communicationDisabledUntil - new Date()) / 1000 / 60);
+        timeoutList += `⏱️ **${member.user.tag}** - ${timeRemaining} minutes remaining\n`;
+      });
+      
+      const embed = sapphireEmbed('⏱️ Timed Out Members', timeoutList);
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      return;
+    }
     
     // Help Pagination
     if (customId.startsWith('help_page_')) {
