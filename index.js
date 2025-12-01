@@ -754,28 +754,25 @@ client.once('ready', async () => {
   const rest = new REST({ version: '10' }).setToken(TOKEN);
   
   try {
-    console.log('🔄 Clearing Discord cache and refreshing commands...');
+    console.log('🔄 Registering slash commands...');
+    console.log('📊 Total commands to register: ' + commands.length);
     
-    // First, clear all commands to force Discord to update
-    await rest.put(Routes.applicationCommands(CLIENT_ID), { body: [] });
-    console.log('✅ Cleared old commands from Discord cache');
-    
-    // Wait a moment for Discord to process
-    await new Promise(r => setTimeout(r, 1000));
-    
-    // Now register the new commands
-    await rest.put(
+    const result = await rest.put(
       Routes.applicationCommands(CLIENT_ID),
       { body: commands }
     );
     
-    console.log('✅ Successfully registered new application (/) commands.');
-    console.log('\n📋 Registered Commands (' + commands.length + ' total):');
-    commands.forEach(cmd => {
+    console.log('✅ Successfully registered all commands!');
+    console.log('\n📋 Commands Registered (' + (result?.length || commands.length) + ' total):');
+    commands.slice(0, 10).forEach(cmd => {
       console.log(`  /${cmd.name}`);
     });
+    if (commands.length > 10) {
+      console.log(`  ... and ${commands.length - 10} more`);
+    }
   } catch (error) {
-    console.error('❌ Error registering commands:', error);
+    console.error('❌ Error registering commands:', error.message);
+    console.error('Full error:', error);
   }
 });
 
