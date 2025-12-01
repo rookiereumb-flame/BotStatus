@@ -2,9 +2,8 @@ require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
 const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
-const { logModeration, logLanguageGuardian } = require('./src/utils/logger');
+const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
-const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -279,7 +278,6 @@ const commands = [
           { name: 'suspend', value: 'suspend' },
           { name: 'add-role', value: 'add-role' },
           { name: 'purge', value: 'purge' },
-          { name: 'setup-language-guardian', value: 'setup-language-guardian' },
           { name: 'server-config', value: 'server-config' },
           { name: 'server-report', value: 'server-report' }
         ]
@@ -311,32 +309,12 @@ const commands = [
     ]
   },
   {
-    name: 'set-lg-channel',
-    description: 'Set log channel for Language Guardian actions (translations & strikes)',
-    options: [
-      {
-        name: 'channel',
-        description: 'The channel to log LG actions',
-        type: 7,
-        required: true
-      }
-    ]
-  },
-  {
     name: 'enable-automod',
     description: 'Enable automod system'
   },
   {
     name: 'disable-automod',
     description: 'Disable automod system'
-  },
-  {
-    name: 'enable-language-guardian',
-    description: 'Enable Language Guardian'
-  },
-  {
-    name: 'disable-language-guardian',
-    description: 'Disable Language Guardian'
   },
   {
     name: 'blacklist',
@@ -371,43 +349,6 @@ const commands = [
       {
         name: 'list',
         description: 'List all Automod blacklisted words',
-        type: 1
-      }
-    ]
-  },
-  {
-    name: 'lgbl',
-    description: 'Language Guardian - manage blacklisted words',
-    options: [
-      {
-        name: 'add',
-        description: 'Language Guardian - Add a word to the blacklist (works in any language)',
-        type: 1,
-        options: [
-          {
-            name: 'word',
-            description: 'The word to blacklist',
-            type: 3,
-            required: true
-          }
-        ]
-      },
-      {
-        name: 'remove',
-        description: 'Language Guardian - Remove a word from the blacklist',
-        type: 1,
-        options: [
-          {
-            name: 'word',
-            description: 'The word to remove from blacklist',
-            type: 3,
-            required: true
-          }
-        ]
-      },
-      {
-        name: 'list',
-        description: 'Language Guardian - List all blacklisted words',
         type: 1
       }
     ]
@@ -957,87 +898,6 @@ client.on('messageCreate', async message => {
       
       // Anti-Spam Detection (already done above)
       
-      // Language Guardian - Automatic bad word detection (only if LGBL enabled)
-      try {
-        const guildConfig = require('./src/database').getGuildConfig(message.guild.id);
-        if (guildConfig && guildConfig.lgbl_enabled) {
-          const member = await message.guild.members.fetch(message.author.id).catch(() => null);
-          if (!isUserWhitelisted(message.guild.id, message.author.id, member, 'language_guardian')) {
-            const lgConfig = getLanguageGuardianConfig(message.guild.id);
-            // Get LGBL words from DATABASE (per guild) - Language Guardian list
-            const blacklistWords = getLgblWords(message.guild.id);
-            
-            if (blacklistWords && blacklistWords.length > 0) {
-              // Translate the message first
-              const translated = await safeTranslate(message.content);
-              
-              // Check translated text against database blacklist
-              let foundBadWord = null;
-              for (const badWord of blacklistWords) {
-                const regex = new RegExp(`\\b${badWord.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-                if (regex.test(translated.toLowerCase())) {
-                  foundBadWord = badWord;
-                  break;
-                }
-              }
-
-              if (foundBadWord) {
-                const messageContent = message.content;
-                await message.delete().catch(() => {});
-                const strikeResult = addStrike(message.guild.id, message.author.id, lgConfig.strikeLimit, lgConfig.action || 'mute');
-
-                message.channel.send(`⚠️ **${message.author}** - Message deleted for blacklisted word:\n\`\`\`${messageContent}\`\`\`\n(Strike ${strikeResult.strikeCount}/${lgConfig.strikeLimit})`)
-                  .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
-                
-                // Log ONLY if strike limit NOT hit - action will handle its own log
-                if (!strikeResult.hitLimit) {
-                  await logLanguageGuardian(message.guild, {
-                    user: message.author,
-                    action: 'warning',
-                    reason: `Banned word detected: ${foundBadWord}`,
-                    translation: translated
-                  });
-                }
-
-                if (strikeResult.hitLimit) {
-                  if (member && member.moderatable) {
-                    const action = strikeResult.action || 'mute';
-                    try {
-                      if (action === 'mute') {
-                        await member.timeout(lgConfig.timeoutSeconds * 1000, "Blacklist strikes exceeded");
-                      } else if (action === 'kick') {
-                        await member.kick("Blacklist strikes exceeded");
-                      } else if (action === 'ban') {
-                        await message.guild.members.ban(message.author.id, { reason: "Blacklist strikes exceeded" });
-                      } else if (action === 'suspend') {
-                        const suspendRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended') || await message.guild.roles.create({ name: '⛔ Suspended', color: '#FF0000' });
-                        const previousRoles = member.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
-                        await member.roles.set([suspendRole.id]);
-                        suspendUser(message.guild.id, message.author.id, suspendRole.id, previousRoles, `Language Guardian - Strikes exceeded`);
-                      }
-                      resetStrikesFor(message.guild.id, message.author.id);
-                      
-                      // Log action ONCE
-                      await logLanguageGuardian(message.guild, {
-                        user: message.author,
-                        action: action,
-                        reason: `Hit ${lgConfig.strikeLimit} strikes on Language Guardian`,
-                        translation: translated
-                      });
-                    } catch (e) {
-                      console.error('Error applying LG action:', e);
-                    }
-                  }
-                }
-                return; // Skip automod check - LG already handled this
-              }
-            }
-          }
-        }
-      } catch (e) {
-        console.error('Language Guardian error:', e);
-      }
-      
       // Automod check (only runs if LG didn't already handle it)
       await checkMessage(message);
       return;
@@ -1208,43 +1068,6 @@ client.on('messageCreate', async message => {
         return message.reply("Usage: `!blacklist <add/remove/list> [word]`");
       }
 
-      case 'lgbl': {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return message.reply("❌ You need admin permissions.");
-        }
-
-        const action = args.shift()?.toLowerCase();
-        const word = args.join(" ").toLowerCase();
-
-        if (action === "add") {
-          if (!word) return message.reply("❌ Please provide a word to add.");
-          if (addLgblWord(message.guild.id, word)) {
-            return message.reply(`✅ Added \`${word}\` to Language Guardian Blacklist Library.`);
-          } else {
-            return message.reply(`❌ \`${word}\` is already in LGBL.`);
-          }
-        }
-
-        if (action === "remove") {
-          if (!word) return message.reply("❌ Please provide a word to remove.");
-          if (removeLgblWord(message.guild.id, word)) {
-            return message.reply(`✅ Removed \`${word}\` from Language Guardian Blacklist Library.`);
-          } else {
-            return message.reply(`❌ \`${word}\` is not in LGBL.`);
-          }
-        }
-
-        if (action === "list") {
-          const words = getLgblWords(message.guild.id);
-          if (words.length === 0) {
-            return message.reply("📚 **Language Guardian Blacklist Library:** No words added yet.");
-          }
-          const wordList = words.slice(0, 50).join(", ") + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : "");
-          return message.reply(`📚 **LGBL (${words.length} words):**\n${wordList}`);
-        }
-
-        return message.reply("Usage: `!lgbl <add/remove/list> [word]`");
-      }
 
       case 'purgebad': {
         if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
@@ -1866,20 +1689,6 @@ client.on('interactionCreate', async interaction => {
         break;
       }
 
-      case 'set-lg-channel': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        const channel = options.getChannel('channel');
-        setLgLogChannel(guild.id, channel.id);
-        const embed = sapphireEmbed('✅ Language Guardian Log Channel Set', `LG actions and translations will now be sent to ${channel}.`);
-        await interaction.reply({ embeds: [embed] });
-        break;
-      }
-
       case 'enable-automod': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
@@ -1902,32 +1711,6 @@ client.on('interactionCreate', async interaction => {
         }
         disableAutomod(guild.id);
         const embed = sapphireEmbed('✅ Automod Disabled', 'Automod is now disabled for this server.');
-        await interaction.reply({ embeds: [embed] });
-        break;
-      }
-
-      case 'enable-language-guardian': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        enableLGBL(guild.id);
-        const embed = sapphireEmbed('✅ Language Guardian Enabled', 'Language Guardian is now active for this server.\n\nUsers will get strikes for blacklisted words (3 strikes = timeout).');
-        await interaction.reply({ embeds: [embed] });
-        break;
-      }
-
-      case 'disable-language-guardian': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        disableLGBL(guild.id);
-        const embed = sapphireEmbed('✅ Language Guardian Disabled', 'Language Guardian is now disabled for this server.');
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -1968,47 +1751,6 @@ client.on('interactionCreate', async interaction => {
           }
           const wordList = words.slice(0, 50).join(', ') + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : '');
           const embed = sapphireEmbed('📚 Automod Blacklist Library', `**${words.length} words**\n\n${wordList}`);
-          await interaction.reply({ embeds: [embed] });
-        }
-        break;
-      }
-
-      case 'lgbl': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-
-        const subcommand = options.getSubcommand();
-        
-        if (subcommand === 'add') {
-          const word = options.getString('word');
-          if (addLgblWord(guild.id, word)) {
-            const embed = sapphireEmbed('✅ Added to LGBL', `**${word}** has been added to the Language Guardian Blacklist Library.\n\n*This word will be detected in any language!*`);
-            await interaction.reply({ embeds: [embed] });
-          } else {
-            await interaction.reply({ content: '❌ Word already in LGBL.', ephemeral: true });
-          }
-        } 
-        else if (subcommand === 'remove') {
-          const word = options.getString('word');
-          if (removeLgblWord(guild.id, word)) {
-            const embed = sapphireEmbed('✅ Removed from LGBL', `**${word}** has been removed from the Language Guardian Blacklist Library.`);
-            await interaction.reply({ embeds: [embed] });
-          } else {
-            await interaction.reply({ content: '❌ Word not found in LGBL.', ephemeral: true });
-          }
-        } 
-        else if (subcommand === 'list') {
-          const words = getLgblWords(guild.id);
-          if (words.length === 0) {
-            const embed = sapphireEmbed('📚 Language Guardian Blacklist Library', 'No blacklisted words yet.');
-            return await interaction.reply({ embeds: [embed] });
-          }
-          const wordList = words.slice(0, 50).join(', ') + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : '');
-          const embed = sapphireEmbed('📚 Language Guardian Blacklist Library', `**${words.length} words:** (works in any language!)\n\n${wordList}`);
           await interaction.reply({ embeds: [embed] });
         }
         break;
@@ -3049,51 +2791,6 @@ Click buttons below to toggle each system's whitelist bypass.
           );
           await interaction.reply({ embeds: [embed] });
         }
-        break;
-      }
-
-      case 'setup-language-guardian': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ content: '❌ You need administrator permissions.', ephemeral: true });
-        }
-        const strikeLimit = options.getInteger('strike_limit') || DEFAULT_STRIKE_LIMIT;
-        const timeoutMinutes = options.getInteger('timeout_minutes') || Math.floor(DEFAULT_TIMEOUT_SECONDS / 60);
-        const action = options.getString('action') || 'mute';
-        
-        setLanguageGuardianConfig(guild.id, {
-          strikeLimit,
-          timeoutSeconds: timeoutMinutes * 60,
-          action
-        });
-        
-        const embed = sapphireEmbed('🛡️ Language Guardian Configured', '✅ Bad word detection is now active!', SAPPHIRE_COLOR, [
-          { name: '⚠️ Strike Limit', value: `${strikeLimit} strikes`, inline: true },
-          { name: '⏰ Timeout Duration', value: `${timeoutMinutes} min`, inline: true },
-          { name: '🎯 Action on Limit', value: action.toUpperCase(), inline: true },
-          { name: '🌍 Coverage', value: 'Detects offensive words from all languages', inline: false },
-          { name: '💡 Tip', value: 'Use "Configure Logging" to choose where violations are logged (DM or channel).', inline: false }
-        ]);
-        
-        const buttons = new ActionRowBuilder()
-          .addComponents(
-            new ButtonBuilder()
-              .setCustomId(`lguardian_status_${guild.id}`)
-              .setLabel('View Settings')
-              .setStyle(ButtonStyle.Secondary)
-              .setEmoji('⚙️'),
-            new ButtonBuilder()
-              .setCustomId(`lguardian_log_config_${guild.id}`)
-              .setLabel('Configure Logging')
-              .setStyle(ButtonStyle.Primary)
-              .setEmoji('📋'),
-            new ButtonBuilder()
-              .setCustomId(`lguardian_disable_${guild.id}`)
-              .setLabel('Disable')
-              .setStyle(ButtonStyle.Danger)
-              .setEmoji('❌')
-          );
-        
-        await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
 
