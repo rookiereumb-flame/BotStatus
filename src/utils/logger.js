@@ -27,6 +27,9 @@ async function logModeration(guild, action, options) {
     warn: 0xF1C40F,
     unban: 0x2ECC71,
     unmute: 0x2ECC71,
+    unwarn: 0x2ECC71,
+    suspend: 0xFF0000,
+    unsuspend: 0x2ECC71,
     automod: 0xFF0000
   };
 
@@ -37,6 +40,9 @@ async function logModeration(guild, action, options) {
     warn: '⚠️',
     unban: '✅',
     unmute: '🔊',
+    unwarn: '🗑️',
+    suspend: '⛔',
+    unsuspend: '✅',
     automod: '🤖'
   };
 

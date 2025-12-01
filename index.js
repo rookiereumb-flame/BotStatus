@@ -1562,6 +1562,11 @@ client.on('interactionCreate', async interaction => {
         await targetMember.kick(reason);
         addWarning(guild.id, user.id, member.id, `Kicked: ${reason}`);
         const caseId = createCase(guild.id, user.id, member.id, 'kick', reason);
+        await logModeration(guild, 'kick', {
+          user: user,
+          moderator: member.user,
+          reason: reason
+        });
         const embed = sapphireEmbed('👢 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
@@ -1581,6 +1586,11 @@ client.on('interactionCreate', async interaction => {
         await targetMember.ban({ reason });
         addWarning(guild.id, user.id, member.id, `Banned: ${reason}`);
         const caseId = createCase(guild.id, user.id, member.id, 'ban', reason);
+        await logModeration(guild, 'ban', {
+          user: user,
+          moderator: member.user,
+          reason: reason
+        });
         const embed = sapphireEmbed('🔨 Member Banned', `${user} has been banned from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
@@ -1638,6 +1648,11 @@ client.on('interactionCreate', async interaction => {
         addWarning(guild.id, user.id, member.id, reason);
         const caseId = createCase(guild.id, user.id, member.id, 'warn', reason);
         const warnings = getWarnings(guild.id, user.id);
+        await logModeration(guild, 'warn', {
+          user: user,
+          moderator: member.user,
+          reason: reason
+        });
         const embed = sapphireEmbed('⚠️ Member Warned', `${user} has been warned.\n**Reason:** ${reason}\n**Total Warnings:** ${warnings.length}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
@@ -1654,6 +1669,11 @@ client.on('interactionCreate', async interaction => {
         const warningNum = options.getInteger('warning_number') - 1;
         if (removeWarning(guild.id, user.id, warningNum)) {
           const warnings = getWarnings(guild.id, user.id);
+          await logModeration(guild, 'unwarn', {
+            user: user,
+            moderator: member.user,
+            reason: `Warning #${warningNum + 1} removed`
+          });
           const embed = sapphireEmbed('✅ Warning Removed', `Removed warning from ${user}.\n**Remaining Warnings:** ${warnings.length}`);
           await interaction.reply({ embeds: [embed] });
         } else {
@@ -1673,6 +1693,11 @@ client.on('interactionCreate', async interaction => {
         const reason = options.getString('reason') || 'No reason provided';
         await guild.bans.remove(userId, reason);
         const caseId = createCase(guild.id, userId, member.id, 'unban', reason);
+        await logModeration(guild, 'unban', {
+          userId: userId,
+          moderator: member.user,
+          reason: reason
+        });
         const embed = sapphireEmbed('✅ Member Unbanned', `User ${userId} has been unbanned.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
@@ -1690,6 +1715,11 @@ client.on('interactionCreate', async interaction => {
         const targetMember = await guild.members.fetch(user.id);
         await targetMember.timeout(null, reason);
         const caseId = createCase(guild.id, user.id, member.id, 'unmute', reason);
+        await logModeration(guild, 'unmute', {
+          user: user,
+          moderator: member.user,
+          reason: reason
+        });
         const embed = sapphireEmbed('🔊 Member Unmuted', `${user} has been unmuted.\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
@@ -2610,6 +2640,12 @@ Click buttons below to toggle each system's whitelist bypass.
           console.error('Error adding suspend role:', err);
         }
         
+        await logModeration(guild, 'suspend', {
+          user: user,
+          moderator: member.user,
+          reason: reason
+        });
+        
         const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
         if (logChannelId) {
           const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
@@ -2660,6 +2696,12 @@ Click buttons below to toggle each system's whitelist bypass.
         } catch (err) {
           console.error('Error unsuspending user:', err);
         }
+        
+        await logModeration(guild, 'unsuspend', {
+          user: user,
+          moderator: member.user,
+          reason: 'User unsuspended'
+        });
         
         const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
         if (logChannelId) {
