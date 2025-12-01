@@ -7,21 +7,33 @@ let serverProcess = null;
 let botProcess = null;
 let isRestarting = false;
 
-// Kill any existing processes on port 5000
+// Kill any existing processes on port 5000 (multiple attempts)
 function killPort5000() {
   return new Promise((resolve) => {
-    const kill = spawn('bash', ['-c', 'fuser -k 5000/tcp 2>/dev/null || true']);
-    kill.on('close', () => {
-      setTimeout(resolve, 1000);
-    });
+    let attempts = 0;
+    const maxAttempts = 3;
+    
+    function attempt() {
+      attempts++;
+      const kill = spawn('bash', ['-c', 'fuser -k 5000/tcp 2>/dev/null; pkill -f "server.js" || true']);
+      kill.on('close', () => {
+        if (attempts < maxAttempts) {
+          setTimeout(attempt, 500);
+        } else {
+          setTimeout(resolve, 1500);
+        }
+      });
+    }
+    
+    attempt();
   });
 }
 
-// Start server
-function startServer() {
+// Start server (with retry on port conflict)
+function startServer(attempt = 1) {
   if (isRestarting) return;
   
-  console.log('🚀 Starting Express server...');
+  console.log(`🚀 Starting Express server (attempt ${attempt})...`);
   serverProcess = spawn('node', ['server.js'], {
     stdio: 'inherit',
     detached: true
@@ -30,8 +42,13 @@ function startServer() {
   serverProcess.on('error', (err) => {
     console.error('❌ Server error:', err.message);
     if (!isRestarting) {
-      console.log('🔄 Restarting server in 5 seconds...');
-      setTimeout(startServer, 5000);
+      if (attempt < 3) {
+        console.log(`🔄 Retrying server startup (attempt ${attempt + 1}) in 3 seconds...`);
+        setTimeout(() => startServer(attempt + 1), 3000);
+      } else {
+        console.log('🔄 Max retries reached. Restarting in 10 seconds...');
+        setTimeout(() => startServer(1), 10000);
+      }
     }
   });
   
@@ -39,7 +56,7 @@ function startServer() {
     console.warn(`⚠️ Server exited with code ${code}`);
     if (!isRestarting) {
       console.log('🔄 Restarting server in 5 seconds...');
-      setTimeout(startServer, 5000);
+      setTimeout(() => startServer(1), 5000);
     }
   });
 }

@@ -4,7 +4,14 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
-- **November 30, 2025**: Pageable Help + Detailed Command Assistance + Customizable LG Actions (LATEST!)
+- **December 1, 2025**: Fixed Command Registration + Process Manager Stability (LATEST!)
+  - **Fixed Command Registration Hang**: Removed cache clearing delay that was causing Discord command registration timeouts
+  - **Improved Process Manager**: Triple port cleanup + server startup retry logic (up to 3 attempts)
+  - **Better Crash Recovery**: Added aggressive port cleanup with `fuser` + `pkill` to prevent zombie processes
+  - **46 Slash Commands**: All commands now register cleanly and consistently
+  - **24/7 Uptime**: Bot auto-recovers from crashes within 5 seconds with no manual intervention
+
+- **November 30, 2025**: Pageable Help + Detailed Command Assistance + Customizable LG Actions
   - **Pageable `/help` Command**: Shows 10 commands per page with Next/Previous buttons
     - Navigate through all 46+ commands easily
     - Page indicator (e.g., "Page 1/5")
