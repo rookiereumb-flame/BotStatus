@@ -892,10 +892,17 @@ client.on('messageCreate', async message => {
       }
     } catch (e) {}
 
-    // Remove AFK if user sends a message (send normal chat message)
+    // Remove AFK if user sends a message (send normal chat message and fix nick)
     if (getAFKUser(message.guild.id, message.author.id)) {
       removeAFK(message.guild.id, message.author.id);
       message.channel.send(`👋 ${message.author} is back from AFK!`).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000)).catch(()=>{});
+      const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+      if (member) {
+        try {
+          const newNick = member.displayName.replace(/^\[AFK\] /, '');
+          await member.setNickname(newNick === member.displayName ? null : newNick).catch(() => {});
+        } catch (e) {}
+      }
     }
 
     // Check if message starts with prefix for command processing
@@ -1012,7 +1019,7 @@ client.on('messageCreate', async message => {
       const knownCommands = [
         'kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'purge', 'say', 'blacklist', 'purgebad',
         'change-role-name', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 
-        'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list', 'nick', 'lgbl'
+        'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list', 'nick', 'lgbl', 'afk', 'afk-list'
       ];
       if (knownCommands.includes(multiWordCmd)) {
         cmd = multiWordCmd;
@@ -1024,7 +1031,7 @@ client.on('messageCreate', async message => {
     const validPrefixCommands = [
       'kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'purge', 'say', 'blacklist', 'purgebad',
       'change-role-name', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 
-      'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list', 'nick', 'lgbl', 'help'
+      'enable-language-guardian', 'disable-language-guardian', 'suspend', 'unsuspend', 'suspended-list', 'nick', 'lgbl', 'help', 'afk', 'afk-list'
     ];
     
     switch(cmd) {
@@ -1275,6 +1282,34 @@ client.on('messageCreate', async message => {
         const targetMember = await message.guild.members.fetch(user.id);
         await targetMember.setNickname(nickname);
         message.reply(`✅ Changed nickname for ${user.tag}`);
+        break;
+      }
+
+      case 'afk': {
+        const reason = args.join(' ') || 'AFK';
+        setAFK(message.guild.id, message.author.id, reason);
+        const member = await message.guild.members.fetch(message.author.id).catch(() => null);
+        if (member) {
+          try {
+            const newNick = `[AFK] ${member.displayName.replace(/^\[AFK\] /, '')}`;
+            await member.setNickname(newNick.substring(0, 32)).catch(() => {});
+          } catch (e) {}
+        }
+        message.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`);
+        break;
+      }
+
+      case 'afk-list': {
+        const afkUsers = getAllAFKUsers(message.guild.id);
+        if (afkUsers.length === 0) {
+          return message.reply('✅ No one is AFK right now!');
+        }
+        let list = '';
+        for (const afkUser of afkUsers.slice(0, 20)) {
+          const user = await client.users.fetch(afkUser.user_id).catch(() => null);
+          list += `👤 **${user ? user.tag : afkUser.user_id}** - ${afkUser.reason} (<t:${Math.floor(afkUser.afk_timestamp / 1000)}:R>)\n`;
+        }
+        message.reply(`😴 **AFK Members** (${afkUsers.length})\n\n${list}`);
         break;
       }
 
@@ -1921,11 +1956,14 @@ client.on('interactionCreate', async interaction => {
       case 'afk': {
         const reason = options.getString('reason') || 'AFK';
         setAFK(guild.id, interaction.user.id, reason);
-        const embed = sapphireEmbed('😴 AFK Set', `You are now marked as AFK.`, SAPPHIRE_COLOR, [
-          { name: '📝 Reason', value: reason, inline: false },
-          { name: '💡 Tip', value: 'You\'ll be automatically removed from AFK when you send a message or join voice.', inline: false }
-        ]);
-        await interaction.reply({ embeds: [embed] });
+        const member = await guild.members.fetch(interaction.user.id).catch(() => null);
+        if (member) {
+          try {
+            const newNick = `[AFK] ${member.displayName.replace(/^\[AFK\] /, '')}`;
+            await member.setNickname(newNick.substring(0, 32)).catch(() => {});
+          } catch (e) {}
+        }
+        await interaction.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`);
         break;
       }
 
@@ -1937,13 +1975,9 @@ client.on('interactionCreate', async interaction => {
         let list = '';
         for (const afkUser of afkUsers.slice(0, 20)) {
           const user = await client.users.fetch(afkUser.user_id).catch(() => null);
-          const afkTime = Math.floor((Date.now() - afkUser.afk_timestamp) / 1000);
           list += `👤 **${user ? user.tag : afkUser.user_id}** - ${afkUser.reason} (<t:${Math.floor(afkUser.afk_timestamp / 1000)}:R>)\n`;
         }
-        const embed = sapphireEmbed('😴 AFK Members', list, SAPPHIRE_COLOR, [
-          { name: '📊 Count', value: `${afkUsers.length} member${afkUsers.length !== 1 ? 's' : ''}`, inline: false }
-        ]);
-        await interaction.reply({ embeds: [embed] });
+        await interaction.reply(`😴 **AFK Members** (${afkUsers.length})\n\n${list}`);
         break;
       }
 
@@ -3249,6 +3283,10 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const afkUser = getAFKUser(newState.guild.id, newState.member.id);
     if (afkUser) {
       removeAFK(newState.guild.id, newState.member.id);
+      try {
+        const newNick = newState.member.displayName.replace(/^\[AFK\] /, '');
+        await newState.member.setNickname(newNick === newState.member.displayName ? null : newNick).catch(() => {});
+      } catch (e) {}
       try {
         await newState.member.user.send(`👋 Removed from AFK as you joined voice channel.`).catch(()=>{});
       } catch (e) {}
