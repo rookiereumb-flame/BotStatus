@@ -340,6 +340,43 @@ const commands = [
     description: 'Disable Language Guardian'
   },
   {
+    name: 'blacklist',
+    description: 'Automod - manage blacklisted words',
+    options: [
+      {
+        name: 'add',
+        description: 'Add a word to Automod blacklist',
+        type: 1,
+        options: [
+          {
+            name: 'word',
+            description: 'The word to blacklist',
+            type: 3,
+            required: true
+          }
+        ]
+      },
+      {
+        name: 'remove',
+        description: 'Remove a word from Automod blacklist',
+        type: 1,
+        options: [
+          {
+            name: 'word',
+            description: 'The word to remove',
+            type: 3,
+            required: true
+          }
+        ]
+      },
+      {
+        name: 'list',
+        description: 'List all Automod blacklisted words',
+        type: 1
+      }
+    ]
+  },
+  {
     name: 'lgbl',
     description: 'Language Guardian - manage blacklisted words',
     options: [
@@ -1886,6 +1923,47 @@ client.on('interactionCreate', async interaction => {
         disableLGBL(guild.id);
         const embed = sapphireEmbed('✅ Language Guardian Disabled', 'Language Guardian is now disabled for this server.');
         await interaction.reply({ embeds: [embed] });
+        break;
+      }
+
+      case 'blacklist': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+
+        const subcommand = options.getSubcommand();
+        
+        if (subcommand === 'add') {
+          const word = options.getString('word');
+          if (addBlacklistWord(guild.id, word)) {
+            const embed = sapphireEmbed('✅ Added to Automod Blacklist', `**${word}** has been added to the Automod Blacklist Library.`);
+            await interaction.reply({ embeds: [embed] });
+          } else {
+            await interaction.reply({ content: '❌ Word already in blacklist.', ephemeral: true });
+          }
+        } 
+        else if (subcommand === 'remove') {
+          const word = options.getString('word');
+          if (removeBlacklistWord(guild.id, word)) {
+            const embed = sapphireEmbed('✅ Removed from Automod Blacklist', `**${word}** has been removed from the Automod Blacklist Library.`);
+            await interaction.reply({ embeds: [embed] });
+          } else {
+            await interaction.reply({ content: '❌ Word not found in blacklist.', ephemeral: true });
+          }
+        } 
+        else if (subcommand === 'list') {
+          const words = getBlacklistWords(guild.id);
+          if (words.length === 0) {
+            const embed = sapphireEmbed('📚 Automod Blacklist Library', 'No blacklisted words yet.');
+            return await interaction.reply({ embeds: [embed] });
+          }
+          const wordList = words.slice(0, 50).join(', ') + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : '');
+          const embed = sapphireEmbed('📚 Automod Blacklist Library', `**${words.length} words**\n\n${wordList}`);
+          await interaction.reply({ embeds: [embed] });
+        }
         break;
       }
 
