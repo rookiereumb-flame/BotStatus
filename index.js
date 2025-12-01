@@ -982,10 +982,11 @@ client.on('messageCreate', async message => {
               }
 
               if (foundBadWord) {
+                const messageContent = message.content;
                 await message.delete().catch(() => {});
                 const strikeResult = addStrike(message.guild.id, message.author.id, lgConfig.strikeLimit, lgConfig.action || 'mute');
 
-                message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikeResult.strikeCount}/${lgConfig.strikeLimit})`)
+                message.channel.send(`⚠️ **${message.author}** - Message deleted for blacklisted word:\n\`\`\`${messageContent}\`\`\`\n(Strike ${strikeResult.strikeCount}/${lgConfig.strikeLimit})`)
                   .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
                 
                 // Log to Language Guardian channel

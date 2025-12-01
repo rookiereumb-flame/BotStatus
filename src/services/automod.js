@@ -26,17 +26,22 @@ async function checkMessage(message) {
     const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
     if (regex.test(lowerText)) {
       try {
+        const messageContent = message.content;
         await message.delete();
 
         await logModeration(message.guild, 'automod', {
           user: message.author,
           moderator: message.client.user,
-          reason: `Used blacklisted word: "${word}" (Message: "${message.content.substring(0, 100)}")`
+          reason: `Used blacklisted word: "${word}" (Message: "${messageContent.substring(0, 100)}")`
         });
+
+        message.channel.send(`⚠️ **${message.author}** - Message deleted for blacklisted word:\n\`\`\`${messageContent}\`\`\``)
+          .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
+          .catch(()=>{});
 
         try {
           await message.author.send({
-            content: `⚠️ Your message in **${message.guild.name}** was deleted for containing a blacklisted word.`
+            content: `⚠️ Your message in **${message.guild.name}** was deleted for containing a blacklisted word:\n\`\`\`${messageContent}\`\`\``
           });
         } catch (error) {
           console.log(`Could not DM ${message.author.tag}`);
