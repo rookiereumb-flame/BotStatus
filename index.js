@@ -5,7 +5,6 @@ const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, 
 const { logModeration, logLanguageGuardian } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
-const { addLgblWord, removeLgblWord, getLgblWords } = require('./src/database');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -870,13 +869,17 @@ client.once('ready', async () => {
     console.log('  /warns');
     console.log('  /server-timeout-status');
     console.log('  /help');
-    console.log('\n🛡️  AUTOMOD:');
+    console.log('\n🛡️  AUTOMOD & PROTECTION:');
     console.log('  /set-channel');
     console.log('  /enable-automod');
     console.log('  /disable-automod');
+    console.log('  /blacklist (manage Automod words)');
     console.log('  /enable-language-guardian');
     console.log('  /disable-language-guardian');
-    console.log('  /lgbl');
+    console.log('  /lgbl (manage LG words)');
+    console.log('  /setup-anti-nuke');
+    console.log('  /setup-anti-raid');
+    console.log('  /setup-anti-spam');
     console.log('\n🔧 UTILITIES:');
     console.log('  /purge');
     console.log('  /say');
