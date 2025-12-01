@@ -20,7 +20,7 @@ author = "agent"
 
 [[workflows.workflow.tasks]]
 task = "shell.exec"
-args = "bash -c \"fuser -k 5000/tcp 2>/dev/null || true; sleep 1; node server.js & node index.js\""
+args = "node start.js"
 
 [[ports]]
 localPort = 5000
@@ -52,7 +52,7 @@ externalPort = 3001
 
 [deployment]
 deploymentTarget = "vm"
-run = ["bash", "-c", "node server.js & node index.js"]
+run = ["node", "start.js"]
 
 [nix]
 channel = "stable-25_05"
