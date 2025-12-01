@@ -44,7 +44,7 @@ const client = new Client({
 const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR, fields = []) => {
   const embed = new EmbedBuilder()
     .setTitle(title)
-    .setDescription(desc)
+    .setDescription(desc || '⠀')  // Use zero-width space if empty
     .setColor(color)
     .setTimestamp();
   if (fields.length > 0) embed.addFields(fields);
