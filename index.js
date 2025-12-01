@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 require('./server');
-const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, enableLGBL, disableLGBL, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, addLgblWord, removeLgblWord, getLgblWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 
@@ -351,8 +351,8 @@ const commands = [
         ]
       },
       {
-        name: 'list',
-        description: 'List all Automod blacklisted words',
+        name: 'library',
+        description: 'View all blacklisted words',
         type: 1
       }
     ]
@@ -1060,36 +1060,19 @@ client.on('messageCreate', async message => {
           }
         }
 
-        if (action === "list") {
+        if (action === "library") {
           const words = getBlacklistWords(message.guild.id);
           if (words.length === 0) {
-            return message.reply("📚 **Automod Blacklist Library:** No words added yet.");
+            return message.reply("📚 **Blacklist Library:** No words added yet.");
           }
           const wordList = words.slice(0, 50).join(", ") + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : "");
-          return message.reply(`📚 **Automod Blacklist Library (${words.length} words):**\n${wordList}`);
+          return message.reply(`📚 **Blacklist Library (${words.length} words):**\n${wordList}`);
         }
 
-        return message.reply("Usage: `!blacklist <add/remove/list> [word]`");
+        return message.reply("Usage: `=blacklist <add/remove/library> [word]`");
       }
 
 
-      case 'purgebad': {
-        if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return message.reply("You need admin permissions.");
-        }
-
-        const limit = parseInt(args[0]) || 30;
-        const messages = await message.channel.messages.fetch({ limit });
-
-        const toDelete = [];
-        for (const m of messages.values()) {
-          const translated = await safeTranslate(m.content);
-          if (matchesBlacklist(translated)) toDelete.push(m);
-        }
-
-        for (const m of toDelete) m.delete().catch(() => {});
-        return message.reply(`✅ Deleted ${toDelete.length} bad messages.`);
-      }
       
       case 'unban': {
         if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) {
@@ -1777,14 +1760,14 @@ client.on('interactionCreate', async interaction => {
             await interaction.reply({ content: '❌ Word not found in blacklist.', ephemeral: true });
           }
         } 
-        else if (subcommand === 'list') {
+        else if (subcommand === 'library') {
           const words = getBlacklistWords(guild.id);
           if (words.length === 0) {
-            const embed = sapphireEmbed('📚 Automod Blacklist Library', 'No blacklisted words yet.');
+            const embed = sapphireEmbed('📚 Blacklist Library', 'No blacklisted words yet.');
             return await interaction.reply({ embeds: [embed] });
           }
           const wordList = words.slice(0, 50).join(', ') + (words.length > 50 ? `\n\n...and ${words.length - 50} more words` : '');
-          const embed = sapphireEmbed('📚 Automod Blacklist Library', `**${words.length} words**\n\n${wordList}`);
+          const embed = sapphireEmbed('📚 Blacklist Library', `**${words.length} words**\n\n${wordList}`);
           await interaction.reply({ embeds: [embed] });
         }
         break;
