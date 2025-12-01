@@ -1295,7 +1295,7 @@ client.on('messageCreate', async message => {
             await member.setNickname(newNick.substring(0, 32)).catch(() => {});
           } catch (e) {}
         }
-        message.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`);
+        message.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000)).catch(()=>{});
         break;
       }
 
@@ -1964,6 +1964,7 @@ client.on('interactionCreate', async interaction => {
           } catch (e) {}
         }
         await interaction.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`);
+        setTimeout(() => interaction.deleteReply().catch(()=>{}), 5000);
         break;
       }
 
