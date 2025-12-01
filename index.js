@@ -989,13 +989,15 @@ client.on('messageCreate', async message => {
                 message.channel.send(`⚠️ **${message.author}** - Message deleted for blacklisted word:\n\`\`\`${messageContent}\`\`\`\n(Strike ${strikeResult.strikeCount}/${lgConfig.strikeLimit})`)
                   .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
                 
-                // Log to Language Guardian channel
-                await logLanguageGuardian(message.guild, {
-                  user: message.author,
-                  action: 'warning',
-                  reason: `Banned word detected: ${foundBadWord}`,
-                  translation: translated
-                });
+                // Log ONLY if strike limit NOT hit - action will handle its own log
+                if (!strikeResult.hitLimit) {
+                  await logLanguageGuardian(message.guild, {
+                    user: message.author,
+                    action: 'warning',
+                    reason: `Banned word detected: ${foundBadWord}`,
+                    translation: translated
+                  });
+                }
 
                 if (strikeResult.hitLimit) {
                   if (member && member.moderatable) {
@@ -1015,7 +1017,7 @@ client.on('messageCreate', async message => {
                       }
                       resetStrikesFor(message.guild.id, message.author.id);
                       
-                      // Log action to Language Guardian channel
+                      // Log action ONCE
                       await logLanguageGuardian(message.guild, {
                         user: message.author,
                         action: action,
