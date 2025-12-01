@@ -892,10 +892,20 @@ client.on('messageCreate', async message => {
       }
     } catch (e) {}
 
-    // Remove AFK if user sends a message (send normal chat message)
+    // Remove AFK if user sends a message (send normal chat message and fix nick)
     if (getAFKUser(message.guild.id, message.author.id)) {
       removeAFK(message.guild.id, message.author.id);
       message.channel.send(`👋 ${message.author} is back from AFK!`).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000)).catch(()=>{});
+      const member = message.member;
+      if (member && member.manageable) {
+        try {
+          const currentNick = member.nickname;
+          if (currentNick && currentNick.startsWith('[AFK] ')) {
+            const cleanNick = currentNick.replace(/^\[AFK\] /, '');
+            await member.setNickname(cleanNick);
+          }
+        } catch (e) {}
+      }
     }
 
     // Check if message starts with prefix for command processing
@@ -1281,6 +1291,15 @@ client.on('messageCreate', async message => {
       case 'afk': {
         const reason = args.join(' ') || 'AFK';
         setAFK(message.guild.id, message.author.id, reason);
+        const targetMember = message.member;
+        if (targetMember && targetMember.manageable) {
+          try {
+            const currentNick = targetMember.nickname || targetMember.user.username;
+            const cleanNick = currentNick.replace(/^\[AFK\] /, '');
+            const newNick = `[AFK] ${cleanNick}`.substring(0, 32);
+            await targetMember.setNickname(newNick);
+          } catch (e) {}
+        }
         message.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`).then(m => setTimeout(() => m.delete().catch(()=>{}), 5000)).catch(()=>{});
         break;
       }
@@ -1942,6 +1961,15 @@ client.on('interactionCreate', async interaction => {
       case 'afk': {
         const reason = options.getString('reason') || 'AFK';
         setAFK(guild.id, interaction.user.id, reason);
+        const targetMember = interaction.member;
+        if (targetMember && targetMember.manageable) {
+          try {
+            const currentNick = targetMember.nickname || targetMember.user.username;
+            const cleanNick = currentNick.replace(/^\[AFK\] /, '');
+            const newNick = `[AFK] ${cleanNick}`.substring(0, 32);
+            await targetMember.setNickname(newNick);
+          } catch (e) {}
+        }
         await interaction.reply(`😴 **AFK Set** - You are now marked as AFK.\n📝 **Reason:** ${reason}\n💡 **Tip:** You'll be automatically removed from AFK when you send a message or join voice.`);
         setTimeout(() => interaction.deleteReply().catch(()=>{}), 5000);
         break;
@@ -3263,6 +3291,15 @@ client.on('voiceStateUpdate', async (oldState, newState) => {
     const afkUser = getAFKUser(newState.guild.id, newState.member.id);
     if (afkUser) {
       removeAFK(newState.guild.id, newState.member.id);
+      if (newState.member.manageable) {
+        try {
+          const currentNick = newState.member.nickname;
+          if (currentNick && currentNick.startsWith('[AFK] ')) {
+            const cleanNick = currentNick.replace(/^\[AFK\] /, '');
+            await newState.member.setNickname(cleanNick);
+          }
+        } catch (e) {}
+      }
       try {
         await newState.member.user.send(`👋 Removed from AFK as you joined voice channel.`).catch(()=>{});
       } catch (e) {}
