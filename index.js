@@ -5,6 +5,7 @@ const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, 
 const { logModeration, logLanguageGuardian } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
 const { matchesBlacklist, safeTranslate, addStrike, resetStrikesFor, getStrikes, addWord, removeWord, getWords, sendModLog } = require('./src/services/language-guardian');
+const { addLgblWord, removeLgblWord, getLgblWords } = require('./src/database');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -923,8 +924,8 @@ client.on('messageCreate', async message => {
           const member = await message.guild.members.fetch(message.author.id).catch(() => null);
           if (!isUserWhitelisted(message.guild.id, message.author.id, member, 'language_guardian')) {
             const lgConfig = getLanguageGuardianConfig(message.guild.id);
-            // Get blacklist words from DATABASE (per guild)
-            const blacklistWords = getBlacklistWords(message.guild.id);
+            // Get LGBL words from DATABASE (per guild) - Language Guardian list
+            const blacklistWords = getLgblWords(message.guild.id);
             
             if (blacklistWords && blacklistWords.length > 0) {
               // Translate the message first
