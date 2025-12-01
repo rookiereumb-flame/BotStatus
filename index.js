@@ -946,8 +946,6 @@ client.on('messageCreate', async message => {
 
                 message.channel.send(`❌ ${message.author}, that word is not allowed. (Strike ${strikeResult.strikeCount}/${lgConfig.strikeLimit})`)
                   .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000));
-
-                await sendModLog(message.guild, `${message.author.tag} sent a banned word: ${foundBadWord}`);
                 
                 // Log to Language Guardian channel
                 await logLanguageGuardian(message.guild, {
@@ -974,7 +972,6 @@ client.on('messageCreate', async message => {
                         suspendUser(message.guild.id, message.author.id, suspendRole.id, previousRoles, `Language Guardian - Strikes exceeded`);
                       }
                       resetStrikesFor(message.guild.id, message.author.id);
-                      await sendModLog(message.guild, `⚠️ **${message.author.tag}** hit strike limit (${lgConfig.strikeLimit}) - **${action.toUpperCase()}** applied`);
                       
                       // Log action to Language Guardian channel
                       await logLanguageGuardian(message.guild, {
