@@ -1,6 +1,6 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
-require('./server');
+// NOTE: Server is started separately by start.js to avoid port conflicts
 const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage } = require('./src/services/automod');
