@@ -1,10 +1,11 @@
 {
   "name": "discord-bot-host",
   "version": "1.0.0",
-  "description": "Discord bot hosted on Replit",
-  "main": "index.js",
+  "description": "Discord bot hosted on Replit/Railway",
+  "main": "start.js",
   "scripts": {
-    "start": "node index.js"
+    "start": "node start.js",
+    "dev": "node start.js"
   },
   "dependencies": {
     "axios": "^1.13.2",

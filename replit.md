@@ -221,7 +221,9 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
   - `/unsuspend` (restore suspended users)
 
 ## Deployment
-✅ **Reserved VM Deployment Configured** (December 1, 2025)
+
+### Option 1: Replit (Current)
+✅ **Reserved VM Deployment Configured** (December 2, 2025)
 - **Deployment target:** VM (always-on, never sleeps)
 - **Run command:** `node start.js` (process manager with auto-recovery)
 - **Process Manager (start.js):** Monitors & auto-restarts both server + bot
@@ -229,6 +231,16 @@ This project hosts a comprehensive Discord moderation bot on Replit, running 24/
 - **Bot (index.js):** Stays connected to Discord 24/7
 - **Crash Recovery:** Automatic restart within 5 seconds if either process fails
 - **Status:** 🚀 **True 24/7 uptime with auto-recovery enabled!**
+
+### Option 2: Railway (Ready to Deploy)
+🚀 **Railway Deployment Prepared** (December 2, 2025)
+- **railway.json**: Configured with NIXPACKS builder
+- **.env.example**: Template for all required variables
+- **package.json**: Updated to use `node start.js` start command
+- **server.js**: Now respects PORT environment variable (Railway assigns dynamically)
+- **Deployment Guide**: See RAILWAY_DEPLOYMENT.md for complete setup instructions
+- **Status:** Ready to deploy! Just push to GitHub → Connect Railway → Set env vars
+- **See**: RAILWAY_DEPLOYMENT.md for step-by-step instructions
 
 ## Future Enhancement Opportunities (Autonomous Mode)
 - AI content detection (toxicity, harassment, NSFW, threats, spam)
