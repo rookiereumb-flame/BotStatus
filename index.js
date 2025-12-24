@@ -3,7 +3,7 @@ const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBi
 // NOTE: Server is started separately by start.js to avoid port conflicts
 const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
-const { checkMessage } = require('./src/services/automod');
+const { checkMessage, runLanguageGuardian } = require('./src/services/automod');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -835,12 +835,19 @@ client.on('messageCreate', async message => {
     const isCommand = message.content.startsWith(customPrefix);
     
     if (!isCommand) {
-      // Only run automod & LGBL on non-command messages
+      // Only run automod on non-command messages
+      const config = getGuildConfig(message.guild.id);
       
-      // Anti-Spam Detection (already done above)
-      
-      // Automod check (only runs if LG didn't already handle it)
-      await checkMessage(message);
+      // Main automod controller: if automod is enabled
+      if (config?.automod_enabled) {
+        // If Language Guardian is enabled, run it (it handles translation + multilingual detection)
+        if (config.automod_multilingual) {
+          await runLanguageGuardian(message, config);
+        } else {
+          // Otherwise, run regular automod
+          await checkMessage(message);
+        }
+      }
       return;
     }
     

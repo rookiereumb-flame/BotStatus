@@ -40,6 +40,13 @@ try {
   db.exec(`ALTER TABLE guild_config ADD COLUMN lgbl_enabled INTEGER DEFAULT 0;`);
 }
 
+// Add automod_multilingual column if it doesn't exist
+try {
+  db.prepare('SELECT automod_multilingual FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN automod_multilingual INTEGER DEFAULT 0;`);
+}
+
 // Add missing columns to warnings table if they don't exist
 try {
   db.prepare('SELECT is_manual FROM warnings LIMIT 1').get();
