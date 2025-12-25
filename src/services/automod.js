@@ -149,15 +149,28 @@ async function runLanguageGuardian(message, config) {
   // Also check if any blacklisted words from database are present (multilingual support)
   let isBlacklisted = false;
   const blacklistWords = getBlacklistWords(message.guild.id);
+  
   if (blacklistWords.length > 0) {
-    const translatedText = await safeTranslate(message.content);
-    const textToCheck = translatedText.toLowerCase();
-    
+    // Check original text first (for non-multilingual matches)
     for (const word of blacklistWords) {
       const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
-      if (regex.test(textToCheck)) {
+      if (regex.test(text)) {
         isBlacklisted = true;
         break;
+      }
+    }
+
+    // If not found in original, check translated text (multilingual support)
+    if (!isBlacklisted) {
+      const translatedText = await safeTranslate(message.content);
+      const textToCheck = translatedText.toLowerCase();
+      
+      for (const word of blacklistWords) {
+        const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+        if (regex.test(textToCheck)) {
+          isBlacklisted = true;
+          break;
+        }
       }
     }
   }
