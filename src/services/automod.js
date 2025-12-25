@@ -145,7 +145,24 @@ async function runLanguageGuardian(message, config) {
 
   // Check if message contains toxic patterns
   const isToxic = toxicPatterns.some(pattern => pattern.test(text));
-  if (!isToxic) return;
+  
+  // Also check if any blacklisted words from database are present (multilingual support)
+  let isBlacklisted = false;
+  const blacklistWords = getBlacklistWords(message.guild.id);
+  if (blacklistWords.length > 0) {
+    const translatedText = await safeTranslate(message.content);
+    const textToCheck = translatedText.toLowerCase();
+    
+    for (const word of blacklistWords) {
+      const regex = new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+      if (regex.test(textToCheck)) {
+        isBlacklisted = true;
+        break;
+      }
+    }
+  }
+
+  if (!isToxic && !isBlacklisted) return;
 
   try {
     // Delete the message
@@ -155,7 +172,8 @@ async function runLanguageGuardian(message, config) {
     const lgConfig = getLanguageGuardianConfig(message.guild.id);
 
     // Apply punishment based on config
-    await applyPunishment(message, lgConfig, 'Language Guardian: Toxic content detected');
+    const reason = isToxic ? 'Language Guardian: Toxic content detected' : 'Language Guardian: Blacklisted word detected';
+    await applyPunishment(message, lgConfig, reason);
 
   } catch (error) {
     console.error('Error in language guardian:', error);
