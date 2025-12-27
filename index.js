@@ -110,6 +110,12 @@ const commands = [
         description: 'Reason for kicking',
         type: 3,
         required: false
+      },
+      {
+        name: 'duration',
+        description: 'Duration for record (e.g. 5m, 1h, 1w)',
+        type: 3,
+        required: false
       }
     ]
   },
@@ -126,6 +132,12 @@ const commands = [
       {
         name: 'reason',
         description: 'Reason for banning',
+        type: 3,
+        required: false
+      },
+      {
+        name: 'duration',
+        description: 'Duration for record (e.g. 5m, 1h, 1w)',
         type: 3,
         required: false
       }
@@ -681,6 +693,12 @@ const commands = [
       {
         name: 'reason',
         description: 'Reason for suspension',
+        type: 3,
+        required: false
+      },
+      {
+        name: 'duration',
+        description: 'Duration for record (e.g. 5m, 1h, 1w)',
         type: 3,
         required: false
       }
@@ -1559,48 +1577,76 @@ client.on('interactionCreate', async interaction => {
     switch(commandName) {
       case 'kick': {
         if (!member.permissions.has(PermissionFlagsBits.KickMembers)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Kick Members" permission to use this command.', 
-            ephemeral: true 
-          });
+          return interaction.reply({ content: '❌ You need the "Kick Members" permission.', ephemeral: true });
         }
         const user = options.getUser('user');
         const reason = options.getString('reason') || 'No reason provided';
-        const targetMember = await guild.members.fetch(user.id);
+        const durationStr = options.getString('duration');
+        
+        const targetMember = await guild.members.fetch(user.id).catch(() => null);
+        if (!targetMember) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
         if (!targetMember.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
+
+        let durationLabel = '';
+        if (durationStr) {
+          const match = durationStr.match(/^(\d+)([mhdwy])$/i);
+          if (match) {
+            const amount = match[1];
+            const unit = match[2].toLowerCase();
+            const units = { 'm': 'minute', 'h': 'hour', 'd': 'day', 'w': 'week', 'y': 'year' };
+            durationLabel = `${amount} ${units[unit]}${amount > 1 ? 's' : ''}`;
+          }
+        }
+
         await targetMember.kick(reason);
-        addWarning(guild.id, user.id, member.id, `Kicked: ${reason}`);
-        const caseId = createCase(guild.id, user.id, member.id, 'kick', reason);
-        await logModeration(guild, 'kick', {
-          user: user,
-          moderator: member.user,
-          reason: reason
-        });
-        const embed = sapphireEmbed('👨🏻‍🔧 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
+        addWarning(guild.id, user.id, member.id, `👨🏻‍🔧 Kicked${durationLabel ? ` (${durationLabel})` : ''}: ${reason}`);
+        
+        const embed = sapphireEmbed('✅ User Kicked', `👨🏻‍🔧 **${user.tag}** has been kicked.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${member.user}`, inline: true },
+            { name: '📝 Reason', value: reason, inline: false }
+          );
+        if (durationLabel) embed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
+        
         await interaction.reply({ embeds: [embed] });
         break;
       }
 
       case 'ban': {
         if (!member.permissions.has(PermissionFlagsBits.BanMembers)) {
-          return interaction.reply({ 
-            content: '❌ You need the "Ban Members" permission to use this command.', 
-            ephemeral: true 
-          });
+          return interaction.reply({ content: '❌ You need the "Ban Members" permission.', ephemeral: true });
         }
         const user = options.getUser('user');
         const reason = options.getString('reason') || 'No reason provided';
-        const targetMember = await guild.members.fetch(user.id);
+        const durationStr = options.getString('duration');
+        
+        const targetMember = await guild.members.fetch(user.id).catch(() => null);
+        if (!targetMember) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
         if (!targetMember.bannable) return interaction.reply({ content: '❌ Cannot ban this user.', ephemeral: true });
+
+        let durationLabel = '';
+        if (durationStr) {
+          const match = durationStr.match(/^(\d+)([mhdwy])$/i);
+          if (match) {
+            const amount = match[1];
+            const unit = match[2].toLowerCase();
+            const units = { 'm': 'minute', 'h': 'hour', 'd': 'day', 'w': 'week', 'y': 'year' };
+            durationLabel = `${amount} ${units[unit]}${amount > 1 ? 's' : ''}`;
+          }
+        }
+
         await targetMember.ban({ reason });
-        addWarning(guild.id, user.id, member.id, `Banned: ${reason}`);
-        const caseId = createCase(guild.id, user.id, member.id, 'ban', reason);
-        await logModeration(guild, 'ban', {
-          user: user,
-          moderator: member.user,
-          reason: reason
-        });
-        const embed = sapphireEmbed('🔨 Member Banned', `${user} has been banned from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
+        addWarning(guild.id, user.id, member.id, `Banned${durationLabel ? ` (${durationLabel})` : ''}: ${reason}`);
+        
+        const embed = sapphireEmbed('✅ User Banned', `🚫 **${user.tag}** has been banned.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${member.user}`, inline: true },
+            { name: '📝 Reason', value: reason, inline: false }
+          );
+        if (durationLabel) embed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
+
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -1869,23 +1915,66 @@ client.on('interactionCreate', async interaction => {
         enableAutomod(guild.id);
         const config = getGuildConfig(guild.id);
         const multilingualEnabled = config?.automod_multilingual ? '✅ Enabled' : '❌ Disabled';
-        const embed = sapphireEmbed('⚙️ Automod Configuration', `**Status:** Enabled\n**Multilingual Detection:** ${multilingualEnabled}\n\nMultilingual mode allows automod to detect blacklisted words in ANY language by automatically translating messages.`);
         
+        const embed = sapphireEmbed('🛡️ Wick-Style Automod Configuration', 'Configure the unified automod system. Sub-modules like Language Guardian only run if Automod is ON.')
+          .addFields(
+            { name: '🤖 Automod Main Toggle', value: config?.automod_enabled ? '✅ **ENABLED**' : '❌ **DISABLED**', inline: true },
+            { name: '🌍 Language Guardian', value: multilingualEnabled, inline: true },
+            { name: '⚡ Punishment Action', value: `\`${config?.automod_punishment_action?.toUpperCase() || 'WARN'}\``, inline: true },
+            { name: '⏱️ Punishment Duration', value: `\`${config?.automod_punishment_duration || '1h'}\``, inline: true }
+          );
+        
+        const selectMenu = new ActionRowBuilder()
+          .addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`automod_punishment_action_${guild.id}`)
+              .setPlaceholder('Select Punishment Action')
+              .addOptions([
+                { label: 'Warn', value: 'warn', emoji: '⚠️', default: config?.automod_punishment_action === 'warn' },
+                { label: 'Mute', value: 'mute', emoji: '🔇', default: config?.automod_punishment_action === 'mute' },
+                { label: 'Kick', value: 'kick', emoji: '👨🏻‍🔧', default: config?.automod_punishment_action === 'kick' },
+                { label: 'Ban', value: 'ban', emoji: '🔨', default: config?.automod_punishment_action === 'ban' },
+                { label: 'Suspend', value: 'suspend', emoji: '⛔', default: config?.automod_punishment_action === 'suspend' }
+              ])
+          );
+
+        const durationMenu = new ActionRowBuilder()
+          .addComponents(
+            new StringSelectMenuBuilder()
+              .setCustomId(`automod_punishment_duration_${guild.id}`)
+              .setPlaceholder('Select Punishment Duration')
+              .addOptions([
+                { label: '5 Minutes', value: '5m', emoji: '⏱️' },
+                { label: '10 Minutes', value: '10m', emoji: '⏱️' },
+                { label: '1 Hour', value: '1h', emoji: '🕒' },
+                { label: '6 Hours', value: '6h', emoji: '🕓' },
+                { label: '12 Hours', value: '12h', emoji: '🕕' },
+                { label: '1 Day', value: '1d', emoji: '📅' },
+                { label: '3 Days', value: '3d', emoji: '🗓️' },
+                { label: '1 Week', value: '7d', emoji: '⏳' }
+              ])
+          );
+
         const buttons = new ActionRowBuilder()
           .addComponents(
             new ButtonBuilder()
-              .setCustomId(`automod_enable_multilingual_${guild.id}`)
-              .setLabel('Enable Language Guardian')
-              .setStyle(ButtonStyle.Success)
+              .setCustomId(`automod_toggle_${guild.id}`)
+              .setLabel(config?.automod_enabled ? 'Disable Automod' : 'Enable Automod')
+              .setStyle(config?.automod_enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+              .setEmoji('🛡️'),
+            new ButtonBuilder()
+              .setCustomId(`automod_toggle_multilingual_${guild.id}`)
+              .setLabel(config?.automod_multilingual ? 'Disable Language Guardian' : 'Enable Language Guardian')
+              .setStyle(config?.automod_multilingual ? ButtonStyle.Danger : ButtonStyle.Success)
               .setEmoji('🌍'),
             new ButtonBuilder()
-              .setCustomId(`automod_disable_multilingual_${guild.id}`)
-              .setLabel('Disable Language Guardian')
-              .setStyle(ButtonStyle.Danger)
-              .setEmoji('❌')
+              .setCustomId(`automod_prison_settings_${guild.id}`)
+              .setLabel('Prison Settings')
+              .setStyle(ButtonStyle.Secondary)
+              .setEmoji('⛓️')
           );
         
-        await interaction.reply({ embeds: [embed], components: [buttons] });
+        await interaction.reply({ embeds: [embed], components: [selectMenu, durationMenu, buttons] });
         break;
       }
 
@@ -2526,6 +2615,7 @@ Click buttons below to toggle each system's whitelist bypass.
       case 'suspend': {
         const user = options.getUser('user');
         const reason = options.getString('reason') || 'No reason provided';
+        const durationStr = options.getString('duration');
         
         const targetMember = await guild.members.fetch(user.id).catch(() => null);
         if (!targetMember) {
@@ -2534,6 +2624,18 @@ Click buttons below to toggle each system's whitelist bypass.
 
         if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
           return interaction.reply({ content: '❌ You need `Manage Roles` permission to use this command.', ephemeral: true });
+        }
+
+        // Duration parsing for slash command
+        let durationLabel = '';
+        if (durationStr) {
+          const match = durationStr.match(/^(\d+)([mhdwy])$/i);
+          if (match) {
+            const amount = match[1];
+            const unit = match[2].toLowerCase();
+            const units = { 'm': 'minute', 'h': 'hour', 'd': 'day', 'w': 'week', 'y': 'year' };
+            durationLabel = `${amount} ${units[unit]}${amount > 1 ? 's' : ''}`;
+          }
         }
         
         const executorHighestPos = member.roles.highest.position;
@@ -2590,6 +2692,7 @@ Click buttons below to toggle each system's whitelist bypass.
             { name: '🛡️ Moderator', value: `${interaction.user}`, inline: true },
             { name: '📝 Reason', value: reason, inline: false }
           );
+        if (durationLabel) responseEmbed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
 
         await interaction.reply({ embeds: [responseEmbed] });
         break;
