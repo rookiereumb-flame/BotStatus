@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 // NOTE: Server is started separately by start.js to avoid port conflicts
-const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers, setAutomodConfig } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers, setAutomodConfig, setPrisonRole, setPrisonChannel } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage, runLanguageGuardian } = require('./src/services/automod');
 
@@ -82,6 +82,18 @@ const commands = [
     name: 'setup-automod',
     description: 'Configure Wick-style unified automod settings',
     default_member_permissions: PermissionFlagsBits.Administrator,
+  },
+  {
+    name: 'set-prison-role',
+    description: 'Set a custom role for suspended users',
+    default_member_permissions: PermissionFlagsBits.ManageRoles,
+    options: [{ name: 'role', type: 8, description: 'The role to use for prison', required: true }]
+  },
+  {
+    name: 'set-prison-channel',
+    description: 'Set a custom channel for suspended users',
+    default_member_permissions: PermissionFlagsBits.ManageChannels,
+    options: [{ name: 'channel', type: 7, description: 'The channel to use for prison', required: true }]
   },
   {
     name: 'kick',
@@ -2411,191 +2423,105 @@ Click buttons below to toggle each system's whitelist bypass.
         if (!targetMember) {
           return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
         }
+
+        // Permission check: Manage Roles required
+        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return interaction.reply({ content: '❌ You need `Manage Roles` permission to use this command.', ephemeral: true });
+        }
         
-        // Check if target has same highest role as executor - if yes, suspend both
-        const executorHighestPos = getHighestRolePosition(member);
-        const targetHighestPos = getHighestRolePosition(targetMember);
+        // Hierarchy check - Prevent suspending superiors or equals
+        const executorHighestPos = member.roles.highest.position;
+        const targetHighestPos = targetMember.roles.highest.position;
         
-        if (executorHighestPos === targetHighestPos) {
-          // Setup suspend role
+        if (executorHighestPos <= targetHighestPos && guild.ownerId !== interaction.user.id) {
+          // ANTI-NUKE TRIGGER: Equal or higher rank suspension attempt
           let suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
+          const config = getGuildConfig(guild.id);
+          if (config.prison_role_id) suspendRole = guild.roles.cache.get(config.prison_role_id);
+          
           if (!suspendRole) {
-            suspendRole = await guild.roles.create({
+             suspendRole = await guild.roles.create({
               name: '⛔ Suspended',
               color: '#FF0000',
-              reason: 'Suspend role for suspended users'
+              reason: 'Suspend role for nuke attempt'
             }).catch(() => null);
           }
           
           if (suspendRole) {
-            // Suspend the executor (person trying to suspend equal rank)
+            // Suspend the executor (Anti-Nuke)
             const executorRoles = member.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
-            suspendUser(guild.id, interaction.user.id, suspendRole.id, executorRoles, 'Abuse Prevention: Tried to suspend equal rank');
+            suspendUser(guild.id, interaction.user.id, suspendRole.id, executorRoles.join(','), 'Abuse Prevention: Tried to suspend equal/higher rank (Potential Nuke)');
+            await member.roles.set([suspendRole.id]).catch(() => {});
             
-            for (const role of member.roles.cache.values()) {
-              if (role.id !== guild.id) await member.roles.remove(role).catch(() => {});
-            }
-            await member.roles.add(suspendRole).catch(() => {});
-            
-            // Suspend the target (equal rank person)
+            // Suspend the target (Collateral protection)
             const targetRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
-            suspendUser(guild.id, user.id, suspendRole.id, targetRoles, 'Abuse Prevention: Was targeted for suspension by equal rank');
-            
-            for (const role of targetMember.roles.cache.values()) {
-              if (role.id !== guild.id) await targetMember.roles.remove(role).catch(() => {});
-            }
-            await targetMember.roles.add(suspendRole).catch(() => {});
+            suspendUser(guild.id, user.id, suspendRole.id, targetRoles.join(','), 'Abuse Prevention: Target of nuke attempt');
+            await targetMember.roles.set([suspendRole.id]).catch(() => {});
           }
           
-          return interaction.reply({ content: `🛡️ **ANTI-NUKE DEFENSE ACTIVATED!**\n\n❌ Equal rank suspension detected - Potential admin nuke attempt!\n\n**SECURITY ACTION:** Both you and ${user.tag} have been suspended immediately.\n\n🚫 *Only admins with higher authority can suspend lower ranks. Attempting to suspend equals = nuke attempt.*`, ephemeral: false });
+          return interaction.reply({ content: `🛡️ **ANTI-NUKE DEFENSE ACTIVATED!**\n\n❌ Attempted to suspend an equal or higher rank user.\n\n**SECURITY ACTION:** Both you and ${user.tag} have been suspended immediately.`, ephemeral: false });
         }
+
+        // Setup role
+        const config = getGuildConfig(guild.id);
+        let suspendRole = config.prison_role_id ? guild.roles.cache.get(config.prison_role_id) : guild.roles.cache.find(r => r.name === '⛔ Suspended');
         
-        // Get or create suspend role
-        let suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
         if (!suspendRole) {
           suspendRole = await guild.roles.create({
             name: '⛔ Suspended',
             color: '#FF0000',
-            reason: 'Suspend role for suspended users'
+            reason: 'Auto-created suspend role'
           }).catch(() => null);
+          if (suspendRole) setPrisonRole(guild.id, suspendRole.id);
         }
         
-        if (!suspendRole) {
-          return interaction.reply({ content: '❌ Could not create suspend role.', ephemeral: true });
-        }
+        if (!suspendRole) return interaction.reply({ content: '❌ Could not create suspend role.', ephemeral: true });
         
-        // Get or create suspend channel
-        let suspendChannel = guild.channels.cache.find(c => c.name === 'suspended' && c.type === ChannelType.GuildText);
+        // Setup channel
+        let suspendChannel = config.prison_channel_id ? guild.channels.cache.get(config.prison_channel_id) : guild.channels.cache.find(c => c.name === 'suspended' && c.type === ChannelType.GuildText);
+        
         if (!suspendChannel) {
           suspendChannel = await guild.channels.create({
             name: 'suspended',
             type: ChannelType.GuildText,
-            reason: 'Channel for suspended users',
             permissionOverwrites: [
-              {
-                id: guild.id,
-                deny: ['ViewChannel']
-              },
-              {
-                id: suspendRole.id,
-                allow: ['ViewChannel', 'SendMessages', 'ReadMessageHistory']
-              }
+              { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
+              { id: suspendRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
             ]
           }).catch(() => null);
+          if (suspendChannel) setPrisonChannel(guild.id, suspendChannel.id);
         }
-        
-        // Deny suspended role from all other channels (except suspended channel)
-        try {
-          for (const channel of guild.channels.cache.values()) {
-            if (channel.type === ChannelType.GuildText || channel.type === ChannelType.GuildVoice) {
-              if (channel.id !== suspendChannel?.id) {
-                await channel.permissionOverwrites.create(suspendRole, { ViewChannel: false }).catch(() => {});
-              }
-            }
-          }
-        } catch (err) {
-          console.error('Error setting channel permissions:', err);
-        }
-        
-        // Store previous roles
+
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
-        suspendUser(guild.id, user.id, suspendRole.id, previousRoles, reason);
+        suspendUser(guild.id, user.id, suspendRole.id, previousRoles.join(','), reason);
         
-        // Remove ALL roles first
-        try {
-          for (const role of targetMember.roles.cache.values()) {
-            if (role.id !== guild.id && role.id !== suspendRole.id) {
-              await targetMember.roles.remove(role, `User suspended - ${reason}`).catch(() => {});
-            }
-          }
-        } catch (err) {
-          console.error('Error removing roles:', err);
+        await targetMember.roles.set([suspendRole.id]).catch(() => {});
+        
+        if (suspendChannel) {
+          suspendChannel.send(`👤 ${user} has been suspended.\n**Reason:** ${reason}`);
         }
-        
-        // Then add suspend role only
-        try {
-          await targetMember.roles.add(suspendRole, `User suspended - ${reason}`);
-        } catch (err) {
-          console.error('Error adding suspend role:', err);
-        }
-        
-        await logModeration(guild, 'suspend', {
-          user: user,
-          moderator: member.user,
-          reason: reason
-        });
-        
-        const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
-        if (logChannelId) {
-          const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
-          if (logChannel) {
-            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}`);
-            logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
-          }
-        }
-        
-        const embed = sapphireEmbed('⛔ User Suspended', 
-          `**User:** ${user.tag}\n**Reason:** ${reason}\n**Status:** Suspended\n\n✅ All roles removed\n✅ Suspend role assigned\n✅ Can only access #suspended channel\n\nUse \`/unsuspend\` to restore.`
-        );
-        
-        await interaction.reply({ embeds: [embed] });
+
+        await interaction.reply({ embeds: [sapphireEmbed('⛔ User Suspended', `${user.tag} has been suspended.\nReason: ${reason}`)] });
         break;
       }
 
       case 'unsuspend': {
         const user = options.getUser('user');
-        
-        if (!isUserSuspended(guild.id, user.id)) {
-          return interaction.reply({ content: '❌ This user is not suspended.', ephemeral: true });
+        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
+          return interaction.reply({ content: '❌ You need `Manage Roles` permission to use this command.', ephemeral: true });
         }
+
+        const suspendedData = isUserSuspended(guild.id, user.id);
+        if (!suspendedData) return interaction.reply({ content: '❌ This user is not suspended.', ephemeral: true });
         
         const targetMember = await guild.members.fetch(user.id).catch(() => null);
-        if (!targetMember) {
-          return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
+        if (targetMember) {
+          const roles = suspendedData.previous_roles.split(',').filter(id => id.length > 0);
+          await targetMember.roles.set(roles).catch(() => {});
         }
         
-        // Restore previous roles
-        const previousRoles = unsuspendUser(guild.id, user.id);
-        
-        try {
-          // Remove ALL roles first (except @everyone)
-          for (const role of targetMember.roles.cache.values()) {
-            if (role.id !== guild.id) {
-              await targetMember.roles.remove(role, 'User unsuspended').catch(() => {});
-            }
-          }
-          
-          // Now add back the previous roles
-          for (const roleId of previousRoles) {
-            const role = guild.roles.cache.get(roleId);
-            if (role) {
-              await targetMember.roles.add(role, 'User unsuspended').catch(() => {});
-            }
-          }
-        } catch (err) {
-          console.error('Error unsuspending user:', err);
-        }
-        
-        await logModeration(guild, 'unsuspend', {
-          user: user,
-          moderator: member.user,
-          reason: 'User unsuspended'
-        });
-        
-        const logChannelId = getGuildConfig(guild.id)?.log_channel_id;
-        if (logChannelId) {
-          const logChannel = await guild.channels.fetch(logChannelId).catch(() => null);
-          if (logChannel) {
-            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `${targetMember} has been unsuspended.`);
-            logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
-          }
-        }
-        
-        const embed = sapphireEmbed('✅ User Restored', 
-          `**User:** ${user.tag}\n**Status:** Restored\n\nPrevious roles have been restored.`
-        );
-        
-        await interaction.reply({ embeds: [embed] });
+        unsuspendUser(guild.id, user.id);
+        await interaction.reply({ content: `✅ ${user.tag} has been unsuspended.` });
         break;
       }
 

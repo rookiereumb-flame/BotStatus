@@ -47,6 +47,14 @@ try {
   db.exec(`ALTER TABLE guild_config ADD COLUMN automod_multilingual INTEGER DEFAULT 0;`);
 }
 
+// Add prison settings columns if they don't exist
+try {
+  db.prepare('SELECT prison_role_id FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN prison_role_id TEXT;`);
+  db.exec(`ALTER TABLE guild_config ADD COLUMN prison_channel_id TEXT;`);
+}
+
 // Add punishment columns if they don't exist
 try {
   db.prepare('SELECT automod_punishment_action FROM guild_config LIMIT 1').get();
@@ -839,5 +847,13 @@ module.exports = {
   removeAFK,
   getAFKUser,
   getAllAFKUsers,
-  setAutomodConfig
+  setAutomodConfig,
+  setPrisonRole: (guildId, roleId) => {
+    const stmt = db.prepare('UPDATE guild_config SET prison_role_id = ? WHERE guild_id = ?');
+    stmt.run(roleId, guildId);
+  },
+  setPrisonChannel: (guildId, channelId) => {
+    const stmt = db.prepare('UPDATE guild_config SET prison_channel_id = ? WHERE guild_id = ?');
+    stmt.run(channelId, guildId);
+  }
 };
