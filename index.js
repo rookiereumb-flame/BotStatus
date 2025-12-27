@@ -1,7 +1,7 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle, StringSelectMenuBuilder } = require('discord.js');
 // NOTE: Server is started separately by start.js to avoid port conflicts
-const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers } = require('./src/database');
+const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers, setAutomodConfig } = require('./src/database');
 const { logModeration } = require('./src/utils/logger');
 const { checkMessage, runLanguageGuardian } = require('./src/services/automod');
 
@@ -78,6 +78,11 @@ const formatTime = (ms) => {
 };
 
 const commands = [
+  {
+    name: 'setup-automod',
+    description: 'Configure Wick-style unified automod settings',
+    default_member_permissions: PermissionFlagsBits.Administrator,
+  },
   {
     name: 'kick',
     description: 'Kick a member from the server',
@@ -1337,7 +1342,95 @@ client.on('messageCreate', async message => {
   }
 });
 
+
+function createAutomodEmbed(config) {
+  const embed = new EmbedBuilder()
+    .setTitle('🛡️ Wick-Style Automod Configuration')
+    .setDescription('Configure the unified automod system. Sub-modules like Language Guardian only run if Automod is ON.')
+    .setColor(SAPPHIRE_COLOR)
+    .addFields(
+      { name: '🤖 Automod Main Toggle', value: config.automod_enabled ? '✅ **ENABLED**' : '❌ **DISABLED**', inline: true },
+      { name: '🌐 Language Guardian', value: config.automod_multilingual ? '✅ **ENABLED**' : '❌ **DISABLED**', inline: true },
+      { name: '⚡ Punishment Action', value: `\`${config.automod_punishment_action.toUpperCase()}\``, inline: true },
+      { name: '⏱️ Punishment Duration', value: `\`${config.automod_punishment_duration}\``, inline: true }
+    )
+    .setFooter({ text: 'Wick-Style Protection • Updates Live' })
+    .setTimestamp();
+  return embed;
+}
+
+function createAutomodComponents(config) {
+  const row1 = new ActionRowBuilder()
+    .addComponents(
+      new ButtonBuilder()
+        .setCustomId('toggle_automod')
+        .setLabel(config.automod_enabled ? 'Disable Automod' : 'Enable Automod')
+        .setStyle(config.automod_enabled ? ButtonStyle.Danger : ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId('toggle_lg')
+        .setLabel(config.automod_multilingual ? 'Disable LG' : 'Enable LG')
+        .setStyle(config.automod_multilingual ? ButtonStyle.Danger : ButtonStyle.Success)
+    );
+
+  const row2 = new ActionRowBuilder()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('automod_punishment')
+        .setPlaceholder('Select Punishment Action')
+        .addOptions([
+          { label: 'Warn', value: 'warn', emoji: '⚠️', default: config.automod_punishment_action === 'warn' },
+          { label: 'Mute', value: 'mute', emoji: '⏱️', default: config.automod_punishment_action === 'mute' },
+          { label: 'Kick', value: 'kick', emoji: '👢', default: config.automod_punishment_action === 'kick' },
+          { label: 'Ban', value: 'ban', emoji: '🔨', default: config.automod_punishment_action === 'ban' },
+          { label: 'Suspend', value: 'suspend', emoji: '⛔', default: config.automod_punishment_action === 'suspend' }
+        ])
+    );
+
+  const row3 = new ActionRowBuilder()
+    .addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId('automod_duration')
+        .setPlaceholder('Select Punishment Duration')
+        .addOptions([
+          { label: '5 Minutes', value: '5m', default: config.automod_punishment_duration === '5m' },
+          { label: '10 Minutes', value: '10m', default: config.automod_punishment_duration === '10m' },
+          { label: '1 Hour', value: '1h', default: config.automod_punishment_duration === '1h' },
+          { label: '6 Hours', value: '6h', default: config.automod_punishment_duration === '6h' },
+          { label: '1 Day', value: '1d', default: config.automod_punishment_duration === '1d' },
+          { label: '3 Days', value: '3d', default: config.automod_punishment_duration === '3d' },
+          { label: '1 Week', value: '7d', default: config.automod_punishment_duration === '7d' }
+        ])
+    );
+
+  return [row1, row2, row3];
+}
+
 client.on('interactionCreate', async interaction => {
+  if (interaction.isButton() || interaction.isStringSelectMenu()) {
+    const customId = interaction.customId;
+    if (['toggle_automod', 'toggle_lg', 'automod_punishment', 'automod_duration'].includes(customId)) {
+      const config = getGuildConfig(interaction.guildId);
+      
+      let enabled = config.automod_enabled;
+      let lgEnabled = config.automod_multilingual;
+      let action = config.automod_punishment_action;
+      let duration = config.automod_punishment_duration;
+
+      if (customId === 'toggle_automod') enabled = !enabled;
+      if (customId === 'toggle_lg') lgEnabled = !lgEnabled;
+      if (customId === 'automod_punishment') action = interaction.values[0];
+      if (customId === 'automod_duration') duration = interaction.values[0];
+
+      setAutomodConfig(interaction.guildId, enabled, lgEnabled, action, duration);
+      
+      const newConfig = getGuildConfig(interaction.guildId);
+      const embed = createAutomodEmbed(newConfig);
+      const components = createAutomodComponents(newConfig);
+      
+      await interaction.update({ embeds: [embed], components });
+    }
+  }
+
   if (!interaction.isChatInputCommand()) return;
   
   const { commandName, options, member, guild } = interaction;

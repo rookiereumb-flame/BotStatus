@@ -1,6 +1,21 @@
-const { getGuildConfig, getBlacklistWords, getLanguageGuardianConfig, addWarning } = require('../database');
+const { getGuildConfig, getBlacklistWords, getLanguageGuardianConfig, addWarning, suspendUser } = require('../database');
 const { translateToEnglish } = require('./translation');
 const { logModeration } = require('../utils/logger');
+
+// Parse duration string to milliseconds
+function parseDuration(durationStr) {
+  const match = durationStr.match(/^(\d+)([smhd])$/);
+  if (!match) return 3600000; // Default 1h
+  const value = parseInt(match[1]);
+  const unit = match[2];
+  const multipliers = {
+    s: 1000,
+    m: 60 * 1000,
+    h: 60 * 60 * 1000,
+    d: 24 * 60 * 60 * 1000
+  };
+  return value * multipliers[unit];
+}
 
 async function safeTranslate(text) {
   try {
@@ -39,11 +54,11 @@ async function checkMessage(message) {
           .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
           .catch(()=>{});
 
-        await logModeration(message.guild, 'automod', {
-          user: message.author,
-          moderator: message.client.user,
-          reason: `Used blacklisted word in message`
-        });
+        // Apply global automod punishment
+        await applyPunishment(message, {
+          action: config.automod_punishment_action,
+          duration: config.automod_punishment_duration
+        }, `Used blacklisted word in message`);
 
         return true;
       } catch (error) {
@@ -56,20 +71,28 @@ async function checkMessage(message) {
   return false;
 }
 
-// Apply punishment based on Language Guardian config (AI-style detection)
-async function applyPunishment(message, lgConfig, reason) {
+// Apply punishment based on unified config
+async function applyPunishment(message, config, reason) {
   try {
     const member = await message.guild.members.fetch(message.author.id).catch(() => null);
     if (!member) return;
 
-    const action = lgConfig?.action || 'mute';
-    const timeoutSeconds = lgConfig?.timeout_seconds || 600;
+    const action = config?.action || 'warn';
+    const durationStr = config?.duration || '1h';
+    const durationMs = parseDuration(durationStr);
 
     switch (action) {
+      case 'warn':
+        addWarning(message.guild.id, message.author.id, reason, message.client.user.id);
+        await message.channel.send(`⚠️ **${message.author}** has been warned for: ${reason}`)
+          .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
+          .catch(()=>{});
+        break;
+
       case 'mute':
         if (member.moderatable) {
-          await member.timeout(timeoutSeconds * 1000, reason);
-          await message.channel.send(`⏱️ **${message.author}** has been muted for ${Math.round(timeoutSeconds / 60)} minute(s).`)
+          await member.timeout(durationMs, reason);
+          await message.channel.send(`⏱️ **${message.author}** has been muted for ${durationStr}.`)
             .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
             .catch(()=>{});
         }
@@ -86,7 +109,7 @@ async function applyPunishment(message, lgConfig, reason) {
 
       case 'ban':
         if (member.bannable) {
-          await member.ban({ reason });
+          await member.ban({ reason, deleteMessageSeconds: 604800 });
           await message.channel.send(`🔨 **${message.author}** has been banned.`)
             .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
             .catch(()=>{});
@@ -97,20 +120,29 @@ async function applyPunishment(message, lgConfig, reason) {
         // Suspend: remove all roles and assign suspended role
         const suspendedRole = message.guild.roles.cache.find(r => r.name === '⛔ Suspended');
         if (suspendedRole && member.manageable) {
-          const previousRoles = member.roles.cache.filter(r => r.id !== message.guild.id).map(r => r.id);
+          const currentRoles = member.roles.cache.filter(r => r.id !== message.guild.id && r.id !== suspendedRole.id).map(r => r.id);
+          suspendUser(message.guild.id, message.author.id, currentRoles.join(','), reason);
           await member.roles.set([suspendedRole.id]);
-          await message.channel.send(`⛔ **${message.author}** has been suspended.`)
+          await message.channel.send(`⛔ **${message.author}** has been suspended for ${durationStr}.`)
             .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
             .catch(()=>{});
+            
+          // Handle auto-unsuspend if duration is provided
+          setTimeout(async () => {
+            const freshMember = await message.guild.members.fetch(message.author.id).catch(() => null);
+            if (freshMember && freshMember.roles.cache.has(suspendedRole.id)) {
+              await freshMember.roles.set(currentRoles);
+            }
+          }, durationMs);
         }
         break;
     }
 
     // Log the action
-    await logModeration(message.guild, 'language-guardian', {
+    await logModeration(message.guild, 'automod', {
       user: message.author,
       moderator: message.client.user,
-      reason: reason
+      reason: reason + ` (Action: ${action}, Duration: ${durationStr})`
     });
 
   } catch (error) {
@@ -181,12 +213,12 @@ async function runLanguageGuardian(message, config) {
     // Delete the message
     await message.delete().catch(() => {});
 
-    // Get Language Guardian config
-    const lgConfig = getLanguageGuardianConfig(message.guild.id);
-
-    // Apply punishment based on config
+    // Apply punishment based on unified config
     const reason = isToxic ? 'Language Guardian: Toxic content detected' : 'Language Guardian: Blacklisted word detected';
-    await applyPunishment(message, lgConfig, reason);
+    await applyPunishment(message, {
+      action: config.automod_punishment_action,
+      duration: config.automod_punishment_duration
+    }, reason);
 
   } catch (error) {
     console.error('Error in language guardian:', error);
@@ -195,5 +227,6 @@ async function runLanguageGuardian(message, config) {
 
 module.exports = {
   checkMessage,
-  runLanguageGuardian
+  runLanguageGuardian,
+  applyPunishment
 };

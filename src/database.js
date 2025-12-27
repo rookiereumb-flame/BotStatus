@@ -47,6 +47,14 @@ try {
   db.exec(`ALTER TABLE guild_config ADD COLUMN automod_multilingual INTEGER DEFAULT 0;`);
 }
 
+// Add punishment columns if they don't exist
+try {
+  db.prepare('SELECT automod_punishment_action FROM guild_config LIMIT 1').get();
+} catch (e) {
+  db.exec(`ALTER TABLE guild_config ADD COLUMN automod_punishment_action TEXT DEFAULT 'warn';`);
+  db.exec(`ALTER TABLE guild_config ADD COLUMN automod_punishment_duration TEXT DEFAULT '1h';`);
+}
+
 // Add missing columns to warnings table if they don't exist
 try {
   db.prepare('SELECT is_manual FROM warnings LIMIT 1').get();
@@ -757,6 +765,15 @@ const getAllAFKUsers = (guildId) => {
   return stmt.all(guildId);
 };
 
+const setAutomodConfig = (guildId, enabled, lgEnabled, action, duration) => {
+  const stmt = db.prepare(`
+    UPDATE guild_config 
+    SET automod_enabled = ?, automod_multilingual = ?, automod_punishment_action = ?, automod_punishment_duration = ?
+    WHERE guild_id = ?
+  `);
+  stmt.run(enabled ? 1 : 0, lgEnabled ? 1 : 0, action, duration, guildId);
+};
+
 module.exports = {
   db,
   getGuildConfig,
@@ -821,5 +838,6 @@ module.exports = {
   setAFK,
   removeAFK,
   getAFKUser,
-  getAllAFKUsers
+  getAllAFKUsers,
+  setAutomodConfig
 };
