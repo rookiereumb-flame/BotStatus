@@ -875,9 +875,7 @@ client.on('messageCreate', async message => {
     if (args.length > 0) {
       const multiWordCmd = `${cmd}-${args[0].toLowerCase()}`;
       // Check if the combined version exists as a prefix command
-      // In this bot, we handle prefix commands in a switch
-      // We'll transform the cmd variable for the switch below
-      if (['add-role', 'remove-role', 'set-prefix', 'lgbl-add', 'lgbl-remove', 'server-config', 'server-report'].includes(multiWordCmd)) {
+      if (['add-role', 'remove-role', 'set-prefix', 'lgbl-add', 'lgbl-remove', 'server-config', 'server-report', 'help-command', 'set-prison-role', 'set-prison-channel'].includes(multiWordCmd)) {
         cmd = multiWordCmd;
         args.shift();
       }

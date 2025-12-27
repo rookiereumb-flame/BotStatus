@@ -4,7 +4,15 @@
 This project hosts a comprehensive Discord moderation bot on Replit, running 24/7. The bot features complete moderation tools, role management, advanced protection systems (anti-nuke, anti-raid, anti-spam), auto-role assignment, intelligent automod system with translation support, Language Guardian system that detects bad words from all languages with auto-translation, and Discord invite detection. **All settings are fully customizable by admins via commands with Sapphire-style buttons.**
 
 ## Recent Changes
-- **December 2, 2025**: Fixed Port Conflict Crashes + 24/7 Stability (LATEST!)
+- **December 27, 2025**: Unified Automod + Prison System (LATEST!)
+  - **Unified `/setup-automod` Panel**: Interactive Wick-style embed for global and sub-module (Language Guardian) config.
+  - **Prison Settings**: Added `/set-prison-role` and `/set-prison-channel` with auto-creation.
+  - **Secure Suspend**: Manage Roles permission required, added anti-nuke hierarchy checks.
+  - **Duration Punishments**: All automod actions now support configurable durations (5m to 7d).
+  - **Prefix Fixes**: Improved multi-word command support (both space and hyphen work).
+  - **BigInt Fix**: Resolved serialization error in command registration.
+
+- **December 2, 2025**: Fixed Port Conflict Crashes + 24/7 Stability
   - **Root Cause Fixed**: Removed duplicate server startup that was causing port 5000 conflicts
   - **Process Manager Simplified**: Bot and server now managed cleanly by start.js without conflicts
   - **Stable 24/7 Uptime**: No more HTTP 503 crashes from port conflicts
