@@ -1346,36 +1346,42 @@ client.on('messageCreate', async message => {
       case 'unsuspend': {
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to unsuspend.');
-        if (!isUserSuspended(message.guild.id, user.id)) return message.reply('❌ This user is not suspended.');
+        
+        const suspendedData = isUserSuspended(message.guild.id, user.id);
+        if (!suspendedData) return message.reply('❌ This user is not suspended.');
+        
         const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
-        if (!targetMember) return message.reply('❌ User not found.');
-        
-        const previousRoles = unsuspendUser(message.guild.id, user.id);
-        
-        try {
-          // Remove ALL roles first (except @everyone)
-          for (const role of targetMember.roles.cache.values()) {
-            if (role.id !== message.guild.id) {
-              await targetMember.roles.remove(role, 'User unsuspended').catch(() => {});
+        if (targetMember) {
+          try {
+            // Remove ALL roles first (except @everyone)
+            for (const [id, role] of targetMember.roles.cache) {
+              if (id !== message.guild.id) {
+                await targetMember.roles.remove(role, 'User unsuspended').catch(() => {});
+              }
             }
-          }
-          
-          // Now add back the previous roles
-          for (const roleId of previousRoles) {
-            const role = message.guild.roles.cache.get(roleId);
-            if (role) {
-              await targetMember.roles.add(role, 'User unsuspended').catch(() => {});
+            
+            // Now add back the previous roles
+            const rolesStr = suspendedData.previous_roles || '';
+            const previousRoles = rolesStr.split(',').filter(id => id.length > 0);
+            
+            for (const roleId of previousRoles) {
+              const role = message.guild.roles.cache.get(roleId);
+              if (role) {
+                await targetMember.roles.add(role, 'User unsuspended').catch(() => {});
+              }
             }
+          } catch (err) {
+            console.error('Error unsuspending user:', err);
           }
-        } catch (err) {
-          console.error('Error unsuspending user:', err);
         }
+        
+        unsuspendUser(message.guild.id, user.id);
         
         const logChannelId = getGuildConfig(message.guild.id)?.log_channel_id;
         if (logChannelId) {
           const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
           if (logChannel) {
-            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `${targetMember} has been unsuspended.`);
+            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `${targetMember || user.tag} has been unsuspended.`);
             logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
           }
         }
