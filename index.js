@@ -1398,23 +1398,9 @@ client.on('messageCreate', async message => {
         const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
         if (targetMember) {
           try {
-            // Remove ALL roles first (except @everyone)
-            for (const [id, role] of targetMember.roles.cache) {
-              if (id !== message.guild.id) {
-                await targetMember.roles.remove(role, 'User unsuspended').catch(() => {});
-              }
-            }
-            
-            // Now add back the previous roles
             const rolesStr = suspendedData.previous_roles || '';
             const previousRoles = rolesStr.split(',').filter(id => id.length > 0);
-            
-            for (const roleId of previousRoles) {
-              const role = message.guild.roles.cache.get(roleId);
-              if (role) {
-                await targetMember.roles.add(role, 'User unsuspended').catch(() => {});
-              }
-            }
+            await targetMember.roles.set(previousRoles, 'User unsuspended').catch(() => {});
           } catch (err) {
             console.error('Error unsuspending user:', err);
           }
@@ -1426,12 +1412,22 @@ client.on('messageCreate', async message => {
         if (logChannelId) {
           const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
           if (logChannel) {
-            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `${targetMember || user.tag} has been unsuspended.`);
+            const notifyEmbed = sapphireEmbed('✅ User Unsuspended', `👤 **${user.tag}** has been restored.`)
+              .addFields(
+                { name: '👤 Target', value: `${user}`, inline: true },
+                { name: '🛡️ Moderator', value: `${message.author}`, inline: true }
+              );
             logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
           }
         }
         
-        message.reply(`✅ ${user.tag} restored.`);
+        const responseEmbed = sapphireEmbed('✅ User Unsuspended', `👤 **${user.tag}** has been restored.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${message.author}`, inline: true }
+          );
+
+        message.reply({ embeds: [responseEmbed] });
         break;
       }
       
@@ -2536,17 +2532,14 @@ Click buttons below to toggle each system's whitelist bypass.
           return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
         }
 
-        // Permission check: Manage Roles required
         if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) {
           return interaction.reply({ content: '❌ You need `Manage Roles` permission to use this command.', ephemeral: true });
         }
         
-        // Hierarchy check - Prevent suspending superiors or equals
         const executorHighestPos = member.roles.highest.position;
         const targetHighestPos = targetMember.roles.highest.position;
         
         if (executorHighestPos <= targetHighestPos && guild.ownerId !== interaction.user.id) {
-          // ANTI-NUKE TRIGGER: Equal or higher rank suspension attempt
           let suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
           const config = getGuildConfig(guild.id);
           if (config.prison_role_id) suspendRole = guild.roles.cache.get(config.prison_role_id);
@@ -2560,12 +2553,10 @@ Click buttons below to toggle each system's whitelist bypass.
           }
           
           if (suspendRole) {
-            // Suspend the executor (Anti-Nuke)
             const executorRoles = member.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
             suspendUser(guild.id, interaction.user.id, suspendRole.id, executorRoles.join(','), 'Abuse Prevention: Tried to suspend equal/higher rank (Potential Nuke)');
             await member.roles.set([suspendRole.id]).catch(() => {});
             
-            // Suspend the target (Collateral protection)
             const targetRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
             suspendUser(guild.id, user.id, suspendRole.id, targetRoles.join(','), 'Abuse Prevention: Target of nuke attempt');
             await targetMember.roles.set([suspendRole.id]).catch(() => {});
@@ -2574,7 +2565,6 @@ Click buttons below to toggle each system's whitelist bypass.
           return interaction.reply({ content: `🛡️ **ANTI-NUKE DEFENSE ACTIVATED!**\n\n❌ Attempted to suspend an equal or higher rank user.\n\n**SECURITY ACTION:** Both you and ${user.tag} have been suspended immediately.`, ephemeral: false });
         }
 
-        // Setup role
         const config = getGuildConfig(guild.id);
         let suspendRole = config.prison_role_id ? guild.roles.cache.get(config.prison_role_id) : guild.roles.cache.find(r => r.name === '⛔ Suspended');
         
@@ -2589,31 +2579,19 @@ Click buttons below to toggle each system's whitelist bypass.
         
         if (!suspendRole) return interaction.reply({ content: '❌ Could not create suspend role.', ephemeral: true });
         
-        // Setup channel
-        let suspendChannel = config.prison_channel_id ? guild.channels.cache.get(config.prison_channel_id) : guild.channels.cache.find(c => c.name === 'suspended' && c.type === ChannelType.GuildText);
-        
-        if (!suspendChannel) {
-          suspendChannel = await guild.channels.create({
-            name: 'suspended',
-            type: ChannelType.GuildText,
-            permissionOverwrites: [
-              { id: guild.id, deny: [PermissionFlagsBits.ViewChannel] },
-              { id: suspendRole.id, allow: [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages, PermissionFlagsBits.ReadMessageHistory] }
-            ]
-          }).catch(() => null);
-          if (suspendChannel) setPrisonChannel(guild.id, suspendChannel.id);
-        }
-
         const previousRoles = targetMember.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
         suspendUser(guild.id, user.id, suspendRole.id, previousRoles.join(','), reason);
         
         await targetMember.roles.set([suspendRole.id]).catch(() => {});
         
-        if (suspendChannel) {
-          suspendChannel.send(`👤 ${user} has been suspended.\n**Reason:** ${reason}`);
-        }
+        const responseEmbed = sapphireEmbed('✅ User Suspended', `⛔ **${user.tag}** has been suspended.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${interaction.user}`, inline: true },
+            { name: '📝 Reason', value: reason, inline: false }
+          );
 
-        await interaction.reply({ embeds: [sapphireEmbed('⛔ User Suspended', `${user.tag} has been suspended.\nReason: ${reason}`)] });
+        await interaction.reply({ embeds: [responseEmbed] });
         break;
       }
 
@@ -2628,14 +2606,20 @@ Click buttons below to toggle each system's whitelist bypass.
         
         const targetMember = await guild.members.fetch(user.id).catch(() => null);
         if (targetMember) {
-          // If previous_roles is empty or just commas, use an empty array
           const rolesStr = suspendedData.previous_roles || '';
           const roles = rolesStr.split(',').filter(id => id.length > 0);
           await targetMember.roles.set(roles).catch(() => {});
         }
         
         unsuspendUser(guild.id, user.id);
-        await interaction.reply({ content: `✅ ${user.tag} has been unsuspended.` });
+        
+        const embed = sapphireEmbed('✅ User Unsuspended', `👤 **${user.tag}** has been restored.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${interaction.user}`, inline: true }
+          );
+
+        await interaction.reply({ embeds: [embed] });
         break;
       }
 
