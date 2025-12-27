@@ -872,10 +872,15 @@ client.on('messageCreate', async message => {
     let cmd = args.shift().toLowerCase();
 
     // Multi-word command support (e.g., "=add role" -> "=add-role")
+    const multiWordSupport = [
+      'add-role', 'remove-role', 'set-prefix', 'lgbl-add', 'lgbl-remove', 
+      'server-config', 'server-report', 'help-command', 'set-prison-role', 
+      'set-prison-channel', 'change-role-name', 'change-prefix'
+    ];
+
     if (args.length > 0) {
       const multiWordCmd = `${cmd}-${args[0].toLowerCase()}`;
-      // Check if the combined version exists as a prefix command
-      if (['add-role', 'remove-role', 'set-prefix', 'lgbl-add', 'lgbl-remove', 'server-config', 'server-report', 'help-command', 'set-prison-role', 'set-prison-channel'].includes(multiWordCmd)) {
+      if (multiWordSupport.includes(multiWordCmd)) {
         cmd = multiWordCmd;
         args.shift();
       }
@@ -886,15 +891,18 @@ client.on('messageCreate', async message => {
       'ar': 'add-role', 'rr': 'remove-role', 'p': 'purge', 's': 'say', 'bl': 'blacklist', 'pb': 'purgebad',
       'cr': 'change-role-name', 'l': 'lock', 'ul': 'unlock', 'sp': 'set-prefix', 'sc': 'set-channel',
       'ea': 'enable-automod', 'da': 'disable-automod', 'elg': 'enable-language-guardian', 'dlg': 'disable-language-guardian',
-      'sus': 'suspend', 'unsus': 'unsuspend', 'susl': 'suspended-list'
+      'sus': 'suspend', 'unsus': 'unsuspend', 'susl': 'suspended-list', 'cp': 'set-prefix'
     };
     
     // Resolve alias to full command
     if (aliases[cmd]) cmd = aliases[cmd];
+
+    // Final mapping for specific multi-word cases
+    if (cmd === 'change-prefix') cmd = 'set-prefix';
     
-    // Handle multi-word commands (e.g., "set prefix" -> "set-prefix", "add role" -> "add-role")
+    // Handle remaining multi-word commands logic
     if (args.length > 0) {
-      const multiWordCmd = cmd + '-' + args[0];
+      const multiWordCmd = cmd + '-' + args[0].toLowerCase();
       const knownCommands = [
         'kick', 'ban', 'mute', 'unmute', 'unban', 'warn', 'unwarn', 'add-role', 'remove-role', 'purge', 'say', 'blacklist', 'purgebad',
         'change-role-name', 'lock', 'unlock', 'set-prefix', 'set-channel', 'enable-automod', 'disable-automod', 
@@ -902,7 +910,7 @@ client.on('messageCreate', async message => {
       ];
       if (knownCommands.includes(multiWordCmd)) {
         cmd = multiWordCmd;
-        args.shift(); // Remove the second word from args
+        args.shift();
       }
     }
     
@@ -920,12 +928,26 @@ client.on('messageCreate', async message => {
         }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to kick.');
-        const reason = args.join(' ') || 'No reason provided';
+        
+        // Duration parsing
+        let reason = args.join(' ') || 'No reason provided';
+        let duration = null;
+        
+        if (args.length > 1) {
+          const possibleDuration = args[1];
+          const match = possibleDuration.match(/^(\d+)([mhdwy])$/i);
+          if (match) {
+            duration = possibleDuration;
+            reason = args.slice(2).join(' ') || 'No reason provided';
+          }
+        }
+
         const targetMember = await message.guild.members.fetch(user.id);
         if (!targetMember.kickable) return message.reply('❌ Cannot kick this user.');
+        
         await targetMember.kick(reason);
-        addWarning(message.guild.id, user.id, message.author.id, `Kicked: ${reason}`);
-        message.reply(`✅ Kicked ${user.tag} - ${reason}`);
+        addWarning(message.guild.id, user.id, message.author.id, `👨🏻‍🔧 Kicked${duration ? ` (${duration})` : ''}: ${reason}`);
+        message.reply(`✅ 👨🏻‍🔧 Kicked ${user.tag}${duration ? ` for ${duration}` : ''} - ${reason}`);
         break;
       }
       
@@ -935,12 +957,26 @@ client.on('messageCreate', async message => {
         }
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to ban.');
-        const reason = args.join(' ') || 'No reason provided';
+        
+        // Duration parsing
+        let reason = args.join(' ') || 'No reason provided';
+        let duration = null;
+        
+        if (args.length > 1) {
+          const possibleDuration = args[1];
+          const match = possibleDuration.match(/^(\d+)([mhdwy])$/i);
+          if (match) {
+            duration = possibleDuration;
+            reason = args.slice(2).join(' ') || 'No reason provided';
+          }
+        }
+
         const targetMember = await message.guild.members.fetch(user.id);
         if (!targetMember.bannable) return message.reply('❌ Cannot ban this user.');
+        
         await targetMember.ban({ reason });
-        addWarning(message.guild.id, user.id, message.author.id, `Banned: ${reason}`);
-        message.reply(`✅ Banned ${user.tag} - ${reason}`);
+        addWarning(message.guild.id, user.id, message.author.id, `Banned${duration ? ` (${duration})` : ''}: ${reason}`);
+        message.reply(`✅ Banned ${user.tag}${duration ? ` for ${duration}` : ''} - ${reason}`);
         break;
       }
       
@@ -951,7 +987,8 @@ client.on('messageCreate', async message => {
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to mute.');
         
-        const durationStr = args[0];
+        // args[0] is the mention, so we check args[1] for duration
+        const durationStr = args[1];
         if (!durationStr) return message.reply('❌ Usage: `=mute @user 5h reason` (m/h/d/w/y)');
         
         const match = durationStr.match(/^(\d+)([mhdwy])$/i);
@@ -964,7 +1001,7 @@ client.on('messageCreate', async message => {
         if (ms > 40320 * 60 * 1000) return message.reply('❌ Duration cannot exceed 40320 minutes (28 days).');
         
         try {
-          const reason = args.slice(1).join(' ') || 'No reason provided';
+          const reason = args.slice(2).join(' ') || 'No reason provided';
           const targetMember = await message.guild.members.fetch(user.id);
           await targetMember.timeout(ms, reason);
           const durationFormatted = formatTime(ms);
@@ -1187,7 +1224,20 @@ client.on('messageCreate', async message => {
       case 'suspend': {
         const user = message.mentions.users.first();
         if (!user) return message.reply('❌ Please mention a user to suspend.');
-        const reason = args.join(' ') || 'No reason provided';
+        
+        // Duration/Reason parsing
+        let reason = args.join(' ') || 'No reason provided';
+        let duration = null;
+        
+        if (args.length > 1) {
+          const possibleDuration = args[1];
+          const match = possibleDuration.match(/^(\d+)([mhdwy])$/i);
+          if (match) {
+            duration = possibleDuration;
+            reason = args.slice(2).join(' ') || 'No reason provided';
+          }
+        }
+        
         const targetMember = await message.guild.members.fetch(user.id).catch(() => null);
         if (!targetMember) return message.reply('❌ User not found.');
         
@@ -1282,12 +1332,12 @@ client.on('messageCreate', async message => {
         if (logChannelId) {
           const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
           if (logChannel) {
-            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}`);
+            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}${duration ? `\n**Duration:** ${duration}` : ''}`);
             logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
           }
         }
         
-        message.reply(`✅ ${user.tag} suspended. Reason: ${reason}`);
+        message.reply(`✅ ${user.tag} suspended${duration ? ` for ${duration}` : ''}. Reason: ${reason}`);
         break;
       }
       
