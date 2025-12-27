@@ -934,12 +934,17 @@ client.on('messageCreate', async message => {
         // Duration parsing
         let reason = args.join(' ') || 'No reason provided';
         let duration = null;
+        let durationLabel = '';
         
         if (args.length > 1) {
           const possibleDuration = args[1];
           const match = possibleDuration.match(/^(\d+)([mhdwy])$/i);
           if (match) {
             duration = possibleDuration;
+            const amount = match[1];
+            const unit = match[2].toLowerCase();
+            const units = { 'm': 'minute', 'h': 'hour', 'd': 'day', 'w': 'week', 'y': 'year' };
+            durationLabel = `${amount} ${units[unit]}${amount > 1 ? 's' : ''}`;
             reason = args.slice(2).join(' ') || 'No reason provided';
           }
         }
@@ -948,8 +953,17 @@ client.on('messageCreate', async message => {
         if (!targetMember.kickable) return message.reply('❌ Cannot kick this user.');
         
         await targetMember.kick(reason);
-        addWarning(message.guild.id, user.id, message.author.id, `👨🏻‍🔧 Kicked${duration ? ` (${duration})` : ''}: ${reason}`);
-        message.reply(`✅ 👨🏻‍🔧 Kicked ${user.tag}${duration ? ` for ${duration}` : ''} - ${reason}`);
+        addWarning(message.guild.id, user.id, message.author.id, `👨🏻‍🔧 Kicked${durationLabel ? ` (${durationLabel})` : ''}: ${reason}`);
+        
+        const embed = sapphireEmbed('✅ User Kicked', `👨🏻‍🔧 **${user.tag}** has been kicked.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${message.author}`, inline: true },
+            { name: '📝 Reason', value: reason, inline: false }
+          );
+        if (durationLabel) embed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
+        
+        message.reply({ embeds: [embed] });
         break;
       }
       
@@ -963,12 +977,17 @@ client.on('messageCreate', async message => {
         // Duration parsing
         let reason = args.join(' ') || 'No reason provided';
         let duration = null;
+        let durationLabel = '';
         
         if (args.length > 1) {
           const possibleDuration = args[1];
           const match = possibleDuration.match(/^(\d+)([mhdwy])$/i);
           if (match) {
             duration = possibleDuration;
+            const amount = match[1];
+            const unit = match[2].toLowerCase();
+            const units = { 'm': 'minute', 'h': 'hour', 'd': 'day', 'w': 'week', 'y': 'year' };
+            durationLabel = `${amount} ${units[unit]}${amount > 1 ? 's' : ''}`;
             reason = args.slice(2).join(' ') || 'No reason provided';
           }
         }
@@ -977,8 +996,17 @@ client.on('messageCreate', async message => {
         if (!targetMember.bannable) return message.reply('❌ Cannot ban this user.');
         
         await targetMember.ban({ reason });
-        addWarning(message.guild.id, user.id, message.author.id, `Banned${duration ? ` (${duration})` : ''}: ${reason}`);
-        message.reply(`✅ Banned ${user.tag}${duration ? ` for ${duration}` : ''} - ${reason}`);
+        addWarning(message.guild.id, user.id, message.author.id, `Banned${durationLabel ? ` (${durationLabel})` : ''}: ${reason}`);
+        
+        const embed = sapphireEmbed('✅ User Banned', `🚫 **${user.tag}** has been banned.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${message.author}`, inline: true },
+            { name: '📝 Reason', value: reason, inline: false }
+          );
+        if (durationLabel) embed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
+
+        message.reply({ embeds: [embed] });
         break;
       }
       
@@ -1230,12 +1258,17 @@ client.on('messageCreate', async message => {
         // Duration/Reason parsing
         let reason = args.join(' ') || 'No reason provided';
         let duration = null;
+        let durationLabel = '';
         
         if (args.length > 1) {
           const possibleDuration = args[1];
           const match = possibleDuration.match(/^(\d+)([mhdwy])$/i);
           if (match) {
             duration = possibleDuration;
+            const amount = match[1];
+            const unit = match[2].toLowerCase();
+            const units = { 'm': 'minute', 'h': 'hour', 'd': 'day', 'w': 'week', 'y': 'year' };
+            durationLabel = `${amount} ${units[unit]}${amount > 1 ? 's' : ''}`;
             reason = args.slice(2).join(' ') || 'No reason provided';
           }
         }
@@ -1334,12 +1367,24 @@ client.on('messageCreate', async message => {
         if (logChannelId) {
           const logChannel = await message.guild.channels.fetch(logChannelId).catch(() => null);
           if (logChannel) {
-            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.\n**Reason:** ${reason}${duration ? `\n**Duration:** ${duration}` : ''}`);
+            const notifyEmbed = sapphireEmbed('⛔ User Suspended Notice', `${targetMember} has been suspended.`)
+              .addFields(
+                { name: '📝 Reason', value: reason, inline: true }
+              );
+            if (durationLabel) notifyEmbed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
             logChannel.send({ embeds: [notifyEmbed] }).catch(() => {});
           }
         }
         
-        message.reply(`✅ ${user.tag} suspended${duration ? ` for ${duration}` : ''}. Reason: ${reason}`);
+        const responseEmbed = sapphireEmbed('✅ User Suspended', `⛔ **${user.tag}** has been suspended.`)
+          .addFields(
+            { name: '👤 Target', value: `${user}`, inline: true },
+            { name: '🛡️ Moderator', value: `${message.author}`, inline: true },
+            { name: '📝 Reason', value: reason, inline: false }
+          );
+        if (durationLabel) responseEmbed.addFields({ name: '⏱️ Duration', value: durationLabel, inline: true });
+
+        message.reply({ embeds: [responseEmbed] });
         break;
       }
       
