@@ -776,7 +776,9 @@ client.once('ready', async () => {
     
     const result = await rest.put(
       Routes.applicationCommands(CLIENT_ID),
-      { body: commands }
+      { body: JSON.parse(JSON.stringify(commands, (key, value) => 
+        typeof value === 'bigint' ? value.toString() : value
+      )) }
     );
     
     console.log('✅ Successfully registered all commands!');
@@ -2575,7 +2577,9 @@ Click buttons below to toggle each system's whitelist bypass.
         
         const targetMember = await guild.members.fetch(user.id).catch(() => null);
         if (targetMember) {
-          const roles = suspendedData.previous_roles.split(',').filter(id => id.length > 0);
+          // If previous_roles is empty or just commas, use an empty array
+          const rolesStr = suspendedData.previous_roles || '';
+          const roles = rolesStr.split(',').filter(id => id.length > 0);
           await targetMember.roles.set(roles).catch(() => {});
         }
         
