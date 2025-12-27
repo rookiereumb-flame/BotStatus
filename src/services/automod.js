@@ -101,7 +101,7 @@ async function applyPunishment(message, config, reason) {
       case 'kick':
         if (member.kickable) {
           await member.kick(reason);
-          await message.channel.send(`👢 **${message.author}** has been kicked.`)
+          await message.channel.send(`👨🏻‍🔧 **${message.author}** has been kicked.`)
             .then(m => setTimeout(() => m.delete().catch(()=>{}), 5000))
             .catch(()=>{});
         }

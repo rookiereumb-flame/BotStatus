@@ -1401,7 +1401,7 @@ function createAutomodComponents(config) {
         .addOptions([
           { label: 'Warn', value: 'warn', emoji: '⚠️', default: config.automod_punishment_action === 'warn' },
           { label: 'Mute', value: 'mute', emoji: '⏱️', default: config.automod_punishment_action === 'mute' },
-          { label: 'Kick', value: 'kick', emoji: '👢', default: config.automod_punishment_action === 'kick' },
+          { label: 'Kick', value: 'kick', emoji: '👨🏻‍🔧', default: config.automod_punishment_action === 'kick' },
           { label: 'Ban', value: 'ban', emoji: '🔨', default: config.automod_punishment_action === 'ban' },
           { label: 'Suspend', value: 'suspend', emoji: '⛔', default: config.automod_punishment_action === 'suspend' }
         ])
@@ -1477,7 +1477,7 @@ client.on('interactionCreate', async interaction => {
           moderator: member.user,
           reason: reason
         });
-        const embed = sapphireEmbed('👢 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
+        const embed = sapphireEmbed('👨🏻‍🔧 Member Kicked', `${user} has been kicked from the server.\n**Reason:** ${reason}\n**Case #${caseId}**`);
         await interaction.reply({ embeds: [embed] });
         break;
       }
@@ -2012,7 +2012,7 @@ client.on('interactionCreate', async interaction => {
         const cmdName = options.getString('command');
         
         const cmdDetails = {
-          'kick': { emoji: '👢', title: 'Kick Command', desc: 'Remove a member from the server temporarily.', usage: '/kick <@user> [reason]', example: '/kick @spammer Spamming messages', perms: 'Kick Members', notes: 'User can rejoin, members stay banned from channels.' },
+          'kick': { emoji: '👨🏻‍🔧', title: 'Kick Command', desc: 'Remove a member from the server temporarily.', usage: '/kick <@user> [reason]', example: '/kick @spammer Spamming messages', perms: 'Kick Members', notes: 'User can rejoin, members stay banned from channels.' },
           'ban': { emoji: '🔨', title: 'Ban Command', desc: 'Permanently ban a member from the server.', usage: '/ban <@user> [reason]', example: '/ban @hacker Breaking rules', perms: 'Ban Members', notes: 'User cannot rejoin. Use /unban to remove ban.' },
           'mute': { emoji: '🔇', title: 'Mute Command', desc: 'Timeout a member for a set duration.', usage: '/mute <@user> <minutes> [reason]', example: '/mute @offender 15 Excessive caps', perms: 'Moderate Members', notes: 'Duration: 1-40320 minutes (28 days max). User cannot message or react.' },
           'warn': { emoji: '⚠️', title: 'Warn Command', desc: 'Give a warning to a member (tracked in profile).', usage: '/warn <@user> [reason]', example: '/warn @rude Disrespecting members', perms: 'Warn Members', notes: 'Track user warnings. Get warns with /warns <@user>.' },
@@ -2241,7 +2241,7 @@ client.on('interactionCreate', async interaction => {
           const startIdx = page * 10;
           const endIdx = startIdx + 10;
           allActions.slice(startIdx, endIdx).forEach((action, idx) => {
-            const emoji = action.type === 'ban' ? '🔨' : '👢';
+            const emoji = action.type === 'ban' ? '🔨' : '👨🏻‍🔧';
             list += `${emoji} **${action.user}** - ${action.type.toUpperCase()} - ${action.reason}\n`;
           });
           return sapphireEmbed(`📋 Ban/Kick History (Page ${page + 1}/${totalPages})`, list);
@@ -2793,7 +2793,7 @@ Click buttons below to toggle each system's whitelist bypass.
 
         const user = await client.users.fetch(caseData.user_id);
         const moderator = await client.users.fetch(caseData.moderator_id);
-        const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'suspend': '⛔', 'delete': '🗑️' }[caseData.action] || '⚙️';
+        const actionEmoji = { 'kick': '👨🏻‍🔧', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'suspend': '⛔', 'delete': '🗑️' }[caseData.action] || '⚙️';
         const timestamp = Math.floor(caseData.timestamp / 1000);
         
         const embed = sapphireEmbed(`${actionEmoji} Case #${caseId}`, '');
@@ -2853,7 +2853,7 @@ Click buttons below to toggle each system's whitelist bypass.
           const startIdx = page * 10;
           const endIdx = startIdx + 10;
           userCases.slice(startIdx, endIdx).forEach(c => {
-            const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'suspend': '⛔' }[c.action] || '⚙️';
+            const actionEmoji = { 'kick': '👨🏻‍🔧', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅', 'suspend': '⛔' }[c.action] || '⚙️';
             const time = `<t:${Math.floor(c.timestamp / 1000)}:t>`;
             caseList += `${actionEmoji} **#${c.case_id}** | ${c.action.toUpperCase()} | ${time} | ${c.reason.substring(0, 30)}\n`;
           });
@@ -3012,7 +3012,7 @@ client.on('interactionCreate', async interaction => {
         const startIdx = page * 10;
         const endIdx = startIdx + 10;
         userCases.slice(startIdx, endIdx).forEach(c => {
-          const actionEmoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
+          const actionEmoji = { 'kick': '👨🏻‍🔧', 'ban': '🔨', 'mute': '🔇', 'unmute': '🔊', 'warn': '⚠️', 'unban': '✅' }[c.action] || '⚙️';
           caseList += `${actionEmoji} **Case #${c.case_id}** | ${c.action.toUpperCase()} | ${c.reason.substring(0, 40)}\n`;
         });
         const title = targetUser ? `Cases for <@${targetUser}>: (Page ${page + 1}/${totalPages})` : `Latest cases: (Page ${page + 1}/${totalPages})`;
@@ -3237,7 +3237,7 @@ client.on('interactionCreate', async interaction => {
         list = 'No cases.';
       } else {
         cases.slice(0, 10).forEach((c) => {
-          const emoji = { 'kick': '👢', 'ban': '🔨', 'mute': '🔇', 'warn': '⚠️', 'unmute': '🔊', 'unban': '✅' }[c.action] || '⚙️';
+          const emoji = { 'kick': '👨🏻‍🔧', 'ban': '🔨', 'mute': '🔇', 'warn': '⚠️', 'unmute': '🔊', 'unban': '✅' }[c.action] || '⚙️';
           list += `${emoji} Case #${c.case_id}: **${c.action.toUpperCase()}** - ${c.reason}\n`;
         });
         if (cases.length > 10) list += `\n... and ${cases.length - 10} more cases`;

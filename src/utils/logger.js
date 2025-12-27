@@ -34,7 +34,7 @@ async function logModeration(guild, action, options) {
   };
 
   const icons = {
-    kick: '👢',
+    kick: '👨🏻‍🔧',
     ban: '🔨',
     mute: '🔇',
     warn: '⚠️',
