@@ -802,7 +802,7 @@ client.on('messageCreate', async message => {
     const customPrefix = getCustomPrefix(message.guild.id) || PREFIX;
 
     // Bot mention handler - reply once if bot is directly mentioned
-    if (message.mentions.has(client.user.id) && !message.reference) {
+    if (message.mentions.has(client.user.id) && !message.reference && message.content.trim().startsWith('<')) {
       try {
         await message.reply(`Hello ${message.author}, ***nice to meet you I am Daddy USSR*** pls use \` /help \` to get started!!`);
       } catch (e) {
