@@ -86,13 +86,13 @@ const commands = [
   {
     name: 'set-prison-role',
     description: 'Set a custom role for suspended users',
-    default_member_permissions: PermissionFlagsBits.ManageRoles,
+    default_member_permissions: "268435456", // ManageRoles
     options: [{ name: 'role', type: 8, description: 'The role to use for prison', required: true }]
   },
   {
     name: 'set-prison-channel',
     description: 'Set a custom channel for suspended users',
-    default_member_permissions: PermissionFlagsBits.ManageChannels,
+    default_member_permissions: "16", // ManageChannels
     options: [{ name: 'channel', type: 7, description: 'The channel to use for prison', required: true }]
   },
   {
@@ -867,10 +867,21 @@ client.on('messageCreate', async message => {
       }
       return;
     }
-    
+
     const args = message.content.slice(customPrefix.length).trim().split(/ +/);
     let cmd = args.shift().toLowerCase();
-    
+
+    // Multi-word command support (e.g., "=add role" -> "=add-role")
+    if (args.length > 0) {
+      const multiWordCmd = `${cmd}-${args[0].toLowerCase()}`;
+      // Check if the combined version exists as a prefix command
+      // In this bot, we handle prefix commands in a switch
+      // We'll transform the cmd variable for the switch below
+      if (['add-role', 'remove-role', 'set-prefix', 'lgbl-add', 'lgbl-remove', 'server-config', 'server-report'].includes(multiWordCmd)) {
+        cmd = multiWordCmd;
+        args.shift();
+      }
+    }
     // Command aliases
     const aliases = {
       'k': 'kick', 'b': 'ban', 'm': 'mute', 'um': 'unmute', 'ub': 'unban', 'w': 'warn', 'uw': 'unwarn',
