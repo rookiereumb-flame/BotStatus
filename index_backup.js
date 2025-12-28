@@ -2409,115 +2409,96 @@ Click buttons below to toggle each system's whitelist bypass.
 });
 
 client.on('interactionCreate', async interaction => {
-  if (interaction.isButton() || interaction.isStringSelectMenu()) {
-    const customId = interaction.customId;
-    const config = getGuildConfig(interaction.guildId);
-    
-    if (['toggle_automod', 'toggle_lg', 'automod_punishment', 'automod_duration'].includes(customId)) {
-      let enabled = config.automod_enabled;
-      let lgEnabled = config.automod_multilingual;
-      let action = config.automod_punishment_action;
-      let duration = config.automod_punishment_duration;
-
-      if (customId === 'toggle_automod') enabled = !enabled;
-      if (customId === 'toggle_lg') lgEnabled = !lgEnabled;
-      if (customId === 'automod_punishment') action = interaction.values[0];
-      if (customId === 'automod_duration') duration = interaction.values[0];
-
-      setAutomodConfig(interaction.guildId, enabled, lgEnabled, action, duration);
-      
-      const newConfig = getGuildConfig(interaction.guildId);
-      const embed = createAutomodEmbed(newConfig);
-      const components = createAutomodComponents(newConfig);
-      
-      return await interaction.update({ embeds: [embed], components });
-    }
-  }
-
-  if (!interaction.isChatInputCommand()) return;
+  if (!interaction.isButton()) return;
   
-  const { commandName, options, member, guild } = interaction;
-
   try {
-    switch(commandName) {
-      case 'setup-automod': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
-          return interaction.reply({ content: '❌ Administrator permission required.', ephemeral: true });
+    if (interaction.customId.startsWith('report_undo_')) {
+      const cacheId = interaction.customId.replace('report_undo_', '');
+      const selected = global.reportSelected?.[cacheId] || [];
+      const categories = global.reportCache?.[cacheId];
+      
+      if (!categories || selected.length === 0) {
+        return interaction.reply({ content: '❌ No events selected or cache expired.', ephemeral: true });
+      }
+      
+      let undone = 0;
+      const results = [];
+      
+      // Process undo for each selected event
+      for (const val of selected) {
+        const [catNum, idx] = val.split('_');
+        const event = categories[catNum]?.events[parseInt(idx)];
+        if (event) {
+          try {
+            if (catNum === '1') {
+              // Channel undo
+              const channel = interaction.guild.channels.cache.get(event.id);
+              if (channel) {
+                await channel.delete('Undo from server report');
+                results.push(`✅ Deleted channel: ${event.details}`);
+                undone++;
+              }
+            } else if (catNum === '2') {
+              // Role undo
+              const role = interaction.guild.roles.cache.get(event.id);
+              if (role) {
+                await role.delete('Undo from server report');
+                results.push(`✅ Deleted role: ${event.details}`);
+                undone++;
+              }
+            }
+          } catch (e) {
+            results.push(`⚠️ Could not undo: ${event.details}`);
+          }
         }
-        const config = getGuildConfig(interaction.guildId);
-        await interaction.reply({ embeds: [createAutomodEmbed(config)], components: createAutomodComponents(config) });
-        break;
       }
-      case 'kick': {
-        if (!member.permissions.has(PermissionFlagsBits.KickMembers)) return interaction.reply({ content: '❌ Kick permission required.', ephemeral: true });
-        const user = options.getUser('user');
-        const reason = options.getString('reason') || 'No reason';
-        const targetMember = await guild.members.fetch(user.id).catch(() => null);
-        if (!targetMember || !targetMember.kickable) return interaction.reply({ content: '❌ Cannot kick user.', ephemeral: true });
-        await targetMember.kick(reason);
-        await interaction.reply({ content: `✅ Kicked ${user.tag}` });
-        break;
-      }
-      case 'ban': {
-        if (!member.permissions.has(PermissionFlagsBits.BanMembers)) return interaction.reply({ content: '❌ Ban permission required.', ephemeral: true });
-        const user = options.getUser('user');
-        const reason = options.getString('reason') || 'No reason';
-        const targetMember = await guild.members.fetch(user.id).catch(() => null);
-        if (!targetMember || !targetMember.bannable) return interaction.reply({ content: '❌ Cannot ban user.', ephemeral: true });
-        await targetMember.ban({ reason });
-        await interaction.reply({ content: `✅ Banned ${user.tag}` });
-        break;
-      }
-      case 'mute': {
-        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) return interaction.reply({ content: '❌ Timeout permission required.', ephemeral: true });
-        const user = options.getUser('user');
-        const duration = options.getInteger('duration');
-        const unit = options.getString('unit') || 'm';
-        const ms = convertTimeToMs(duration, unit);
-        const targetMember = await guild.members.fetch(user.id);
-        await targetMember.timeout(ms);
-        await interaction.reply({ content: `✅ Muted ${user.tag}` });
-        break;
-      }
-      case 'unmute': {
-        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) return interaction.reply({ content: '❌ Timeout permission required.', ephemeral: true });
-        const user = options.getUser('user');
-        const targetMember = await guild.members.fetch(user.id);
-        await targetMember.timeout(null);
-        await interaction.reply({ content: `✅ Unmuted ${user.tag}` });
-        break;
-      }
-      case 'suspend': {
-        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) return interaction.reply({ content: '❌ Role permission required.', ephemeral: true });
-        const user = options.getUser('user');
-        const targetMember = await guild.members.fetch(user.id);
-        const previousRoles = targetMember.roles.cache.map(r => r.id);
-        // Simplified suspension logic for restoration
-        const suspendRole = guild.roles.cache.find(r => r.name === '⛔ Suspended');
-        await targetMember.roles.set([suspendRole.id]);
-        suspendUser(guild.id, user.id, suspendRole.id, previousRoles, 'Suspended');
-        await interaction.reply({ content: `✅ Suspended ${user.tag}` });
-        break;
-      }
-      case 'unsuspend': {
-        if (!member.permissions.has(PermissionFlagsBits.ManageRoles)) return interaction.reply({ content: '❌ Role permission required.', ephemeral: true });
-        const user = options.getUser('user');
-        const suspension = getSuspension(guild.id, user.id);
-        if (!suspension) return interaction.reply({ content: '❌ Not suspended.' });
-        const targetMember = await guild.members.fetch(user.id);
-        await targetMember.roles.set(JSON.parse(suspension.previous_roles));
-        deleteSuspension(guild.id, user.id);
-        await interaction.reply({ content: `✅ Unsuspended ${user.tag}` });
-        break;
-      }
-      case 'help': {
-        await interaction.reply({ content: 'Use /setup-automod to configure the bot.' });
-        break;
-      }
+      
+      const embed = sapphireEmbed('⏮️ Undo Report', 
+        `**Events Undone:** ${undone}/${selected.length}\n\n${results.join('\n').substring(0, 2000)}`
+      );
+      await interaction.reply({ embeds: [embed], ephemeral: true });
+      
+      // Cleanup
+      delete global.reportCache[cacheId];
+      delete global.reportSelected[cacheId];
     }
   } catch (error) {
-    console.error('Interaction error:', error);
-    if (!interaction.replied) await interaction.reply({ content: '❌ An error occurred.', ephemeral: true });
+    console.error('Report undo error:', error);
   }
 });
-client.login(process.env.DISCORD_BOT_TOKEN);
+
+// Error handlers to prevent bot crashes
+client.on('error', error => {
+  console.error('❌ Discord Client Error:', error);
+  // Auto-reconnect on error
+  if (!client.isReady()) {
+    setTimeout(() => {
+      console.log('🔄 Attempting to reconnect...');
+      client.login(TOKEN).catch(e => console.error('Reconnect failed:', e));
+    }, 5000);
+  }
+});
+
+client.on('disconnect', () => {
+  console.warn('⚠️ Bot disconnected from Discord');
+  setTimeout(() => {
+    if (!client.isReady()) {
+      console.log('🔄 Attempting to reconnect...');
+      client.login(TOKEN).catch(e => console.error('Reconnect failed:', e));
+    }
+  }, 5000);
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('❌ Unhandled Rejection at:', promise, 'reason:', reason);
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (error) => {
+  console.error('❌ Uncaught Exception:', error);
+  // Keep the process running instead of crashing
+  console.log('🔄 Bot continuing despite error...');
+});
+
+client.login(TOKEN);
