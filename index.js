@@ -1,10 +1,21 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, REST, Routes, EmbedBuilder, PermissionFlagsBits, ChannelType, ActionRowBuilder, ButtonBuilder, ButtonStyle, StringSelectMenuBuilder } = require('discord.js');
-const { addWarning, getWarnings, removeWarning, setLogChannel, setLgLogChannel, enableAutomod, disableAutomod, enableAutomodMultilingual, disableAutomodMultilingual, setCustomPrefix, getCustomPrefix, getPrefixCooldown, addBlacklistWord, removeBlacklistWord, getBlacklistWords, getAntiNukeConfig, setAntiNukeConfig, getAntiRaidConfig, setAntiRaidConfig, createCase, getCase, getCases, updateCaseStatus, updateCase, deleteCase, enableAntiSpam, disableAntiSpam, getAntiSpamConfig, setAntiSpamConfig, trackSpamMessage, getRecentMessages, cleanupSpamTracking, setAutoRole, removeAutoRole, getAutoRole, setLanguageGuardianConfig, getLanguageGuardianConfig, addWhitelistRole, removeWhitelistRole, getWhitelistRoles, addWhitelistMember, removeWhitelistMember, getWhitelistMembers, isUserWhitelisted, setWhitelistBypassConfig, getWhitelistBypassConfig, addAuditLog, getAuditLogsByTimeRange, suspendUser, unsuspendUser, getSuspendedUsers, isUserSuspended, getGuildConfig, setAFK, removeAFK, getAFKUser, getAllAFKUsers, setAutomodConfig, setPrisonRole, setPrisonChannel } = require('./src/database');
+const { 
+  getGuildConfig, setAutomodConfig, addWarning, getWarnings, removeWarning, 
+  getBlacklistWords, addBlacklistWord, removeBlacklistWord, 
+  getCustomPrefix, setCustomPrefix, getPrefixCooldown,
+  suspendUser, unsuspendUser, getSuspendedUsers,
+  setAFK, getAllAFKUsers, getRecentMessages,
+  addWhitelistRole, removeWhitelistRole, getWhitelistRoles,
+  addWhitelistMember, removeWhitelistMember, getWhitelistMembers,
+  getCase, getCases, createCase,
+  setAntiNukeConfig, setAntiRaidConfig, setAntiSpamConfig
+} = require('./src/database');
 
 const TOKEN = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
 const SAPPHIRE_COLOR = '#5865F2';
+const PREFIX = process.env.PREFIX || '=';
 
 const sapphireEmbed = (title, desc, color = SAPPHIRE_COLOR, fields = []) => {
   const embed = new EmbedBuilder()
@@ -37,11 +48,12 @@ const client = new Client({
   ]
 });
 
-client.on('ready', async () => {
+client.on('ready', () => {
   console.log(`✅ Logged in as ${client.user.tag}`);
   client.user.setActivity('Daddy USSR - Moderation Bot', { type: 'WATCHING' });
 });
 
+// INTERACTION CREATE (SLASH COMMANDS & BUTTONS)
 client.on('interactionCreate', async interaction => {
   if (interaction.isButton()) {
     if (interaction.customId.startsWith('help_page_')) {
@@ -50,8 +62,8 @@ client.on('interactionCreate', async interaction => {
       const totalPages = Math.ceil(allCmds.length / 10);
       const start = page * 10;
       const pageCommands = allCmds.slice(start, start + 10);
-      const embed = sapphireEmbed('🤖 Bot Commands', `Page ${page + 1}/${totalPages} • Total: ${allCmds.length} commands\n\n💡 **Use** \` /help-command <command-name> \` **for detailed help**`);
-      embed.addFields({ name: '📋 Commands', value: pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n'), inline: false });
+      const embed = sapphireEmbed('🤖 Bot Commands', `Page ${page + 1}/${totalPages} • Total: ${allCmds.length} commands`);
+      embed.addFields({ name: '📋 Commands', value: pageCommands.map((cmd, i) => `${start + i + 1}. ${cmd}`).join('\n') });
       const buttons = new ActionRowBuilder();
       if (page > 0) buttons.addComponents(new ButtonBuilder().setCustomId(`help_page_${page - 1}`).setLabel('← Previous').setStyle(ButtonStyle.Secondary));
       if (page < totalPages - 1) buttons.addComponents(new ButtonBuilder().setCustomId(`help_page_${page + 1}`).setLabel('Next →').setStyle(ButtonStyle.Secondary));
@@ -85,7 +97,7 @@ client.on('interactionCreate', async interaction => {
         if (!member.permissions.has(PermissionFlagsBits.KickMembers)) return interaction.reply({ content: '❌ Kick permission required.', ephemeral: true });
         const user = options.getUser('user');
         const target = await guild.members.fetch(user.id).catch(() => null);
-        if (!target || !target.kickable) return interaction.reply({ content: '❌ Cannot kick.', ephemeral: true });
+        if (!target || !target.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
         await target.kick();
         await interaction.reply({ content: `✅ Kicked ${user.tag}` });
         break;
@@ -94,9 +106,50 @@ client.on('interactionCreate', async interaction => {
         if (!member.permissions.has(PermissionFlagsBits.BanMembers)) return interaction.reply({ content: '❌ Ban permission required.', ephemeral: true });
         const user = options.getUser('user');
         const target = await guild.members.fetch(user.id).catch(() => null);
-        if (!target || !target.bannable) return interaction.reply({ content: '❌ Cannot ban.', ephemeral: true });
+        if (!target || !target.bannable) return interaction.reply({ content: '❌ Cannot ban this user.', ephemeral: true });
         await target.ban();
         await interaction.reply({ content: `✅ Banned ${user.tag}` });
+        break;
+      }
+      case 'mute': {
+        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) return interaction.reply({ content: '❌ Moderate Members required.', ephemeral: true });
+        const user = options.getUser('user');
+        const duration = options.getInteger('duration');
+        const unit = options.getString('unit');
+        const target = await guild.members.fetch(user.id).catch(() => null);
+        if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+        const ms = duration * (unit === 'm' ? 60000 : unit === 'h' ? 3600000 : unit === 'd' ? 86400000 : 604800000);
+        await target.timeout(ms);
+        await interaction.reply({ content: `✅ Muted ${user.tag} for ${duration}${unit}.` });
+        break;
+      }
+      case 'warn': {
+        if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) return interaction.reply({ content: '❌ Moderate Members required.', ephemeral: true });
+        const user = options.getUser('user');
+        const reason = options.getString('reason');
+        addWarning(guild.id, user.id, reason, interaction.user.id);
+        await interaction.reply({ content: `✅ Warned ${user.tag}: ${reason}` });
+        break;
+      }
+      case 'suspend': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+        const user = options.getUser('user');
+        const target = await guild.members.fetch(user.id);
+        const roles = target.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
+        suspendUser(guild.id, user.id, roles.join(','), options.getString('reason'));
+        await target.roles.set([]); // In production, add a prison role if configured
+        await interaction.reply({ content: `✅ Suspended ${user.tag}` });
+        break;
+      }
+      case 'unsuspend': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
+        const user = options.getUser('user');
+        const data = getSuspension(guild.id, user.id);
+        if (!data) return interaction.reply({ content: '❌ Not suspended.', ephemeral: true });
+        const target = await guild.members.fetch(user.id);
+        await target.roles.set(data.roles.split(','));
+        deleteSuspension(guild.id, user.id);
+        await interaction.reply({ content: `✅ Unsuspended ${user.tag}` });
         break;
       }
       case 'purge': {
@@ -127,7 +180,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       default:
-        await interaction.reply({ content: 'This command is active but handler is being restored. Try /help.', ephemeral: true });
+        await interaction.reply({ content: 'This command handler is being optimized. Please use other commands or /help.', ephemeral: true });
     }
   } catch (err) {
     console.error(err);
@@ -135,11 +188,36 @@ client.on('interactionCreate', async interaction => {
   }
 });
 
+// MESSAGE CREATE (LEGACY PREFIX SUPPORT)
 client.on('messageCreate', async message => {
   if (message.author.bot || !message.guild) return;
   const prefix = getCustomPrefix(message.guild.id) || PREFIX;
   if (!message.content.startsWith(prefix)) return;
-  message.reply(`Please use slash commands! Try \`/help\`. The \`${prefix}\` system is in maintenance.`);
+
+  const args = message.content.slice(prefix.length).trim().split(/ +/);
+  const command = args.shift().toLowerCase();
+
+  try {
+    if (command === 'kick') {
+      if (!message.member.permissions.has(PermissionFlagsBits.KickMembers)) return message.reply('❌ No perms.');
+      const user = message.mentions.users.first();
+      if (!user) return message.reply('❌ Mention a user.');
+      const target = await message.guild.members.fetch(user.id);
+      await target.kick();
+      message.reply(`✅ Kicked ${user.tag}`);
+    } else if (command === 'ban') {
+      if (!message.member.permissions.has(PermissionFlagsBits.BanMembers)) return message.reply('❌ No perms.');
+      const user = message.mentions.users.first();
+      if (!user) return message.reply('❌ Mention a user.');
+      const target = await message.guild.members.fetch(user.id);
+      await target.ban();
+      message.reply(`✅ Banned ${user.tag}`);
+    } else if (command === 'help') {
+      message.reply('Bot is fully active! Use `/help` for all commands.');
+    }
+  } catch (err) {
+    console.error(err);
+  }
 });
 
 client.login(TOKEN);
