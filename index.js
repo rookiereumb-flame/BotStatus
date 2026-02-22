@@ -128,6 +128,13 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
+        // Safety check: Ensure the command is being used in the guild it was intended for
+        if (!interaction.guild || interaction.guild.id !== guild.id) {
+          return interaction.reply({ 
+            content: '❌ This command can only be used within a server.', 
+            ephemeral: true 
+          });
+        }
         const text = options.getString('text');
         if (!text) {
           return interaction.reply({ 
@@ -156,7 +163,7 @@ client.on('messageCreate', async message => {
   const command = args.shift().toLowerCase();
 
   if (command === 'say') {
-    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+    if (!message.guild || !message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
     const text = args.join(' ');
     if (!text) {
       return message.reply(`❌ **Invalid Usage**\nFormat: \`${prefix}say <message>\`\nExample: \`${prefix}say Hello everyone!\``).then(m => setTimeout(() => m.delete().catch(() => {}), 10000));
