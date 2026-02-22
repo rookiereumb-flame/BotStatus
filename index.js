@@ -129,6 +129,12 @@ client.on('interactionCreate', async interaction => {
           });
         }
         const text = options.getString('text');
+        if (!text) {
+          return interaction.reply({ 
+            content: '❌ **Invalid Usage**\nPlease provide the text you want me to say.', 
+            ephemeral: true 
+          });
+        }
         await interaction.channel.send(text);
         await interaction.reply({ content: '✅ Message sent!', ephemeral: true });
         break;
