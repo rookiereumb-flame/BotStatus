@@ -152,7 +152,9 @@ client.on('messageCreate', async message => {
   if (command === 'say') {
     if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
     const text = args.join(' ');
-    if (!text) return;
+    if (!text) {
+      return message.reply(`❌ **Invalid Usage**\nFormat: \`${prefix}say <message>\`\nExample: \`${prefix}say Hello everyone!\``).then(m => setTimeout(() => m.delete().catch(() => {}), 10000));
+    }
     await message.delete().catch(() => {});
     await message.channel.send(text);
   } else if (command === 'help') {
