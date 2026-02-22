@@ -121,6 +121,18 @@ client.on('interactionCreate', async interaction => {
         await interaction.reply({ embeds: [embed], components: [buttons] });
         break;
       }
+      case 'say': {
+        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+          return interaction.reply({ 
+            content: '❌ You need the "Administrator" permission to use this command.', 
+            ephemeral: true 
+          });
+        }
+        const text = options.getString('text');
+        await interaction.channel.send(text);
+        await interaction.reply({ content: '✅ Message sent!', ephemeral: true });
+        break;
+      }
       default:
         await interaction.reply({ content: 'This command is operational. Try /help.', ephemeral: true });
     }
@@ -136,7 +148,16 @@ client.on('messageCreate', async message => {
   if (!message.content.startsWith(prefix)) return;
   const args = message.content.slice(prefix.length).trim().split(/ +/);
   const command = args.shift().toLowerCase();
-  if (command === 'help') message.reply('Use `/help` for all commands!');
+
+  if (command === 'say') {
+    if (!message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+    const text = args.join(' ');
+    if (!text) return;
+    await message.delete().catch(() => {});
+    await message.channel.send(text);
+  } else if (command === 'help') {
+    message.reply('Use `/help` for all commands!');
+  }
 });
 
 client.login(TOKEN);
