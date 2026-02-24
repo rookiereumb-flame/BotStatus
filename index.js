@@ -63,7 +63,7 @@ client.on('interactionCreate', async interaction => {
     switch (commandName) {
       case 'setup-automod': {
         if (!member.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
-        const config = getGuildConfig(guild.id);
+        const config = getGuildConfig(interaction.guildId);
         const embed = sapphireEmbed('🛡️ Automod Configuration', 'Configure the main automod system.');
         embed.addFields(
           { name: '🤖 Status', value: config?.automod_enabled ? '✅ ENABLED' : '❌ DISABLED', inline: true },
@@ -71,35 +71,38 @@ client.on('interactionCreate', async interaction => {
           { name: '⏱️ Duration', value: config?.automod_punishment_duration || '1h', inline: true }
         );
         const row1 = new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId(`automod_toggle_${guild.id}`).setLabel(config?.automod_enabled ? 'Disable Automod' : 'Enable Automod').setStyle(config?.automod_enabled ? ButtonStyle.Danger : ButtonStyle.Success)
+          new ButtonBuilder().setCustomId(`automod_toggle_${interaction.guildId}`).setLabel(config?.automod_enabled ? 'Disable Automod' : 'Enable Automod').setStyle(config?.automod_enabled ? ButtonStyle.Danger : ButtonStyle.Success)
         );
         await interaction.reply({ embeds: [embed], components: [row1] });
         break;
       }
       case 'kick': {
+        if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
         if (!member.permissions.has(PermissionFlagsBits.KickMembers)) return interaction.reply({ content: '❌ Kick permission required.', ephemeral: true });
         const user = options.getUser('user');
-        const target = await guild.members.fetch(user.id).catch(() => null);
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
         if (!target || !target.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
         await target.kick();
         await interaction.reply({ content: `✅ Kicked ${user.tag}` });
         break;
       }
       case 'ban': {
+        if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
         if (!member.permissions.has(PermissionFlagsBits.BanMembers)) return interaction.reply({ content: '❌ Ban permission required.', ephemeral: true });
         const user = options.getUser('user');
-        const target = await guild.members.fetch(user.id).catch(() => null);
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
         if (!target || !target.bannable) return interaction.reply({ content: '❌ Cannot ban this user.', ephemeral: true });
         await target.ban();
         await interaction.reply({ content: `✅ Banned ${user.tag}` });
         break;
       }
       case 'mute': {
+        if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
         if (!member.permissions.has(PermissionFlagsBits.ModerateMembers)) return interaction.reply({ content: '❌ Moderate Members required.', ephemeral: true });
         const user = options.getUser('user');
         const duration = options.getInteger('duration');
         const unit = options.getString('unit');
-        const target = await guild.members.fetch(user.id).catch(() => null);
+        const target = await interaction.guild.members.fetch(user.id).catch(() => null);
         if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
         const ms = duration * (unit === 'm' ? 60000 : unit === 'h' ? 3600000 : unit === 'd' ? 86400000 : 604800000);
         await target.timeout(ms);
@@ -107,6 +110,7 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case 'purge': {
+        if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
         if (!member.permissions.has(PermissionFlagsBits.ManageMessages)) return interaction.reply({ content: '❌ Manage Messages required.', ephemeral: true });
         const amount = options.getInteger('amount');
         await interaction.channel.bulkDelete(amount, true);
@@ -122,16 +126,11 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case 'say': {
-        if (!member.permissions.has(PermissionFlagsBits.Administrator)) {
+        // If used in a server, only Administrators can use it to prevent unauthorized speaking.
+        // If used outside a server (User App / DM / External context), it allows the authorized user to speak through the bot.
+        if (interaction.guild && !member.permissions.has(PermissionFlagsBits.Administrator)) {
           return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command.', 
-            ephemeral: true 
-          });
-        }
-        // Safety check: Ensure the command is being used in the guild it was intended for
-        if (!interaction.guild || interaction.guild.id !== guild.id) {
-          return interaction.reply({ 
-            content: '❌ This command can only be used within a server.', 
+            content: '❌ You need the "Administrator" permission to use this command in a server.', 
             ephemeral: true 
           });
         }
