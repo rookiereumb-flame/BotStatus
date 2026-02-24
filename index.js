@@ -126,20 +126,28 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case 'say': {
-        // If used in a server:
-        // 1. User is an Administrator OR
-        // 2. User has 'Manage Guild' permission
-        const hasServerPerms = interaction.guild && (
-          member.permissions.has(PermissionFlagsBits.Administrator) || 
-          member.permissions.has(PermissionFlagsBits.ManageGuild)
+        // Global Permission check:
+        // 1. If used in a server the bot is NOT in (authorized user app context), 
+        //    we allow it because the user has authorized the bot to act on their behalf.
+        // 2. If used in a server the bot IS in, we check for Administrator or ManageGuild to prevent abuse.
+        
+        const guildId = interaction.guildId;
+        const isBotInGuild = guildId && client.guilds.cache.has(guildId);
+        
+        const hasServerPerms = !isBotInGuild || (
+          member && (
+            member.permissions.has(PermissionFlagsBits.Administrator) || 
+            member.permissions.has(PermissionFlagsBits.ManageGuild)
+          )
         );
 
-        if (interaction.guild && !hasServerPerms) {
+        if (isBotInGuild && !hasServerPerms) {
           return interaction.reply({ 
-            content: '❌ You need "Administrator" or "Manage Server" permissions to use this command here.', 
+            content: '❌ You need "Administrator" or "Manage Server" permissions to use this command in this server.', 
             ephemeral: true 
           });
         }
+
         const text = options.getString('text');
         if (!text) {
           return interaction.reply({ 
@@ -147,8 +155,32 @@ client.on('interactionCreate', async interaction => {
             ephemeral: true 
           });
         }
-        await interaction.channel.send(text);
-        await interaction.reply({ content: '✅ Message sent!', ephemeral: true });
+
+        // Use the interaction's channel to send the message
+        const channel = interaction.channel;
+        
+        try {
+          // If the bot is not in the guild, we can still try to send via the interaction channel
+          // provided by the user-app authorization.
+          if (channel) {
+            await channel.send(text);
+            await interaction.reply({ content: '✅ Message sent!', ephemeral: true });
+          } else {
+            // Fallback for some User App contexts where channel might not be directly available
+            await interaction.reply({ content: text });
+          }
+        } catch (err) {
+          console.error('Error sending message via /say:', err);
+          // If direct send failed, try replying with the text (this works in more contexts)
+          try {
+            await interaction.reply({ content: text });
+          } catch (secondErr) {
+            await interaction.followUp({ 
+              content: '❌ Failed to send message. Ensure the bot has permission to speak here or you have authorized it correctly.', 
+              ephemeral: true 
+            }).catch(() => {});
+          }
+        }
         break;
       }
       default:
