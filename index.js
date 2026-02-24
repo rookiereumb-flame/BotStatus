@@ -126,11 +126,17 @@ client.on('interactionCreate', async interaction => {
         break;
       }
       case 'say': {
-        // If used in a server, only Administrators can use it to prevent unauthorized speaking.
-        // If used outside a server (User App / DM / External context), it allows the authorized user to speak through the bot.
-        if (interaction.guild && !member.permissions.has(PermissionFlagsBits.Administrator)) {
+        // If used in a server:
+        // 1. User is an Administrator OR
+        // 2. User has 'Manage Guild' permission
+        const hasServerPerms = interaction.guild && (
+          member.permissions.has(PermissionFlagsBits.Administrator) || 
+          member.permissions.has(PermissionFlagsBits.ManageGuild)
+        );
+
+        if (interaction.guild && !hasServerPerms) {
           return interaction.reply({ 
-            content: '❌ You need the "Administrator" permission to use this command in a server.', 
+            content: '❌ You need "Administrator" or "Manage Server" permissions to use this command here.', 
             ephemeral: true 
           });
         }
@@ -162,7 +168,11 @@ client.on('messageCreate', async message => {
   const command = args.shift().toLowerCase();
 
   if (command === 'say') {
-    if (!message.guild || !message.member.permissions.has(PermissionFlagsBits.Administrator)) return;
+    const hasPerms = message.guild && (
+      message.member.permissions.has(PermissionFlagsBits.Administrator) || 
+      message.member.permissions.has(PermissionFlagsBits.ManageGuild)
+    );
+    if (message.guild && !hasPerms) return;
     const text = args.join(' ');
     if (!text) {
       return message.reply(`❌ **Invalid Usage**\nFormat: \`${prefix}say <message>\`\nExample: \`${prefix}say Hello everyone!\``).then(m => setTimeout(() => m.delete().catch(() => {}), 10000));
