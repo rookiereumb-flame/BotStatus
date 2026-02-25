@@ -160,23 +160,19 @@ client.on('interactionCreate', async interaction => {
         const channel = interaction.channel;
         
         try {
-          // If the bot is not in the guild, we can still try to send via the interaction channel
-          // provided by the user-app authorization.
           if (channel) {
             await channel.send(text);
-            await interaction.reply({ content: '✅ Message sent!', ephemeral: true });
+            await interaction.reply({ content: '✅', ephemeral: true });
           } else {
-            // Fallback for some User App contexts where channel might not be directly available
             await interaction.reply({ content: text });
           }
         } catch (err) {
           console.error('Error sending message via /say:', err);
-          // If direct send failed, try replying with the text (this works in more contexts)
           try {
             await interaction.reply({ content: text });
           } catch (secondErr) {
             await interaction.followUp({ 
-              content: '❌ Failed to send message. Ensure the bot has permission to speak here or you have authorized it correctly.', 
+              content: '❌ Failed to send message.', 
               ephemeral: true 
             }).catch(() => {});
           }
