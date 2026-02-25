@@ -160,10 +160,23 @@ client.on('interactionCreate', async interaction => {
         const channel = interaction.channel;
         
         try {
-          if (channel) {
+          // If the bot is in the guild and has permissions, use channel.send to avoid the "reply" look.
+          if (channel && isBotInGuild) {
             await channel.send(text);
+            // We use followUp with ephemeral: true so the user gets confirmation without a public "reply"
             await interaction.reply({ content: '✅', ephemeral: true });
+          } else if (channel) {
+            // If bot is not in guild but we have channel access (e.g. DM or specific User App context)
+            // Try sending directly first
+            try {
+              await channel.send(text);
+              await interaction.reply({ content: '✅', ephemeral: true });
+            } catch (e) {
+              // Fallback to interaction reply if direct send fails
+              await interaction.reply({ content: text });
+            }
           } else {
+            // Absolute fallback
             await interaction.reply({ content: text });
           }
         } catch (err) {
