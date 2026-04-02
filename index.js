@@ -1,12 +1,13 @@
 require('dotenv').config();
 const {
-  Client, GatewayIntentBits, AuditLogEvent, PermissionFlagsBits,
-  EmbedBuilder, REST, Routes, ChannelType
+  Client, GatewayIntentBits, AuditLogEvent,
+  PermissionFlagsBits, EmbedBuilder, REST, Routes
 } = require('discord.js');
-const db = require('./src/database/db');
-const { logAction, checkThreshold, suspendUser } = require('./src/services/monitor');
 
-const TOKEN = process.env.DISCORD_BOT_TOKEN;
+const db = require('./src/database/db');
+const { logAction, checkThreshold, suspendUser, sendLog } = require('./src/services/monitor');
+
+const TOKEN     = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
 
 const client = new Client({
@@ -22,473 +23,594 @@ const client = new Client({
   ]
 });
 
-// =============================================
-// SECURITY ENGINE - Anti-Nuke Monitors
-// =============================================
+// ═══════════════════════════════════════════════════════════════════
+//  SECURITY ENGINE — ANTI-NUKE MONITORS (12+)
+// ═══════════════════════════════════════════════════════════════════
 
-async function handleSecurityEvent(guild, executorId, type, reason) {
+async function handleNukeEvent(guild, executorId, type, reason, evidence) {
   if (!executorId || executorId === client.user.id) return;
   const trust = db.getTrust(guild.id, executorId);
-  if (trust && trust.level <= 2) return;
+  if (trust && trust.level <= 2) return; // Immune
+
   logAction(guild.id, executorId, type);
+
+  // Send informational log even before threshold
+  const config = db.getGuildConfig(guild.id);
+  if (config.log_channel_id) {
+    const ch = await guild.channels.fetch(config.log_channel_id).catch(() => null);
+    if (ch) {
+      ch.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0xff6600)
+          .setTitle(`⚠️ Security Monitor: ${type.replace(/_/g, ' ').toUpperCase()}`)
+          .addFields(
+            { name: '👤 Executor', value: `<@${executorId}> \`(${executorId})\``, inline: true },
+            { name: '📋 Evidence', value: evidence, inline: false }
+          )
+          .setTimestamp()
+          .setFooter({ text: 'Daddy USSR Security Engine' })]
+      }).catch(() => {});
+    }
+  }
+
   if (checkThreshold(guild.id, executorId, type)) {
     const member = await guild.members.fetch(executorId).catch(() => null);
-    if (member) await suspendUser(member, reason, client);
+    if (member) await suspendUser(member, reason, evidence);
   }
 }
 
-// Channel monitors
-client.on('channelCreate', async c => {
-  const entry = (await c.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelCreate, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(c.guild, entry.executorId, 'channel_create', 'Channel Creation Spam');
-});
+// 1. Channel Delete
 client.on('channelDelete', async c => {
-  const entry = (await c.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelDelete, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(c.guild, entry.executorId, 'channel_delete', 'Channel Deletion Spam');
+  const e = (await c.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelDelete, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(c.guild, e.executorId, 'channel_delete', 'Channel Deletion Spam', `Deleted: #${c.name} (ID: ${c.id})`);
 });
 
-// Role monitors
-client.on('roleCreate', async r => {
-  const entry = (await r.guild.fetchAuditLogs({ type: AuditLogEvent.RoleCreate, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(r.guild, entry.executorId, 'role_create', 'Role Creation Spam');
+// 2. Channel Create
+client.on('channelCreate', async c => {
+  const e = (await c.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelCreate, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(c.guild, e.executorId, 'channel_create', 'Channel Creation Spam', `Created: #${c.name} (ID: ${c.id})`);
 });
+
+// 3. Channel Update
+client.on('channelUpdate', async (o, n) => {
+  const e = (await n.guild.fetchAuditLogs({ type: AuditLogEvent.ChannelUpdate, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(n.guild, e.executorId, 'channel_update', 'Channel Update Spam', `Updated: #${n.name} (ID: ${n.id})`);
+});
+
+// 4. Role Delete
 client.on('roleDelete', async r => {
-  const entry = (await r.guild.fetchAuditLogs({ type: AuditLogEvent.RoleDelete, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(r.guild, entry.executorId, 'role_delete', 'Role Deletion Spam');
+  const e = (await r.guild.fetchAuditLogs({ type: AuditLogEvent.RoleDelete, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(r.guild, e.executorId, 'role_delete', 'Role Deletion Spam', `Deleted Role: "${r.name}" (ID: ${r.id})`);
 });
+
+// 5. Role Create
+client.on('roleCreate', async r => {
+  const e = (await r.guild.fetchAuditLogs({ type: AuditLogEvent.RoleCreate, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(r.guild, e.executorId, 'role_create', 'Role Creation Spam', `Created Role: "${r.name}" (ID: ${r.id})`);
+});
+
+// 6. Role Update — with Hierarchy Protection
 client.on('roleUpdate', async (o, n) => {
-  const entry = (await n.guild.fetchAuditLogs({ type: AuditLogEvent.RoleUpdate, limit: 1 })).entries.first();
-  if (!entry) return;
-  const botHighest = n.guild.members.me.roles.highest.id;
-  if (n.name === 'Suspended' || n.id === botHighest) {
-    const m = await n.guild.members.fetch(entry.executorId).catch(() => null);
-    if (m) await suspendUser(m, 'Unauthorized Hierarchy Edit', client);
+  const e = (await n.guild.fetchAuditLogs({ type: AuditLogEvent.RoleUpdate, limit: 1 })).entries.first();
+  if (!e) return;
+
+  const botTop = n.guild.members.me?.roles.highest.id;
+  if (n.name === 'Suspended' || n.id === botTop) {
+    // Hierarchy attack — revert and suspend immediately
     await n.edit({ permissions: o.permissions.bitfield }).catch(() => {});
-  } else {
-    await handleSecurityEvent(n.guild, entry.executorId, 'role_update', 'Role Update Spam');
+    const m = await n.guild.members.fetch(e.executorId).catch(() => null);
+    if (m) await suspendUser(m, 'Unauthorized Hierarchy Edit', `Edited role: "${n.name}" (ID: ${n.id})`);
+    return;
   }
+  await handleNukeEvent(n.guild, e.executorId, 'role_update', 'Role Update Spam', `Updated Role: "${n.name}" (ID: ${n.id})`);
 });
 
-// Member monitors
+// 7. Member Ban
 client.on('guildBanAdd', async b => {
-  const entry = (await b.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(b.guild, entry.executorId, 'member_ban', 'Ban Spam');
+  const e = (await b.guild.fetchAuditLogs({ type: AuditLogEvent.MemberBanAdd, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(b.guild, e.executorId, 'member_ban', 'Ban Spam', `Banned: ${b.user.tag} (ID: ${b.user.id})`);
 });
 
-// Webhook monitor
+// 8. Member Kick
+client.on('guildMemberRemove', async m => {
+  // Kick detection
+  const kickLog = (await m.guild.fetchAuditLogs({ type: AuditLogEvent.MemberKick, limit: 1 })).entries.first();
+  if (kickLog && kickLog.targetId === m.id && Date.now() - kickLog.createdTimestamp < 5000) {
+    await handleNukeEvent(m.guild, kickLog.executorId, 'member_kick', 'Kick Spam', `Kicked: ${m.user.tag} (ID: ${m.id})`);
+  }
+
+  // Role memory — save on leave
+  const roles = m.roles.cache.filter(r => r.id !== m.guild.id).map(r => r.id);
+  if (roles.length) db.saveRoles(m.guild.id, m.id, roles.join(','), 0);
+});
+
+// 9. Webhook Create
 client.on('webhookUpdate', async c => {
-  const entry = (await c.guild.fetchAuditLogs({ type: AuditLogEvent.WebhookCreate, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(c.guild, entry.executorId, 'webhook_create', 'Webhook Spam');
+  const e = (await c.guild.fetchAuditLogs({ type: AuditLogEvent.WebhookCreate, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(c.guild, e.executorId, 'webhook_create', 'Webhook Creation Spam', `Channel: #${c.name} (ID: ${c.id})`);
 });
 
-// Emoji / Sticker monitors
+// 10. Emoji Create
 client.on('emojiCreate', async e => {
   const entry = (await e.guild.fetchAuditLogs({ type: AuditLogEvent.EmojiCreate, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(e.guild, entry.executorId, 'emoji_create', 'Emoji Spam');
+  if (entry) await handleNukeEvent(e.guild, entry.executorId, 'emoji_create', 'Emoji Spam', `Created Emoji: :${e.name}: (ID: ${e.id})`);
 });
+
+// 11. Sticker Create
 client.on('stickerCreate', async s => {
-  const entry = (await s.guild.fetchAuditLogs({ type: AuditLogEvent.StickerCreate, limit: 1 })).entries.first();
-  if (entry) await handleSecurityEvent(s.guild, entry.executorId, 'sticker_create', 'Sticker Spam');
+  const e = (await s.guild.fetchAuditLogs({ type: AuditLogEvent.StickerCreate, limit: 1 })).entries.first();
+  if (e) await handleNukeEvent(s.guild, e.executorId, 'sticker_create', 'Sticker Spam', `Created Sticker: "${s.name}" (ID: ${s.id})`);
 });
 
-// @everyone protection
-client.on('messageCreate', async message => {
-  if (!message.guild || message.author.bot) return;
-
-  if (message.mentions.everyone) {
-    const trust = db.getTrust(message.guild.id, message.author.id);
-    if (!trust || trust.level > 2) {
-      const mb = await message.guild.members.fetch(message.author.id).catch(() => null);
-      if (mb) await suspendUser(mb, '@everyone Abuse', client);
-      await message.delete().catch(() => {});
-      return;
-    }
-  }
-
-  // =============================================
-  // COUNTING GAME
-  // =============================================
-  const counting = db.getCounting(message.guild.id);
-  if (counting && counting.enabled && counting.channel_id === message.channel.id) {
-    const num = parseInt(message.content.trim());
-    const expected = (counting.current_count || 0) + 1;
-
-    if (isNaN(num) || num !== expected) {
-      await message.react('❌').catch(() => {});
-      db.resetCount(message.guild.id);
-      await message.channel.send(`❌ **${message.author.username}** ruined the count at **${counting.current_count}**! Back to **0**. Next number: **1**`);
-      return;
-    }
-    if (counting.last_user_id === message.author.id) {
-      await message.react('❌').catch(() => {});
-      db.resetCount(message.guild.id);
-      await message.channel.send(`❌ **${message.author.username}** can't count twice in a row! Back to **0**. Next number: **1**`);
-      return;
-    }
-
-    db.updateCount(message.guild.id, num, message.author.id);
-    await message.react('✅').catch(() => {});
+// 12. Guild Update (Vanity URL)
+client.on('guildUpdate', async (o, n) => {
+  if (o.vanityURLCode !== n.vanityURLCode) {
+    const e = (await n.fetchAuditLogs({ type: AuditLogEvent.GuildUpdate, limit: 1 })).entries.first();
+    if (e) await handleNukeEvent(n, e.executorId, 'vanity_update', 'Unauthorized Vanity URL Change', `Old: ${o.vanityURLCode || 'none'} → New: ${n.vanityURLCode || 'none'}`);
   }
 });
 
-// =============================================
-// STARBOARD
-// =============================================
-client.on('messageReactionAdd', async (reaction, user) => {
-  if (user.bot) return;
-  if (reaction.partial) await reaction.fetch().catch(() => null);
-  if (!reaction.message.guild) return;
-  if (reaction.emoji.name !== '⭐') return;
+// ═══════════════════════════════════════════════════════════════════
+//  ROLE MEMORY — Restore on rejoin
+// ═══════════════════════════════════════════════════════════════════
 
-  const sb = db.getStarboard(reaction.message.guild.id);
-  if (!sb || !sb.enabled || !sb.channel_id) return;
-
-  const starCount = reaction.count;
-  if (starCount < sb.threshold) return;
-
-  const existing = db.getStarboardPost(reaction.message.guild.id, reaction.message.id);
-  if (existing) return;
-
-  const starboardChannel = reaction.message.guild.channels.cache.get(sb.channel_id);
-  if (!starboardChannel) return;
-
-  const embed = new EmbedBuilder()
-    .setColor('#FFD700')
-    .setAuthor({ name: reaction.message.author.tag, iconURL: reaction.message.author.displayAvatarURL() })
-    .setDescription(reaction.message.content || '*[no text]*')
-    .addFields({ name: 'Source', value: `[Jump to message](${reaction.message.url})` })
-    .setTimestamp(reaction.message.createdAt);
-
-  if (reaction.message.attachments.size > 0) {
-    embed.setImage(reaction.message.attachments.first().url);
-  }
-
-  const sent = await starboardChannel.send({ content: `⭐ **${starCount}** in <#${reaction.message.channel.id}>`, embeds: [embed] }).catch(() => null);
-  if (sent) db.saveStarboardPost(reaction.message.guild.id, reaction.message.id, sent.id);
-});
-
-// =============================================
-// ROLE MEMORY
-// =============================================
-client.on('guildMemberRemove', async member => {
-  const roles = member.roles.cache.filter(r => r.id !== member.guild.id).map(r => r.id);
-  db.saveRoles(member.guild.id, member.id, roles.join(','), 0);
-});
 client.on('guildMemberAdd', async member => {
   const data = db.getRoles(member.guild.id, member.id);
   if (!data) return;
+
   if (data.is_suspended) {
-    const suspendedRole = member.guild.roles.cache.find(r => r.name === 'Suspended');
-    if (suspendedRole) await member.roles.add(suspendedRole).catch(() => {});
+    const sr = member.guild.roles.cache.find(r => r.name === 'Suspended');
+    if (sr) await member.roles.add(sr).catch(() => {});
   } else {
-    const roleIds = data.roles.split(',').filter(id => member.guild.roles.cache.has(id));
-    if (roleIds.length) await member.roles.add(roleIds).catch(() => {});
+    const valid = data.roles.split(',').filter(id => id && member.guild.roles.cache.has(id));
+    if (valid.length) await member.roles.add(valid).catch(() => {});
   }
 });
 
-// =============================================
-// STATE SNAPSHOT — Every 6 Hours
-// =============================================
-setInterval(async () => {
+// ═══════════════════════════════════════════════════════════════════
+//  ANTI-EVERYONE
+// ═══════════════════════════════════════════════════════════════════
+
+client.on('messageCreate', async message => {
+  if (!message.guild || message.author.bot) return;
+  if (message.mentions.everyone) {
+    const trust = db.getTrust(message.guild.id, message.author.id);
+    if (!trust || trust.level > 2) {
+      await message.delete().catch(() => {});
+      const mb = await message.guild.members.fetch(message.author.id).catch(() => null);
+      if (mb) await suspendUser(mb, '@everyone / @here Abuse', `Message in #${message.channel.name}`);
+    }
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════════
+//  STATE SNAPSHOT — Every 6 hours
+// ═══════════════════════════════════════════════════════════════════
+
+async function takeSnapshots() {
   for (const guild of client.guilds.cache.values()) {
     const data = {
-      channels: guild.channels.cache.map(c => ({ name: c.name, type: c.type })),
-      roles: guild.roles.cache.map(r => ({ name: r.name, color: r.color, permissions: r.permissions.bitfield.toString() }))
+      timestamp: Date.now(),
+      channels: guild.channels.cache.map(c => ({
+        id: c.id, name: c.name, type: c.type, parentId: c.parentId,
+        permissionOverwrites: c.permissionOverwrites?.cache.map(o => ({
+          id: o.id, allow: o.allow.bitfield.toString(), deny: o.deny.bitfield.toString()
+        })) || []
+      })),
+      roles: guild.roles.cache.map(r => ({
+        id: r.id, name: r.name, color: r.color,
+        permissions: r.permissions.bitfield.toString(), position: r.position,
+        hoist: r.hoist, mentionable: r.mentionable
+      }))
     };
     db.saveSnapshot(guild.id, data);
   }
-}, 6 * 60 * 60 * 1000);
+}
 
-// =============================================
-// SLASH COMMAND HANDLER
-// =============================================
-const MAGIC8 = [
-  'It is certain.', 'Without a doubt.', 'Yes, definitely.', 'Most likely.',
-  'Outlook good.', 'Signs point to yes.', 'Reply hazy, try again.',
-  "Don't count on it.", 'My sources say no.', 'Very doubtful.'
-];
+setInterval(takeSnapshots, 6 * 60 * 60 * 1000);
+
+// ═══════════════════════════════════════════════════════════════════
+//  SLASH COMMAND HANDLER
+// ═══════════════════════════════════════════════════════════════════
 
 client.on('interactionCreate', async interaction => {
   if (!interaction.isChatInputCommand()) return;
-  const { commandName: cn, options: o, guild: g, member: m } = interaction;
+  const { commandName: cn, options: o } = interaction;
+
+  // ── /say ──────────────────────────────────────────────────────────
+  if (cn === 'say') {
+    const text = o.getString('message');
+
+    // If used in a server — require Manage Server permission
+    if (interaction.guildId) {
+      const hasPerm = interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild);
+      if (!hasPerm) {
+        return interaction.reply({ content: '❌ You need **Manage Server** permission to use this.', ephemeral: true });
+      }
+    }
+    // In DMs or User App context — allow freely (user already authorised the app)
+
+    // Send message silently — no "reply" appearance
+    try {
+      await interaction.deferReply({ ephemeral: true });
+      if (interaction.channel) {
+        await interaction.channel.send(text);
+      } else {
+        // Fallback for contexts where channel object isn't available
+        await interaction.editReply({ content: text });
+        return;
+      }
+      await interaction.deleteReply().catch(() => {});
+    } catch (err) {
+      console.error('Say command error:', err);
+      await interaction.editReply({ content: '❌ Could not send message.' }).catch(() => {});
+    }
+    return;
+  }
+
+  // All commands below require a guild
+  if (!interaction.guild) {
+    return interaction.reply({ content: '❌ This command can only be used in a server.', ephemeral: true });
+  }
+
+  const { guild: g, member: m } = interaction;
 
   try {
-    // ---- ASK ----
-    if (cn === 'ask') {
-      const question = o.getString('question');
-      const answer = MAGIC8[Math.floor(Math.random() * MAGIC8.length)];
+    // ── /config ───────────────────────────────────────────────────────
+    if (cn === 'config') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      }
+      const type = o.getString('type'), limit = o.getInteger('limit'), secs = o.getInteger('time');
+      db.setThreshold(g.id, type, limit, secs * 1000);
       await interaction.reply({
         embeds: [new EmbedBuilder()
-          .setTitle('🎱 Magic 8-Ball')
-          .addFields({ name: '❓ Question', value: question }, { name: '🔮 Answer', value: `**${answer}**` })
-          .setColor('#5865F2')]
+          .setColor(0x5865f2)
+          .setTitle('⚙️ Threshold Updated')
+          .addFields(
+            { name: '📌 Event', value: `\`${type}\``, inline: true },
+            { name: '🔢 Limit', value: `${limit} actions`, inline: true },
+            { name: '⏱️ Window', value: `${secs}s`, inline: true }
+          )
+          .setTimestamp()]
       });
     }
 
-    // ---- BAN ----
-    else if (cn === 'ban') {
-      if (!m.permissions.has(PermissionFlagsBits.BanMembers)) return interaction.reply({ content: '❌ You need Ban Members permission.', ephemeral: true });
-      const user = o.getUser('user'), reason = o.getString('reason') || 'No reason provided.';
-      const target = await g.members.fetch(user.id).catch(() => null);
-      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
-      if (!target.bannable) return interaction.reply({ content: '❌ Cannot ban this user.', ephemeral: true });
-      await target.ban({ reason });
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#e74c3c').setTitle('🔨 Banned').setDescription(`**${user.tag}** has been banned.\n**Reason:** ${reason}`)] });
-    }
-
-    // ---- UNBAN ----
-    else if (cn === 'unban') {
-      if (!m.permissions.has(PermissionFlagsBits.BanMembers)) return interaction.reply({ content: '❌ You need Ban Members permission.', ephemeral: true });
-      const userId = o.getString('user_id'), reason = o.getString('reason') || 'No reason provided.';
-      await g.members.unban(userId, reason).catch(() => null);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#2ecc71').setTitle('✅ Unbanned').setDescription(`User **${userId}** has been unbanned.\n**Reason:** ${reason}`)] });
-    }
-
-    // ---- KICK ----
-    else if (cn === 'kick') {
-      if (!m.permissions.has(PermissionFlagsBits.KickMembers)) return interaction.reply({ content: '❌ You need Kick Members permission.', ephemeral: true });
-      const user = o.getUser('user'), reason = o.getString('reason') || 'No reason provided.';
-      const target = await g.members.fetch(user.id).catch(() => null);
-      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
-      if (!target.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
-      await target.kick(reason);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#e67e22').setTitle('👢 Kicked').setDescription(`**${user.tag}** has been kicked.\n**Reason:** ${reason}`)] });
-    }
-
-    // ---- MUTE ----
-    else if (cn === 'mute') {
-      if (!m.permissions.has(PermissionFlagsBits.ModerateMembers)) return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
-      const user = o.getUser('user'), minutes = o.getInteger('minutes') || 10, reason = o.getString('reason') || 'No reason provided.';
-      const target = await g.members.fetch(user.id).catch(() => null);
-      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
-      await target.timeout(minutes * 60 * 1000, reason);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#f39c12').setTitle('🔇 Muted').setDescription(`**${user.tag}** muted for **${minutes} minutes**.\n**Reason:** ${reason}`)] });
-    }
-
-    // ---- COUNTING-TOGGLE ----
-    else if (cn === 'counting-toggle') {
-      if (!m.permissions.has(PermissionFlagsBits.ManageChannels)) return interaction.reply({ content: '❌ You need Manage Channels permission.', ephemeral: true });
-      const channel = o.getChannel('channel');
-      const existing = db.getCounting(g.id);
-      const newState = existing ? !existing.enabled : true;
-      db.setCounting(g.id, channel.id, newState);
-      await interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setColor(newState ? '#2ecc71' : '#e74c3c')
-          .setTitle(`🔢 Counting ${newState ? 'Enabled' : 'Disabled'}`)
-          .setDescription(newState ? `Counting game is now active in ${channel}.\nUsers take turns counting. Start at **1**!` : `Counting game has been disabled in ${channel}.`)]
-      });
-    }
-
-    // ---- STARBOARD ENABLE ----
-    else if (cn === 'starboard-enable') {
-      if (!m.permissions.has(PermissionFlagsBits.ManageGuild)) return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      const channel = o.getChannel('channel'), threshold = o.getInteger('threshold') || 3;
-      db.setStarboard(g.id, channel.id, true, threshold);
-      await interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setColor('#FFD700')
-          .setTitle('⭐ Starboard Enabled')
-          .setDescription(`Starboard is now active in ${channel}.\nMessages need **${threshold}** ⭐ reactions to be featured.`)]
-      });
-    }
-
-    // ---- STARBOARD DISABLE ----
-    else if (cn === 'starboard-disable') {
-      if (!m.permissions.has(PermissionFlagsBits.ManageGuild)) return interaction.reply({ content: '❌ You need Manage Server permission.', ephemeral: true });
-      db.disableStarboard(g.id);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#e74c3c').setTitle('⭐ Starboard Disabled').setDescription('Starboard has been turned off.')] });
-    }
-
-    // ---- SECURITY: CONFIG ----
-    else if (cn === 'config') {
-      if (!m.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
-      const type = o.getString('type'), limit = o.getInteger('limit'), time = o.getInteger('time') * 1000;
-      db.setThreshold(g.id, type, limit, time);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#5865F2').setTitle('⚙️ Threshold Updated').setDescription(`**Event:** ${type}\n**Limit:** ${limit} actions\n**Window:** ${time / 1000}s`)] });
-    }
-
-    // ---- SECURITY: SETUP LOG ----
+    // ── /setup ────────────────────────────────────────────────────────
     else if (cn === 'setup') {
-      if (!m.permissions.has(PermissionFlagsBits.Administrator)) return interaction.reply({ content: '❌ Admin only.', ephemeral: true });
-      const channel = o.getChannel('channel');
-      db.updateLogChannel(g.id, channel.id);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#5865F2').setTitle('📋 Log Channel Set').setDescription(`Security logs will be sent to ${channel}.`)] });
+      if (!m.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      }
+      const ch = o.getChannel('channel');
+      db.setLogChannel(g.id, ch.id);
+      await interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('📋 Log Channel Set')
+          .setDescription(`Security logs will be sent to ${ch}.`)
+          .setTimestamp()]
+      });
     }
 
-    // ---- SECURITY: TRUST ----
+    // ── /trust ────────────────────────────────────────────────────────
     else if (cn === 'trust') {
-      if (g.ownerId !== m.id) return interaction.reply({ content: '❌ Server owner only.', ephemeral: true });
+      if (g.ownerId !== m.id) {
+        return interaction.reply({ content: '❌ Server Owner only.', ephemeral: true });
+      }
       const sub = o.getSubcommand(), user = o.getUser('user');
+
       if (sub === 'add') {
         const level = o.getInteger('level');
         db.addTrust(g.id, user.id, level);
-        const labels = { 1: 'Owner (Immune)', 2: 'Trustee (Immune)', 3: 'Permit (Mod-Access)' };
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor('#2ecc71').setTitle('🤝 Trust Added').setDescription(`**${user.tag}** → Level ${level}: ${labels[level] || 'Unknown'}`)] });
-      } else {
+        const labels = { 1: 'Level 1 — Owner (Fully Immune)', 2: 'Level 2 — Trustee (Nuke-Immune)', 3: 'Level 3 — Permit (Mod Access)' };
+        await interaction.reply({
+          embeds: [new EmbedBuilder()
+            .setColor(0x2ecc71)
+            .setTitle('🤝 Trust Granted')
+            .setDescription(`**${user.tag}** → ${labels[level]}`)
+            .setThumbnail(user.displayAvatarURL())
+            .setTimestamp()]
+        });
+      } else if (sub === 'remove') {
         db.removeTrust(g.id, user.id);
-        await interaction.reply({ embeds: [new EmbedBuilder().setColor('#e74c3c').setTitle('🤝 Trust Removed').setDescription(`Removed trust from **${user.tag}**`)] });
+        await interaction.reply({
+          embeds: [new EmbedBuilder()
+            .setColor(0xe74c3c)
+            .setTitle('🚫 Trust Removed')
+            .setDescription(`Removed trust from **${user.tag}**`)
+            .setTimestamp()]
+        });
+      } else if (sub === 'list') {
+        const list = db.listTrust(g.id);
+        const labels = { 1: 'Owner/Immune', 2: 'Trustee/Immune', 3: 'Permit/Mod' };
+        const desc = list.length
+          ? list.map(t => `<@${t.user_id}> — Level ${t.level} (${labels[t.level] || '?'})`).join('\n')
+          : 'No trusted users set.';
+        await interaction.reply({
+          embeds: [new EmbedBuilder()
+            .setColor(0x3498db)
+            .setTitle('🤝 Trusted Users')
+            .setDescription(desc)
+            .setTimestamp()]
+        });
       }
     }
 
-    // ---- SECURITY: SUSPEND ----
+    // ── /suspend ──────────────────────────────────────────────────────
     else if (cn === 'suspend') {
-      if (!m.permissions.has(PermissionFlagsBits.ManageRoles)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
-      const user = o.getUser('user');
+      const topRole = m.roles.highest;
+      const botTop  = g.members.me.roles.highest;
+      if (topRole.comparePositionTo(botTop) <= 0 && g.ownerId !== m.id) {
+        return interaction.reply({ content: '❌ Your role must be above the bot to use this.', ephemeral: true });
+      }
+      const user   = o.getUser('user');
+      const reason = o.getString('reason') || 'Manual lockdown';
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
-      await suspendUser(target, `Manual lockdown by ${m.user.tag}`, client);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#e74c3c').setTitle('⛔ User Suspended').setDescription(`**${user.tag}** has been suspended. All roles removed.`)] });
-    }
 
-    // ---- SECURITY: UNSUSPEND ----
-    else if (cn === 'unsuspend') {
-      if (!m.permissions.has(PermissionFlagsBits.ManageRoles)) return interaction.reply({ content: '❌ No permission.', ephemeral: true });
-      const user = o.getUser('user'), data = db.getRoles(g.id, user.id);
-      if (!data) return interaction.reply({ content: '❌ No role history found.', ephemeral: true });
-      const target = await g.members.fetch(user.id).catch(() => null);
-      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
-      const roleIds = data.roles.split(',').filter(id => g.roles.cache.has(id));
-      await target.roles.set(roleIds).catch(() => {});
-      db.saveRoles(g.id, user.id, data.roles, 0);
-      await interaction.reply({ embeds: [new EmbedBuilder().setColor('#2ecc71').setTitle('✅ User Unsuspended').setDescription(`**${user.tag}** roles have been restored.`)] });
-    }
+      // Temporarily bypass immunity for manual suspend
+      await (async () => {
+        const roles = target.roles.cache.filter(r => r.id !== g.id).map(r => r.id);
+        db.saveRoles(g.id, user.id, roles.join(','), 1);
+        let sr = g.roles.cache.find(r => r.name === 'Suspended');
+        if (!sr) sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000 }).catch(() => null);
+        if (sr) await target.roles.set([sr.id], `Manual: ${reason}`).catch(() => {});
+      })();
 
-    // ---- SECURITY: SCAN ----
-    else if (cn === 'scan') {
-      const bots = (await g.members.fetch()).filter(mb => mb.user.bot);
-      const list = bots.map(b => `**${b.user.tag}**: ${b.permissions.has(PermissionFlagsBits.Administrator) ? '🚨 ADMIN' : '✅ SECURE'}`).join('\n');
       await interaction.reply({
         embeds: [new EmbedBuilder()
-          .setTitle('🔍 Security Scan')
-          .setDescription(`**Bots in Server:**\n${list || 'None'}`)
-          .setColor('#3498db')
-          .setFooter({ text: '🚨 = Has Administrator | ✅ = Safe' })]
-      });
-    }
-
-    // ---- HELP ----
-    else if (cn === 'help') {
-      await interaction.reply({
-        embeds: [new EmbedBuilder()
-          .setTitle('🛡️ Daddy USSR — Command List')
-          .setColor('#5865F2')
+          .setColor(0xff0000)
+          .setTitle('⛔ User Suspended')
           .addFields(
-            { name: '🎲 Fun', value: '`/ask` — Magic 8-Ball answer' },
-            { name: '⚖️ Moderation', value: '`/ban` `/unban` `/kick` `/mute`' },
-            { name: '🔢 Counting', value: '`/counting-toggle` — Enable/disable counting game' },
-            { name: '⭐ Starboard', value: '`/starboard-enable` `/starboard-disable`' },
-            { name: '🛡️ Security', value: '`/config` `/setup` `/trust` `/suspend` `/unsuspend` `/scan`' }
-          )]
+            { name: '👤 User', value: `${user.tag} \`(${user.id})\``, inline: true },
+            { name: '⚠️ Reason', value: reason, inline: true }
+          )
+          .setTimestamp()]
       });
     }
 
-  } catch (e) {
-    console.error(e);
-    await interaction.reply({ content: '❌ An error occurred.', ephemeral: true }).catch(() => {});
+    // ── /unsuspend ────────────────────────────────────────────────────
+    else if (cn === 'unsuspend') {
+      const topRole = m.roles.highest;
+      const botTop  = g.members.me.roles.highest;
+      if (topRole.comparePositionTo(botTop) <= 0 && g.ownerId !== m.id) {
+        return interaction.reply({ content: '❌ Your role must be above the bot to use this.', ephemeral: true });
+      }
+      const user = o.getUser('user');
+      const data = db.getRoles(g.id, user.id);
+      if (!data) return interaction.reply({ content: '❌ No role history found for this user.', ephemeral: true });
+
+      const target = await g.members.fetch(user.id).catch(() => null);
+      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+
+      const valid = data.roles.split(',').filter(id => id && g.roles.cache.has(id));
+      await target.roles.set(valid).catch(() => {});
+      db.saveRoles(g.id, user.id, data.roles, 0);
+
+      await interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle('✅ User Unsuspended')
+          .addFields(
+            { name: '👤 User', value: `${user.tag}`, inline: true },
+            { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true }
+          )
+          .setTimestamp()]
+      });
+    }
+
+    // ── /scan ─────────────────────────────────────────────────────────
+    else if (cn === 'scan') {
+      await interaction.deferReply();
+      const members = await g.members.fetch();
+      const bots = members.filter(mb => mb.user.bot);
+
+      const lines = bots.map(b => {
+        const hasAdmin = b.permissions.has(PermissionFlagsBits.Administrator);
+        const hasDanger = b.permissions.has(PermissionFlagsBits.ManageGuild) ||
+                          b.permissions.has(PermissionFlagsBits.ManageRoles) ||
+                          b.permissions.has(PermissionFlagsBits.ManageChannels);
+        const managed = b.roles.cache.filter(r => r.managed);
+        let status = '✅ Low Risk';
+        if (hasAdmin)   status = '🚨 **CRITICAL** — Has Administrator';
+        else if (hasDanger) status = '⚠️ Medium Risk — Has dangerous perms';
+        return `**${b.user.tag}** (${managed.size} int. roles)\n${status}`;
+      }).join('\n\n') || 'No bots found.';
+
+      // Check native automod
+      const autoModRules = await g.autoModerationRules.fetch().catch(() => null);
+      const autoModStatus = autoModRules?.size > 0 ? '✅ Enabled' : '❌ Disabled';
+
+      await interaction.editReply({
+        embeds: [new EmbedBuilder()
+          .setColor(0x3498db)
+          .setTitle('🔍 Daddy USSR — Security Scan')
+          .addFields(
+            { name: '🤖 Bot Audit', value: lines.slice(0, 1024), inline: false },
+            { name: '🛡️ Discord Native AutoMod', value: autoModStatus, inline: true },
+            { name: '💡 Recommendation', value: 'Give bots the minimum permissions needed. Avoid granting Administrator.', inline: false }
+          )
+          .setTimestamp()
+          .setFooter({ text: 'Daddy USSR Security Engine' })]
+      });
+    }
+
+    // ── /snapshot ─────────────────────────────────────────────────────
+    else if (cn === 'snapshot') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator)) {
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      }
+      const snap = db.getSnapshot(g.id);
+      if (!snap) return interaction.reply({ content: '❌ No snapshot found yet. One is taken automatically every 6 hours.', ephemeral: true });
+      const data = JSON.parse(snap.data);
+      const ts = new Date(snap.timestamp).toUTCString();
+      await interaction.reply({
+        embeds: [new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('📸 Last Server Snapshot')
+          .addFields(
+            { name: '🕒 Taken At', value: ts, inline: false },
+            { name: '📁 Channels', value: `${data.channels.length} saved`, inline: true },
+            { name: '🔰 Roles', value: `${data.roles.length} saved`, inline: true }
+          )
+          .setFooter({ text: 'Use /restore to rebuild from snapshot (coming soon)' })
+          .setTimestamp()]
+      });
+    }
+
+    // ── /help ─────────────────────────────────────────────────────────
+    else if (cn === 'help') {
+      const page = o.getInteger('page') || 1;
+      const pages = [
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('🛡️ Daddy USSR — Security Engine  [Page 1/3]')
+          .setDescription('A full Wick-style security bot. All settings via slash commands, all data in SQLite.')
+          .addFields(
+            { name: '⚙️ /config', value: 'Set anti-nuke thresholds\n`/config [type] [limit] [time]`', inline: false },
+            { name: '📋 /setup', value: 'Set the security log channel\n`/setup [#channel]`', inline: false },
+            { name: '🤝 /trust', value: 'Manage trusted users\n`/trust add/remove/list [@user] [level]`\n**L1** = Owner/Immune | **L2** = Trustee | **L3** = Permit', inline: false },
+            { name: '💬 /say', value: 'Send a message as the bot\n`/say [message]` — works in DMs, User App, and servers', inline: false }
+          )
+          .setFooter({ text: 'Use /help page:2 for more' }),
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('🛡️ Daddy USSR — Security Engine  [Page 2/3]')
+          .addFields(
+            { name: '⛔ /suspend', value: 'Manually suspend a user (strips all roles)\n`/suspend [@user] [reason]`', inline: false },
+            { name: '✅ /unsuspend', value: 'Restore a suspended user\'s roles\n`/unsuspend [@user]`', inline: false },
+            { name: '🔍 /scan', value: 'Audit all bots — flags risky perms & checks AutoMod\n`/scan`', inline: false },
+            { name: '📸 /snapshot', value: 'View the last server state snapshot\n`/snapshot`', inline: false }
+          )
+          .setFooter({ text: 'Use /help page:3 for monitors list' }),
+        new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('🛡️ Daddy USSR — Security Engine  [Page 3/3]')
+          .setDescription('**12 Active Monitors** (default: 3 actions / 10s = suspension)')
+          .addFields(
+            { name: '📁 Channel Monitors', value: '`channel_delete` `channel_create` `channel_update`', inline: false },
+            { name: '🔰 Role Monitors', value: '`role_delete` `role_create` `role_update`', inline: false },
+            { name: '👥 Member Monitors', value: '`member_ban` `member_kick`', inline: false },
+            { name: '🔗 Other Monitors', value: '`webhook_create` `emoji_create` `sticker_create` `vanity_update`', inline: false },
+            { name: '⚡ Auto-Features', value: '• **Anti-Everyone** — instant suspend on @everyone abuse\n• **Role Memory** — save/restore roles on leave/join\n• **State Snapshot** — every 6h for shadow restore\n• **Hierarchy Protection** — reverts Suspended role edits', inline: false }
+          )
+          .setFooter({ text: 'Daddy USSR Security Engine' })
+      ];
+
+      const embed = pages[Math.max(0, Math.min(page - 1, pages.length - 1))];
+      await interaction.reply({ embeds: [embed] });
+    }
+
+  } catch (err) {
+    console.error(`[CMD ERROR] ${cn}:`, err);
+    const msg = { content: '❌ An error occurred.', ephemeral: true };
+    if (interaction.deferred || interaction.replied) interaction.editReply(msg).catch(() => {});
+    else interaction.reply(msg).catch(() => {});
   }
 });
 
-// =============================================
-// READY
-// =============================================
-client.once('ready', () => {
+// ═══════════════════════════════════════════════════════════════════
+//  READY
+// ═══════════════════════════════════════════════════════════════════
+
+client.once('ready', async () => {
   console.log(`🚀 Daddy USSR Security Engine Online: ${client.user.tag}`);
+  // Take first snapshot on startup
+  await takeSnapshots();
+  console.log(`📸 Initial snapshot taken for ${client.guilds.cache.size} guild(s).`);
 });
 
 client.login(TOKEN);
 
-// =============================================
-// COMMAND REGISTRATION
-// =============================================
+// ═══════════════════════════════════════════════════════════════════
+//  COMMAND REGISTRATION
+// ═══════════════════════════════════════════════════════════════════
+
+const MONITOR_TYPES = [
+  { name: 'Channel Delete',   value: 'channel_delete'  },
+  { name: 'Channel Create',   value: 'channel_create'  },
+  { name: 'Channel Update',   value: 'channel_update'  },
+  { name: 'Role Delete',      value: 'role_delete'     },
+  { name: 'Role Create',      value: 'role_create'     },
+  { name: 'Role Update',      value: 'role_update'     },
+  { name: 'Member Ban',       value: 'member_ban'      },
+  { name: 'Member Kick',      value: 'member_kick'     },
+  { name: 'Webhook Create',   value: 'webhook_create'  },
+  { name: 'Emoji Create',     value: 'emoji_create'    },
+  { name: 'Sticker Create',   value: 'sticker_create'  },
+  { name: 'Vanity URL',       value: 'vanity_update'   },
+];
+
 const commands = [
-  // Fun
-  { name: 'ask', description: 'Ask the Magic 8-Ball a yes/no question', options: [{ name: 'question', type: 3, description: 'Your question', required: true }] },
+  // /say — works in guilds, DMs, and as a User App
+  {
+    name: 'say',
+    description: 'Send a message as the bot',
+    integration_types: [0, 1], // 0 = Guild, 1 = User App
+    contexts: [0, 1, 2],       // 0 = Guild, 1 = Bot DM, 2 = Private (User App)
+    options: [{ name: 'message', type: 3, description: 'Message to send', required: true }]
+  },
 
-  // Moderation
+  // Security commands
   {
-    name: 'ban', description: 'Ban a member',
-    options: [{ name: 'user', type: 6, description: 'User to ban', required: true }, { name: 'reason', type: 3, description: 'Reason' }]
-  },
-  {
-    name: 'unban', description: 'Unban a user by ID',
-    options: [{ name: 'user_id', type: 3, description: 'User ID to unban', required: true }, { name: 'reason', type: 3, description: 'Reason' }]
-  },
-  {
-    name: 'kick', description: 'Kick a member',
-    options: [{ name: 'user', type: 6, description: 'User to kick', required: true }, { name: 'reason', type: 3, description: 'Reason' }]
-  },
-  {
-    name: 'mute', description: 'Timeout (mute) a member',
+    name: 'config',
+    description: 'Set anti-nuke thresholds (Admin only)',
     options: [
-      { name: 'user', type: 6, description: 'User to mute', required: true },
-      { name: 'minutes', type: 4, description: 'Duration in minutes (default 10)', min_value: 1, max_value: 40320 },
-      { name: 'reason', type: 3, description: 'Reason' }
-    ]
-  },
-
-  // Counting
-  {
-    name: 'counting-toggle', description: 'Enable or disable the counting game in a channel',
-    options: [{ name: 'channel', type: 7, description: 'The counting channel', channel_types: [0], required: true }]
-  },
-
-  // Starboard
-  {
-    name: 'starboard-enable', description: 'Enable the starboard',
-    options: [
-      { name: 'channel', type: 7, description: 'Starboard channel', channel_types: [0], required: true },
-      { name: 'threshold', type: 4, description: 'Stars needed (default 3)', min_value: 1 }
-    ]
-  },
-  { name: 'starboard-disable', description: 'Disable the starboard' },
-
-  // Security
-  {
-    name: 'config', description: 'Set anti-nuke thresholds (Admin only)',
-    options: [
-      {
-        name: 'type', type: 3, description: 'Event type', required: true,
-        choices: [
-          { name: 'Channel Delete', value: 'channel_delete' }, { name: 'Channel Create', value: 'channel_create' },
-          { name: 'Role Delete', value: 'role_delete' }, { name: 'Role Create', value: 'role_create' },
-          { name: 'Role Update', value: 'role_update' }, { name: 'Member Ban', value: 'member_ban' },
-          { name: 'Webhook Create', value: 'webhook_create' }, { name: 'Emoji Create', value: 'emoji_create' }
-        ]
-      },
+      { name: 'type',  type: 3, description: 'Monitor type', required: true, choices: MONITOR_TYPES },
       { name: 'limit', type: 4, description: 'Max actions before suspension', required: true, min_value: 1 },
-      { name: 'time', type: 4, description: 'Time window in seconds', required: true, min_value: 1 }
+      { name: 'time',  type: 4, description: 'Time window in seconds', required: true, min_value: 1 }
     ]
   },
-  { name: 'setup', description: 'Set the security log channel (Admin only)', options: [{ name: 'channel', type: 7, description: 'Log channel', channel_types: [0], required: true }] },
   {
-    name: 'trust', description: 'Manage trust levels (Owner only)',
+    name: 'setup',
+    description: 'Set the security log channel (Admin only)',
+    options: [{ name: 'channel', type: 7, description: 'Log channel', channel_types: [0], required: true }]
+  },
+  {
+    name: 'trust',
+    description: 'Manage trusted users (Owner only)',
     options: [
       {
-        name: 'add', type: 1, description: 'Add trust',
+        name: 'add', type: 1, description: 'Add a trusted user',
         options: [
-          { name: 'user', type: 6, description: 'User', required: true },
-          {
-            name: 'level', type: 4, description: 'Trust level', required: true,
-            choices: [{ name: '1 - Owner (Immune)', value: 1 }, { name: '2 - Trustee (Immune)', value: 2 }, { name: '3 - Permit (Mod)', value: 3 }]
+          { name: 'user', type: 6, description: 'User to trust', required: true },
+          { name: 'level', type: 4, description: 'Trust level', required: true,
+            choices: [{ name: '1 — Owner (Fully Immune)', value: 1 }, { name: '2 — Trustee (Nuke-Immune)', value: 2 }, { name: '3 — Permit (Mod Access)', value: 3 }]
           }
         ]
       },
-      { name: 'remove', type: 1, description: 'Remove trust', options: [{ name: 'user', type: 6, description: 'User', required: true }] }
+      { name: 'remove', type: 1, description: 'Remove a trusted user', options: [{ name: 'user', type: 6, description: 'User', required: true }] },
+      { name: 'list',   type: 1, description: 'List all trusted users' }
     ]
   },
-  { name: 'suspend', description: 'Manually suspend a user (removes all roles)', options: [{ name: 'user', type: 6, description: 'User to suspend', required: true }] },
-  { name: 'unsuspend', description: 'Restore a suspended user\'s roles', options: [{ name: 'user', type: 6, description: 'User to restore', required: true }] },
-  { name: 'scan', description: 'Audit all bots in the server for security risks' },
-  { name: 'help', description: 'Show all commands' }
+  {
+    name: 'suspend',
+    description: 'Manually suspend a user (removes all roles)',
+    options: [
+      { name: 'user',   type: 6, description: 'User to suspend', required: true },
+      { name: 'reason', type: 3, description: 'Reason for suspension' }
+    ]
+  },
+  {
+    name: 'unsuspend',
+    description: "Restore a suspended user's original roles",
+    options: [{ name: 'user', type: 6, description: 'User to restore', required: true }]
+  },
+  { name: 'scan', description: 'Audit all bots and check server security' },
+  { name: 'snapshot', description: 'View the last saved server state snapshot' },
+  {
+    name: 'help',
+    description: 'Show all commands and security modules',
+    options: [{ name: 'page', type: 4, description: 'Page number (1–3)', min_value: 1, max_value: 3 }]
+  }
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);
 (async () => {
   try {
     await rest.put(Routes.applicationCommands(CLIENT_ID), { body: commands });
-    console.log('✅ Commands registered successfully.');
-  } catch (e) {
-    console.error('❌ Command registration failed:', e);
+    console.log('✅ All commands registered.');
+  } catch (err) {
+    console.error('❌ Command registration failed:', err.message);
   }
 })();
