@@ -10,6 +10,26 @@ const { logAction, checkThreshold, suspendUser, sendLog } = require('./src/servi
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
 
+// ── Duration parser: "10s" "5m" "2h" "1d" "1w" → milliseconds ──────────────
+function parseDuration(input) {
+  if (!input) return null;
+  const str = input.trim().toLowerCase();
+  const match = str.match(/^(\d+(?:\.\d+)?)\s*(s|sec|secs|seconds?|m|min|mins|minutes?|h|hr|hrs|hours?|d|day|days?|w|wk|wks|weeks?)$/);
+  if (!match) return null;
+  const val = parseFloat(match[1]);
+  const unit = match[2][0]; // first char: s, m, h, d, w
+  const map = { s: 1000, m: 60000, h: 3600000, d: 86400000, w: 604800000 };
+  return Math.floor(val * map[unit]);
+}
+
+function formatDuration(ms) {
+  if (ms < 60000)        return `${ms / 1000}s`;
+  if (ms < 3600000)      return `${ms / 60000}m`;
+  if (ms < 86400000)     return `${ms / 3600000}h`;
+  if (ms < 604800000)    return `${ms / 86400000}d`;
+  return `${ms / 604800000}w`;
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -261,17 +281,29 @@ client.on('interactionCreate', async interaction => {
       if (!m.permissions.has(PermissionFlagsBits.Administrator)) {
         return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
       }
-      const type = o.getString('type'), limit = o.getInteger('limit'), secs = o.getInteger('time');
-      db.setThreshold(g.id, type, limit, secs * 1000);
+      const type  = o.getString('type');
+      const limit = o.getInteger('limit');
+      const timeInput = o.getString('time');
+      const windowMs  = parseDuration(timeInput);
+
+      if (!windowMs || windowMs < 1000) {
+        return interaction.reply({
+          content: '❌ Invalid time format. Use: `10s`, `5m`, `2h`, `1d`, `1w`',
+          ephemeral: true
+        });
+      }
+
+      db.setThreshold(g.id, type, limit, windowMs);
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(0x5865f2)
           .setTitle('⚙️ Threshold Updated')
           .addFields(
-            { name: '📌 Event', value: `\`${type}\``, inline: true },
-            { name: '🔢 Limit', value: `${limit} actions`, inline: true },
-            { name: '⏱️ Window', value: `${secs}s`, inline: true }
+            { name: '📌 Event',  value: `\`${type}\``,                   inline: true },
+            { name: '🔢 Limit',  value: `${limit} actions`,              inline: true },
+            { name: '⏱️ Window', value: `\`${formatDuration(windowMs)}\``, inline: true }
           )
+          .setFooter({ text: 'Formats: 10s • 5m • 2h • 1d • 1w' })
           .setTimestamp()]
       });
     }
@@ -558,7 +590,7 @@ const commands = [
     options: [
       { name: 'type',  type: 3, description: 'Monitor type', required: true, choices: MONITOR_TYPES },
       { name: 'limit', type: 4, description: 'Max actions before suspension', required: true, min_value: 1 },
-      { name: 'time',  type: 4, description: 'Time window in seconds', required: true, min_value: 1 }
+      { name: 'time',  type: 3, description: 'Time window — e.g. 10s, 5m, 2h, 1d, 1w', required: true }
     ]
   },
   {
