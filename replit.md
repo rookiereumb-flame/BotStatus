@@ -1,7 +1,7 @@
 # Daddy USSR — Discord Security Bot
 
 ## Overview
-A Wick-style Discord security bot with no web dashboard. All logic handled via slash commands and a persistent SQLite database. Features 12+ anti-nuke monitors, trust system, role memory, state snapshots, and a global `/say` command.
+A Discord security bot with no web dashboard. All logic handled via slash commands and a persistent SQLite database. Features 12+ anti-nuke monitors, trust system, role memory, state snapshots, and a global `/say` command.
 
 ## Current Status
 - **Bot Tag**: Daddy USSR#2234

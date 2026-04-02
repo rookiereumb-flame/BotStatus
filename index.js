@@ -497,7 +497,7 @@ client.on('interactionCreate', async interaction => {
         new EmbedBuilder()
           .setColor(0x5865f2)
           .setTitle('🛡️ Daddy USSR — Security Engine  [Page 1/3]')
-          .setDescription('A full Wick-style security bot. All settings via slash commands, all data in SQLite.')
+          .setDescription('Daddy USSR — a full security bot. All settings via slash commands, all data in SQLite.')
           .addFields(
             { name: '⚙️ /config', value: 'Set anti-nuke thresholds\n`/config [type] [limit] [time]`', inline: false },
             { name: '📋 /setup', value: 'Set the security log channel\n`/setup [#channel]`', inline: false },
