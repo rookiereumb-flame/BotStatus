@@ -49,7 +49,7 @@ async function suspendUser(member, reason, evidence = '') {
     suspendedRole = await guild.roles.create({
       name: 'Suspended',
       permissions: [],
-      color: 0x000000,
+      colors: [0x000000],
       reason: 'Daddy USSR: Auto-created Suspended role'
     }).catch(() => null);
   }

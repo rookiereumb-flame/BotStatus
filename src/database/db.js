@@ -35,6 +35,13 @@ db.exec(`
     data TEXT,
     timestamp INTEGER
   );
+
+  CREATE TABLE IF NOT EXISTS suspension_timers (
+    guild_id TEXT,
+    user_id  TEXT,
+    expires_at INTEGER,
+    PRIMARY KEY (guild_id, user_id)
+  );
 `);
 
 module.exports = {
@@ -71,4 +78,12 @@ module.exports = {
     db.prepare('INSERT INTO snapshots (guild_id, data, timestamp) VALUES (?, ?, ?) ON CONFLICT(guild_id) DO UPDATE SET data = EXCLUDED.data, timestamp = EXCLUDED.timestamp').run(guildId, JSON.stringify(data), Date.now()),
   getSnapshot: (guildId) =>
     db.prepare('SELECT * FROM snapshots WHERE guild_id = ?').get(guildId),
+
+  // Suspension timers
+  setSuspensionTimer: (guildId, userId, expiresAt) =>
+    db.prepare('INSERT INTO suspension_timers (guild_id, user_id, expires_at) VALUES (?, ?, ?) ON CONFLICT(guild_id, user_id) DO UPDATE SET expires_at = EXCLUDED.expires_at').run(guildId, userId, expiresAt),
+  deleteSuspensionTimer: (guildId, userId) =>
+    db.prepare('DELETE FROM suspension_timers WHERE guild_id = ? AND user_id = ?').run(guildId, userId),
+  getAllSuspensionTimers: () =>
+    db.prepare('SELECT * FROM suspension_timers WHERE expires_at > ?').all(Date.now()),
 };

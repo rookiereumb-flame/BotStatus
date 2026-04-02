@@ -230,6 +230,52 @@ async function takeSnapshots() {
 setInterval(takeSnapshots, 6 * 60 * 60 * 1000);
 
 // ═══════════════════════════════════════════════════════════════════
+//  AUTO-UNSUSPEND TIMER
+// ═══════════════════════════════════════════════════════════════════
+
+async function doUnsuspend(guildId, userId) {
+  const guild = client.guilds.cache.get(guildId);
+  if (!guild) return;
+  const data = db.getRoles(guildId, userId);
+  if (!data) return;
+  const member = await guild.members.fetch(userId).catch(() => null);
+  if (member) {
+    const valid = data.roles.split(',').filter(id => id && guild.roles.cache.has(id));
+    await member.roles.set(valid).catch(() => {});
+  }
+  db.saveRoles(guildId, userId, data.roles, 0);
+  db.deleteSuspensionTimer(guildId, userId);
+
+  // Log auto-unsuspend
+  const config = db.getGuildConfig(guildId);
+  if (config.log_channel_id) {
+    const ch = await guild.channels.fetch(config.log_channel_id).catch(() => null);
+    if (ch) {
+      ch.send({
+        embeds: [new EmbedBuilder()
+          .setColor(0x2ecc71)
+          .setTitle('✅ Auto-Unsuspend')
+          .setDescription(`<@${userId}> suspension expired. Roles restored.`)
+          .setTimestamp()
+          .setFooter({ text: 'Daddy USSR Security Engine' })]
+      }).catch(() => {});
+    }
+  }
+}
+
+function scheduleUnsuspend(guildId, userId, ms, guild) {
+  // Cap setTimeout at ~24 days (Node.js max safe timeout)
+  const MAX_TIMEOUT = 2_000_000_000;
+  if (ms > MAX_TIMEOUT) {
+    setTimeout(() => {
+      scheduleUnsuspend(guildId, userId, ms - MAX_TIMEOUT, guild);
+    }, MAX_TIMEOUT);
+  } else {
+    setTimeout(() => doUnsuspend(guildId, userId), ms);
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════
 //  SLASH COMMAND HANDLER
 // ═══════════════════════════════════════════════════════════════════
 
@@ -375,29 +421,61 @@ client.on('interactionCreate', async interaction => {
       if (topRole.comparePositionTo(botTop) <= 0 && g.ownerId !== m.id) {
         return interaction.reply({ content: '❌ Your role must be above the bot to use this.', ephemeral: true });
       }
-      const user   = o.getUser('user');
-      const reason = o.getString('reason') || 'Manual lockdown';
-      const target = await g.members.fetch(user.id).catch(() => null);
-      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
 
-      // Temporarily bypass immunity for manual suspend
-      await (async () => {
-        const roles = target.roles.cache.filter(r => r.id !== g.id).map(r => r.id);
-        db.saveRoles(g.id, user.id, roles.join(','), 1);
-        let sr = g.roles.cache.find(r => r.name === 'Suspended');
-        if (!sr) sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000 }).catch(() => null);
-        if (sr) await target.roles.set([sr.id], `Manual: ${reason}`).catch(() => {});
-      })();
+      const user        = o.getUser('user');
+      const reason      = o.getString('reason') || 'Manual lockdown';
+      const durationRaw = o.getString('duration');
+      const durationMs  = durationRaw ? parseDuration(durationRaw) : null;
+
+      if (durationRaw && !durationMs) {
+        return interaction.reply({ content: '❌ Invalid duration. Use: `10m`, `1h`, `1d`, `7d`', ephemeral: true });
+      }
+
+      const target = await g.members.fetch(user.id).catch(() => null);
+      if (!target) return interaction.reply({ content: '❌ User not found in this server.', ephemeral: true });
+
+      // Save roles
+      const roles = target.roles.cache.filter(r => r.id !== g.id).map(r => r.id);
+      db.saveRoles(g.id, user.id, roles.join(','), 1);
+
+      // Ensure Suspended role exists
+      let sr = g.roles.cache.find(r => r.name === 'Suspended');
+      if (!sr) {
+        sr = await g.roles.create({
+          name: 'Suspended',
+          permissions: [],
+          colors: [0x000000],
+          reason: 'Daddy USSR: Auto-created Suspended role'
+        }).catch(() => null);
+      }
+      if (!sr) return interaction.reply({ content: '❌ Could not create Suspended role. Check bot permissions.', ephemeral: true });
+
+      // Apply suspension
+      await target.roles.set([sr.id], `Daddy USSR: ${reason}`).catch(err => {
+        console.error('Suspend role set error:', err.message);
+      });
+
+      // Schedule auto-unsuspend if duration given
+      let expireText = 'Permanent';
+      if (durationMs) {
+        const expiresAt = Date.now() + durationMs;
+        db.setSuspensionTimer(g.id, user.id, expiresAt);
+        expireText = `<t:${Math.floor(expiresAt / 1000)}:R>`;
+        scheduleUnsuspend(g.id, user.id, durationMs, g);
+      }
 
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(0xff0000)
           .setTitle('⛔ User Suspended')
           .addFields(
-            { name: '👤 User', value: `${user.tag} \`(${user.id})\``, inline: true },
-            { name: '⚠️ Reason', value: reason, inline: true }
+            { name: '👤 User',     value: `${user.tag} \`(${user.id})\``, inline: true },
+            { name: '⚠️ Reason',   value: reason,                          inline: true },
+            { name: '⏱️ Duration', value: expireText,                      inline: true },
+            { name: '💾 Roles Saved', value: `${roles.length} role(s) saved for restore`, inline: false }
           )
-          .setTimestamp()]
+          .setTimestamp()
+          .setFooter({ text: 'Use /unsuspend to restore manually' })]
       });
     }
 
@@ -418,13 +496,14 @@ client.on('interactionCreate', async interaction => {
       const valid = data.roles.split(',').filter(id => id && g.roles.cache.has(id));
       await target.roles.set(valid).catch(() => {});
       db.saveRoles(g.id, user.id, data.roles, 0);
+      db.deleteSuspensionTimer(g.id, user.id); // Cancel any pending auto-unsuspend
 
       await interaction.reply({
         embeds: [new EmbedBuilder()
           .setColor(0x2ecc71)
           .setTitle('✅ User Unsuspended')
           .addFields(
-            { name: '👤 User', value: `${user.tag}`, inline: true },
+            { name: '👤 User',           value: `${user.tag}`,         inline: true },
             { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true }
           )
           .setTimestamp()]
@@ -547,9 +626,24 @@ client.on('interactionCreate', async interaction => {
 
 client.once('ready', async () => {
   console.log(`🚀 Daddy USSR Security Engine Online: ${client.user.tag}`);
+
   // Take first snapshot on startup
   await takeSnapshots();
   console.log(`📸 Initial snapshot taken for ${client.guilds.cache.size} guild(s).`);
+
+  // Restore any pending suspension timers that survived a restart
+  const pending = db.getAllSuspensionTimers();
+  let restored = 0;
+  for (const row of pending) {
+    const remaining = row.expires_at - Date.now();
+    if (remaining <= 0) {
+      await doUnsuspend(row.guild_id, row.user_id);
+    } else {
+      scheduleUnsuspend(row.guild_id, row.user_id, remaining);
+      restored++;
+    }
+  }
+  if (restored > 0) console.log(`⏱️ Restored ${restored} pending suspension timer(s).`);
 });
 
 client.login(TOKEN);
@@ -619,8 +713,9 @@ const commands = [
     name: 'suspend',
     description: 'Manually suspend a user (removes all roles)',
     options: [
-      { name: 'user',   type: 6, description: 'User to suspend', required: true },
-      { name: 'reason', type: 3, description: 'Reason for suspension' }
+      { name: 'user',     type: 6, description: 'User to suspend',                        required: true },
+      { name: 'reason',   type: 3, description: 'Reason for suspension' },
+      { name: 'duration', type: 3, description: 'Auto-unsuspend after — e.g. 10m, 1h, 1d, 7d' }
     ]
   },
   {
