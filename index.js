@@ -992,19 +992,104 @@ client.on('interactionCreate', async interaction => {
     // ── /scan ─────────────────────────────────────────────────────────
     if (cn === 'scan') {
       await interaction.deferReply();
-      const members = await g.members.fetch();
-      const bots    = members.filter(mb => mb.user.bot);
-      const lines   = bots.map(b => {
-        const danger = b.permissions.has(PermissionFlagsBits.Administrator) ? '🚨 **ADMIN**' :
-          (b.permissions.has(PermissionFlagsBits.ManageGuild) || b.permissions.has(PermissionFlagsBits.ManageRoles)) ? '⚠️ Elevated' : '✅ Safe';
-        return `**${b.user.tag}** — ${danger}`;
-      }).join('\n') || 'No bots.';
-      const autoMod = (await g.autoModerationRules.fetch().catch(() => null))?.size > 0;
-      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle('🔍 Security Scan')
-        .addFields({ name: '🤖 Bot Audit', value: lines.slice(0, 1024) },
-                   { name: '🛡️ Native AutoMod', value: autoMod ? '✅ Enabled' : '❌ Disabled', inline: true },
-                   { name: '💡 Tip', value: 'Use `/antinuke status` to view all monitor thresholds.', inline: true })
-        .setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' })] });
+
+      const [members, webhooks, autoModRules] = await Promise.all([
+        g.members.fetch(),
+        g.fetchWebhooks().catch(() => null),
+        g.autoModerationRules.fetch().catch(() => null)
+      ]);
+
+      const DPERM = [
+        [PermissionFlagsBits.Administrator,   'Administrator'],
+        [PermissionFlagsBits.ManageGuild,      'ManageServer'],
+        [PermissionFlagsBits.ManageRoles,      'ManageRoles'],
+        [PermissionFlagsBits.ManageChannels,   'ManageChannels'],
+        [PermissionFlagsBits.BanMembers,       'BanMembers'],
+        [PermissionFlagsBits.KickMembers,      'KickMembers'],
+        [PermissionFlagsBits.ManageWebhooks,   'ManageWebhooks'],
+        [PermissionFlagsBits.MentionEveryone,  'MentionEveryone'],
+      ];
+      const permLabel = mb => {
+        if (mb.permissions.has(PermissionFlagsBits.Administrator)) return '🚨 **ADMIN**';
+        const found = DPERM.slice(1).filter(([p]) => mb.permissions.has(p)).map(([,n]) => n);
+        return found.length ? `⚠️ ${found.join(', ')}` : '✅ Safe';
+      };
+
+      // ── Bots ───────────────────────────────────────────────────────
+      const bots      = members.filter(mb => mb.user.bot);
+      const dangerBot = bots.filter(mb => mb.permissions.has(PermissionFlagsBits.Administrator)
+                          || DPERM.slice(1).some(([p]) => mb.permissions.has(p)));
+      const botLines  = bots.map(b => `**${b.user.tag}** — ${permLabel(b)}`).join('\n') || 'None.';
+
+      // ── Roles with dangerous permissions ───────────────────────────
+      const dangerRoles = g.roles.cache.filter(r =>
+        r.id !== g.id && DPERM.some(([p]) => r.permissions.has(p))
+      );
+      const roleLines = dangerRoles.map(r => {
+        const perms = DPERM.filter(([p]) => r.permissions.has(p)).map(([,n]) => n);
+        const aboveBot = r.comparePositionTo(g.members.me.roles.highest) > 0 ? ' 🔺above bot' : '';
+        return `**${r.name}** (${r.members.size} members) — ${perms.join(', ')}${aboveBot}`;
+      }).join('\n') || 'No dangerous roles.';
+
+      // ── Human admins ────────────────────────────────────────────────
+      const humanAdmins = members.filter(mb =>
+        !mb.user.bot && mb.permissions.has(PermissionFlagsBits.Administrator) && mb.id !== g.ownerId
+      );
+      const adminLines = humanAdmins.map(mb => `<@${mb.id}>`).join(' ') || 'None (only owner).';
+
+      // ── Channel overwrite risks ─────────────────────────────────────
+      const riskyChannels = [];
+      for (const [, ch] of g.channels.cache) {
+        if (!ch.permissionOverwrites) continue;
+        const everyoneOW = ch.permissionOverwrites.cache.get(g.id);
+        if (!everyoneOW) continue;
+        const dangerAllow = DPERM.filter(([p]) => everyoneOW.allow.has(p)).map(([,n]) => n);
+        if (dangerAllow.length) riskyChannels.push(`**#${ch.name}** — @everyone has: ${dangerAllow.join(', ')}`);
+      }
+      const chLines = riskyChannels.join('\n') || '✅ No dangerous @everyone overrides found.';
+
+      // ── Server safety settings ──────────────────────────────────────
+      const mfa        = g.mfaLevel === 1 ? '✅ Required'  : '⚠️ Not required';
+      const verify     = ['❌ None','⚠️ Low','✅ Medium','✅ High','✅ Highest'][g.verificationLevel] || '?';
+      const autoMod    = (autoModRules?.size || 0) > 0;
+      const wbCount    = webhooks?.size || 0;
+      const trustedCount = db.listTrust(g.id).length;
+
+      // ── Risk score ──────────────────────────────────────────────────
+      let risk = 0, riskReasons = [];
+      if (dangerBot.size > 0)       { risk += dangerBot.size * 2;  riskReasons.push(`${dangerBot.size} bot(s) with elevated perms`); }
+      if (humanAdmins.size > 3)     { risk += humanAdmins.size;    riskReasons.push(`${humanAdmins.size} non-owner admins`); }
+      if (g.mfaLevel !== 1)         { risk += 2;                   riskReasons.push('2FA not required for mods'); }
+      if (wbCount > 10)             { risk += 2;                   riskReasons.push(`${wbCount} webhooks`); }
+      if (riskyChannels.length > 0) { risk += riskyChannels.length; riskReasons.push(`${riskyChannels.length} risky channel overwrite(s)`); }
+      if (!autoMod)                 { risk += 1;                   riskReasons.push('Native AutoMod disabled'); }
+      const riskLabel = risk === 0 ? '🟢 **Low — All clear**'
+                      : risk <= 4  ? '🟡 **Medium — Review flagged items**'
+                      : risk <= 8  ? '🟠 **High — Action recommended**'
+                      :              '🔴 **Critical — Immediate action needed**';
+
+      // Build embeds (split across 2 to avoid 6000 char limit)
+      const embed1 = new EmbedBuilder().setColor(risk === 0 ? 0x2ecc71 : risk <= 4 ? 0xf39c12 : 0xe74c3c)
+        .setTitle('🔍 Security Scan')
+        .setDescription(`**Risk Level:** ${riskLabel}${riskReasons.length ? `\n⚠️ Flags: ${riskReasons.join(' • ')}` : ''}`)
+        .addFields(
+          { name: `🤖 Bots (${bots.size} total, ${dangerBot.size} elevated)`, value: botLines.slice(0, 1024) },
+          { name: `🔰 Dangerous Roles (${dangerRoles.size})`, value: roleLines.slice(0, 1024) }
+        ).setTimestamp().setFooter({ text: 'Daddy USSR Security Scan' });
+
+      const embed2 = new EmbedBuilder().setColor(0x3498db)
+        .addFields(
+          { name: `👑 Non-Owner Admins (${humanAdmins.size})`, value: adminLines.slice(0, 1024) },
+          { name: '⚠️ Risky Channel Overwrites',               value: chLines.slice(0, 1024) },
+          { name: '🔒 2FA for Mods',        value: mfa,                                   inline: true },
+          { name: '✅ Verification Level',  value: verify,                                 inline: true },
+          { name: '🛡️ Native AutoMod',     value: autoMod ? '✅ Enabled' : '❌ Disabled', inline: true },
+          { name: '🔗 Webhooks',            value: `${wbCount} total`,                     inline: true },
+          { name: '🤝 Trusted Users',       value: `${trustedCount} configured`,           inline: true },
+          { name: '💡 Next Steps',          value: 'Use `/antinuke status` to view monitors • `/trust list` for trusted users', inline: false }
+        );
+
+      return interaction.editReply({ embeds: [embed1, embed2] });
     }
 
     // ── /snapshot ─────────────────────────────────────────────────────
