@@ -76,6 +76,7 @@ addCol('counting', 'high_score',  'INTEGER DEFAULT 0');
 addCol('counting', 'count_type',  "TEXT DEFAULT 'normal'");
 addCol('starboard', 'emoji',      "TEXT DEFAULT '⭐'");
 addCol('guild_config', 'antinuke_enabled', 'INTEGER DEFAULT 1');
+addCol('thresholds', 'enabled',   'INTEGER DEFAULT 1');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const upsert = (table, keyCol, keyVal, updates) => {
@@ -96,11 +97,19 @@ module.exports = {
   // Thresholds
   getThreshold: (gid, type) =>
     db.prepare('SELECT * FROM thresholds WHERE guild_id = ? AND event_type = ?').get(gid, type)
-    || { limit_count: 3, time_window: 10000 },
+    || { limit_count: 3, time_window: 10000, enabled: 1 },
   setThreshold: (gid, type, limit, windowMs) =>
-    db.prepare(`INSERT INTO thresholds (guild_id, event_type, limit_count, time_window) VALUES (?,?,?,?)
-      ON CONFLICT(guild_id, event_type) DO UPDATE SET limit_count=excluded.limit_count, time_window=excluded.time_window`)
+    db.prepare(`INSERT INTO thresholds (guild_id, event_type, limit_count, time_window, enabled) VALUES (?,?,?,?,1)
+      ON CONFLICT(guild_id, event_type) DO UPDATE SET limit_count=excluded.limit_count, time_window=excluded.time_window, enabled=1`)
       .run(gid, type, limit, windowMs),
+  setMonitorEnabled: (gid, type, val) => {
+    db.prepare(`INSERT OR IGNORE INTO thresholds (guild_id, event_type, limit_count, time_window, enabled) VALUES (?,?,3,10000,?)`).run(gid, type, val);
+    db.prepare(`UPDATE thresholds SET enabled=? WHERE guild_id=? AND event_type=?`).run(val, gid, type);
+  },
+  isMonitorEnabled: (gid, type) => {
+    const row = db.prepare('SELECT enabled FROM thresholds WHERE guild_id=? AND event_type=?').get(gid, type);
+    return row ? row.enabled !== 0 : true; // default on if no row
+  },
   getAllThresholds: gid =>
     db.prepare('SELECT * FROM thresholds WHERE guild_id = ?').all(gid),
 

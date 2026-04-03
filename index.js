@@ -166,6 +166,7 @@ async function handleNukeEvent(guild, executorId, type, reason, evidence, revert
   if (!executorId || executorId === client.user.id) return;
   const cfg = db.getGuildConfig(guild.id);
   if (cfg.antinuke_enabled === 0) return;
+  if (!db.isMonitorEnabled(guild.id, type)) return; // Per-monitor toggle
 
   const trust = db.getTrust(guild.id, executorId);
   if (trust && trust.level <= 2) return; // L1 and L2 are nuke-immune
@@ -226,6 +227,8 @@ client.on('roleUpdate', async (oldRole, newRole) => {
   const e = await fetchAuditEntry(newRole.guild, AuditLogEvent.RoleUpdate, newRole.id);
   if (!e) return;
   if (e.executorId === client.user.id) return;
+  const cfg = db.getGuildConfig(newRole.guild.id);
+  if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(newRole.guild.id, 'role_update')) return;
 
   // Block dangerous perm grants
   const addedPerms = newRole.permissions.bitfield & ~oldRole.permissions.bitfield;
@@ -272,7 +275,7 @@ client.on('webhookUpdate', async channel => {
   const e = await fetchAuditEntry(channel.guild, AuditLogEvent.WebhookCreate);
   if (!e || e.executorId === client.user.id) return;
   const cfg = db.getGuildConfig(channel.guild.id);
-  if (cfg.antinuke_enabled === 0) return;
+  if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(channel.guild.id, 'webhook_create')) return;
   const trust = db.getTrust(channel.guild.id, e.executorId);
   if (trust && trust.level <= 2) return;
 
@@ -323,7 +326,7 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
   const e = await fetchAuditEntry(newGuild, AuditLogEvent.GuildUpdate);
   if (!e || e.executorId === client.user.id) return;
   const cfg   = db.getGuildConfig(newGuild.id);
-  if (cfg.antinuke_enabled === 0) return;
+  if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(newGuild.id, 'vanity_update')) return;
   const trust = db.getTrust(newGuild.id, e.executorId);
   if (trust && trust.level <= 2) return;
 
@@ -828,10 +831,12 @@ client.on('interactionCreate', async interaction => {
         const thresholds = db.getAllThresholds(g.id);
         const enabled    = cfg.antinuke_enabled !== 0;
         const lines = MONITOR_TYPES.map(mt => {
-          const t = thresholds.find(x => x.event_type === mt.value) || { limit_count: 3, time_window: 10000 };
-          const special = ['vanity_update'].includes(mt.value) ? ' ⚡instant' :
-                          ['webhook_create'].includes(mt.value) ? ' (delete+suspend)' : '';
-          return `\`${mt.value.padEnd(16)}\` ${t.limit_count} / ${formatDuration(t.time_window)}${special}`;
+          const t       = thresholds.find(x => x.event_type === mt.value) || { limit_count: 3, time_window: 10000, enabled: 1 };
+          const on      = t.enabled !== 0;
+          const special = mt.value === 'vanity_update'   ? ' ⚡instant'       :
+                          mt.value === 'webhook_create'  ? ' ⚡delete+suspend' :
+                          mt.value === 'role_update'     ? ' ⚡perm-revert'   : '';
+          return `${on ? '🟢' : '🔴'} \`${mt.value.padEnd(16)}\` ${on ? `${t.limit_count} / ${formatDuration(t.time_window)}${special}` : 'disabled'}`;
         }).join('\n');
         return interaction.reply({ embeds: [new EmbedBuilder()
           .setColor(enabled ? 0x2ecc71 : 0xe74c3c)
@@ -847,16 +852,39 @@ client.on('interactionCreate', async interaction => {
     if (cn === 'config') {
       if (!m.permissions.has(PermissionFlagsBits.Administrator))
         return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
-      const type = o.getString('type'), limit = o.getInteger('limit'), timeInput = o.getString('time');
+      const type      = o.getString('type');
+      const limit     = o.getInteger('limit');
+      const timeInput = o.getString('time');
+      const enableOpt = o.getString('enabled'); // 'on' | 'off' | null
+
+      // Toggle only — no threshold change
+      if (enableOpt && !limit && !timeInput) {
+        const val = enableOpt === 'on' ? 1 : 0;
+        db.setMonitorEnabled(g.id, type, val);
+        return interaction.reply({ embeds: [new EmbedBuilder()
+          .setColor(val ? 0x2ecc71 : 0xe74c3c)
+          .setTitle(`${val ? '✅ Monitor Enabled' : '⛔ Monitor Disabled'}`)
+          .addFields({ name: '📌 Monitor', value: `\`${type}\``, inline: true },
+                     { name: '📋 Status',  value: val ? 'Active' : 'Inactive', inline: true })
+          .setFooter({ text: 'Threshold unchanged • Use /antinuke status to view all' })
+          .setTimestamp()] });
+      }
+
+      // Threshold update (optionally with enable toggle)
+      if (!limit || !timeInput)
+        return interaction.reply({ content: '❌ Provide both `limit` and `time` to update the threshold, or just `enabled` to toggle.', ephemeral: true });
       const windowMs = parseDuration(timeInput);
       if (!windowMs || windowMs < 1000)
         return interaction.reply({ content: '❌ Invalid time. Use: `10s`, `5m`, `2h`, `1d`, `1w`', ephemeral: true });
       db.setThreshold(g.id, type, limit, windowMs);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('⚙️ Threshold Updated')
+      if (enableOpt) db.setMonitorEnabled(g.id, type, enableOpt === 'on' ? 1 : 0);
+      const nowEnabled = db.isMonitorEnabled(g.id, type);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('⚙️ Monitor Configured')
         .addFields(
-          { name: '📌 Event',  value: `\`${type}\``,                    inline: true },
-          { name: '🔢 Limit',  value: `${limit} actions`,               inline: true },
-          { name: '⏱️ Window', value: `\`${formatDuration(windowMs)}\``, inline: true }
+          { name: '📌 Event',    value: `\`${type}\``,                    inline: true },
+          { name: '🔢 Limit',    value: `${limit} actions`,               inline: true },
+          { name: '⏱️ Window',   value: `\`${formatDuration(windowMs)}\``, inline: true },
+          { name: '💡 Status',   value: nowEnabled ? '✅ Active' : '⛔ Disabled', inline: true }
         ).setFooter({ text: 'Formats: 10s • 5m • 2h • 1d • 1w' }).setTimestamp()] });
     }
 
@@ -1134,10 +1162,11 @@ const commands = [
   { name:'starboard-disable', description:'Disable starboard' },
 
   // Security management
-  { name:'config', description:'Set anti-nuke thresholds (Admin)', options:[
-    {name:'type',type:3,required:true,description:'Event type',choices:MONITOR_TYPES},
-    {name:'limit',type:4,required:true,description:'Action limit',min_value:1},
-    {name:'time',type:3,required:true,description:'Window — e.g. 10s 5m 1h'}
+  { name:'config', description:'Set threshold or enable/disable individual monitors (Admin)', options:[
+    {name:'type',    type:3,required:true, description:'Monitor to configure',choices:MONITOR_TYPES},
+    {name:'enabled', type:3,              description:'Enable or disable this monitor', choices:[{name:'Enable',value:'on'},{name:'Disable',value:'off'}]},
+    {name:'limit',   type:4,              description:'Action limit (required when setting threshold)',min_value:1},
+    {name:'time',    type:3,              description:'Time window — e.g. 10s 5m 1h (required when setting threshold)'}
   ]},
   { name:'setup', description:'Set log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Log channel',channel_types:[0]}] },
   { name:'trust', description:'Manage trusted users (Owner)', options:[
