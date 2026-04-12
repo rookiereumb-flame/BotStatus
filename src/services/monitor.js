@@ -4,6 +4,13 @@ const db = require('../database/db');
 // In-memory action log for threshold checks
 const actionLog = new Map();
 
+// Deny permissions applied to every channel for the Suspended role
+const SUSPEND_DENY = {
+  SendMessages: false, SendMessagesInThreads: false, AddReactions: false,
+  AttachFiles: false,  EmbedLinks: false,             CreatePublicThreads: false,
+  CreatePrivateThreads: false, Speak: false,           Connect: false
+};
+
 // ── Log action timestamp ──────────────────────────────────────────────────────
 function logAction(guildId, userId, type) {
   const key = `${guildId}:${userId}:${type}`;
@@ -30,19 +37,31 @@ async function sendLog(guild, embed) {
   if (ch) ch.send({ embeds: [embed] }).catch(() => {});
 }
 
+// ── Apply Suspended role deny overwrites to all guild channels (parallel) ────
+async function applySuspendedOverwrites(guild, suspendedRole) {
+  await Promise.all(
+    [...guild.channels.cache.values()]
+      .filter(ch => ch.permissionOverwrites)
+      .map(ch => ch.permissionOverwrites.edit(
+        suspendedRole, SUSPEND_DENY,
+        { reason: 'Daddy USSR: Suspended role lockout' }
+      ).catch(() => {}))
+  );
+}
+
 // ── Suspend a user ────────────────────────────────────────────────────────────
-// force=false → skip L1 (fully immune); L2 NOT skipped (caught by instant-action events)
-// force=true  → bypass all trust (hierarchy discipline use only)
+// force=false → guild owner + L1 are immune; L2 IS caught (instant-action)
+// force=true  → bypass all trust (hierarchy discipline only)
 async function suspendUser(member, reason, evidence = '', force = false) {
   const guild = member.guild;
 
   if (!force) {
     if (member.id === guild.ownerId) return; // Server owner always immune
     const trust = db.getTrust(guild.id, member.id);
-    if (trust && trust.level === 1) return; // L1: fully immune to everything
+    if (trust && trust.level === 1) return;  // L1: fully immune
   }
 
-  // Save non-managed roles (safe for bots — managed roles can't be removed anyway)
+  // Save non-managed roles (managed roles can't be removed — safe for bots)
   const roles = member.roles.cache
     .filter(r => !r.managed && r.id !== guild.id && r.name !== 'Suspended')
     .map(r => r.id);
@@ -52,17 +71,20 @@ async function suspendUser(member, reason, evidence = '', force = false) {
   let suspendedRole = guild.roles.cache.find(r => r.name === 'Suspended');
   if (!suspendedRole) {
     suspendedRole = await guild.roles.create({
-      name: 'Suspended',
-      permissions: [],
-      color: 0x000000,
+      name: 'Suspended', permissions: [], color: 0x000000,
       reason: 'Daddy USSR: Auto-created Suspended role'
     }).catch(() => null);
   }
   if (!suspendedRole) return;
 
-  // Remove non-managed roles, add Suspended — safe for bots with managed roles
-  if (roles.length) await member.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {});
-  await member.roles.add(suspendedRole, `Daddy USSR: ${reason}`).catch(() => {});
+  // Apply deny overwrites to ALL channels in parallel
+  await applySuspendedOverwrites(guild, suspendedRole);
+
+  // Remove non-managed roles, add Suspended (parallel — safe for bots)
+  await Promise.all([
+    roles.length ? member.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {}) : Promise.resolve(),
+    member.roles.add(suspendedRole, `Daddy USSR: ${reason}`).catch(() => {})
+  ]);
 
   // Log the suspension
   await sendLog(guild, new EmbedBuilder()
@@ -73,10 +95,11 @@ async function suspendUser(member, reason, evidence = '', force = false) {
       { name: '👤 User',        value: `${member.user.tag} \`(${member.id})\``, inline: true },
       { name: '⚠️ Reason',      value: reason,                                   inline: true },
       { name: '🔍 Evidence',    value: evidence || 'N/A',                        inline: false },
-      { name: '💾 Saved Roles', value: roles.length ? `${roles.length} roles saved` : 'None', inline: true }
+      { name: '💾 Saved Roles', value: roles.length ? `${roles.length} roles` : 'None', inline: true },
+      { name: '🔒 Channels',    value: 'All channels locked for Suspended role', inline: true }
     )
     .setTimestamp()
     .setFooter({ text: 'Daddy USSR Security Engine' }));
 }
 
-module.exports = { logAction, checkThreshold, suspendUser, sendLog };
+module.exports = { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY };

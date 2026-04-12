@@ -6,7 +6,7 @@ const {
 } = require('discord.js');
 
 const db = require('./src/database/db');
-const { logAction, checkThreshold, suspendUser, sendLog } = require('./src/services/monitor');
+const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY } = require('./src/services/monitor');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -197,18 +197,10 @@ client.on('channelDelete', async c => {
 });
 
 // ── Suspended role channel lockout helper ────────────────────────────────────
-const SUSPEND_DENY = {
-  SendMessages: false, SendMessagesInThreads: false, AddReactions: false,
-  AttachFiles: false, EmbedLinks: false, CreatePublicThreads: false,
-  CreatePrivateThreads: false, Speak: false, Connect: false
-};
 async function applySuspendedRoleOverwrites(guild) {
   const sr = guild.roles.cache.find(r => r.name === 'Suspended');
   if (!sr) return;
-  for (const [, ch] of guild.channels.cache) {
-    if (!ch.permissionOverwrites) continue;
-    await ch.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'Daddy USSR: Suspended role lockout' }).catch(() => {});
-  }
+  await applySuspendedOverwrites(guild, sr); // parallel via monitor.js
 }
 
 // Channel Create
@@ -962,49 +954,54 @@ client.on('interactionCreate', async interaction => {
 
     // ── /suspend ──────────────────────────────────────────────────────
     if (cn === 'suspend') {
-      // Require ManageRoles OR Administrator (either one is sufficient)
+      // ── Permission gate (ManageRoles OR Admin; sync — before any defer) ───────
       const offenderTrust = effectiveTrust(m);
       const hasSuspendPerm = offenderTrust !== -1
         || m.permissions.has(PermissionFlagsBits.ManageRoles)
         || m.permissions.has(PermissionFlagsBits.Administrator);
       if (!hasSuspendPerm)
-        return interaction.reply({ content: '❌ You need **Manage Roles** or **Administrator** to suspend users.', ephemeral: true });
+        return interaction.reply({ content: '❌ You need **Manage Roles** or **Administrator** to use this.', ephemeral: true });
 
-      const user = o.getUser('user'), reason = o.getString('reason') || 'Manual suspension', durRaw = o.getString('duration');
-      const durMs = durRaw ? parseDuration(durRaw) : null;
-      if (durRaw && !durMs) return interaction.reply({ content: '❌ Invalid duration. Use `10m`, `1h`, `1d`.', ephemeral: true });
+      const user   = o.getUser('user');
+      const reason = o.getString('reason') || 'Manual suspension';
+      const durRaw = o.getString('duration');
+      const durMs  = durRaw ? parseDuration(durRaw) : null;
+      if (durRaw && !durMs)
+        return interaction.reply({ content: '❌ Invalid duration. Use `10m`, `1h`, `1d`.', ephemeral: true });
+
+      // Defer NOW — all remaining checks are async and editReply will be used
+      await interaction.deferReply();
 
       const target = await g.members.fetch(user.id).catch(() => null);
-      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+      if (!target) return interaction.editReply({ content: '❌ User not found.' });
 
-      // Cannot suspend the guild owner
       if (target.id === g.ownerId)
-        return interaction.reply({ content: '❌ Cannot suspend the server owner.', ephemeral: true });
+        return interaction.editReply({ content: '❌ Cannot suspend the server owner.' });
 
-      // Cannot suspend L1 trusted users
       const targetTrust = effectiveTrust(target);
       if (targetTrust === 0 || targetTrust === 1)
-        return interaction.reply({ content: '❌ Cannot suspend this user — they are fully protected.', ephemeral: true });
+        return interaction.editReply({ content: '❌ Cannot suspend this user — they are fully protected.' });
 
       // ── Hierarchy check: targeting equal/higher role → double suspend ────────
       if (offenderTrust === -1 && target.roles.highest.position >= m.roles.highest.position) {
-        await interaction.deferReply({ ephemeral: true });
-        await suspendUser(target, `Hierarchy violation by ${m.user.tag}`, `${m.user.tag} tried to suspend them`);
-        await suspendUser(m, 'Abused /suspend against equal/higher rank user', `Targeted: ${target.user.tag}`, true);
-        return interaction.editReply({ content: `⚠️ **Hierarchy violation.** You tried to suspend someone equal or higher rank. **Both you and ${user.tag} have been suspended.**` });
+        // suspendUser handles channel overwrites for both
+        await Promise.all([
+          suspendUser(target, `Hierarchy violation by ${m.user.tag}`, `${m.user.tag} tried to suspend them`),
+          suspendUser(m, 'Abused /suspend against equal/higher rank', `Targeted: ${target.user.tag}`, true)
+        ]);
+        return interaction.editReply({ content: `⚠️ **Hierarchy violation.** You cannot suspend someone equal or higher rank. **Both you and ${user.tag} have been suspended.**` });
       }
 
-      await interaction.deferReply();
-
-      // Ensure Suspended role exists + apply channel overwrites
+      // ── Normal suspension path ────────────────────────────────────────────────
+      // Ensure Suspended role exists
       let sr = g.roles.cache.find(r => r.name === 'Suspended');
       if (!sr) {
         sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000, reason: 'Daddy USSR: Suspended role' }).catch(() => null);
       }
       if (!sr) return interaction.editReply({ content: '❌ Could not create Suspended role. Check bot permissions.' });
 
-      // Apply deny overwrites to ALL channels for the Suspended role
-      await applySuspendedRoleOverwrites(g);
+      // Apply deny overwrites to ALL channels (parallel)
+      await applySuspendedOverwrites(g, sr);
 
       // Save non-managed roles (fresh save)
       const roles = target.roles.cache
@@ -1012,9 +1009,11 @@ client.on('interactionCreate', async interaction => {
         .map(r => r.id);
       db.saveRoles(g.id, user.id, roles.join(','), 1);
 
-      // Strip non-managed roles and add Suspended (safe for bots)
-      if (roles.length) await target.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {});
-      await target.roles.add(sr, `Daddy USSR: ${reason}`).catch(() => {});
+      // Strip non-managed roles and add Suspended (parallel, safe for bots)
+      await Promise.all([
+        roles.length ? target.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {}) : Promise.resolve(),
+        target.roles.add(sr, `Daddy USSR: ${reason}`).catch(() => {})
+      ]);
 
       let expireText = 'Permanent';
       if (durMs) {
@@ -1024,23 +1023,23 @@ client.on('interactionCreate', async interaction => {
         scheduleUnsuspend(g.id, user.id, durMs);
       }
 
-      await sendLog(g, new EmbedBuilder().setColor(0xff0000).setTitle('⛔ User Suspended (Manual)')
+      await sendLog(g, new EmbedBuilder().setColor(0xff0000).setTitle('⛔ Suspended (Manual)')
         .addFields(
-          { name: '👤 Target',    value: `${user.tag} \`(${user.id})\``,      inline: true },
-          { name: '🔨 By',        value: `${m.user.tag}`,                      inline: true },
-          { name: '⚠️ Reason',    value: reason,                               inline: false },
-          { name: '⏱️ Duration',  value: expireText,                           inline: true },
-          { name: '💾 Roles',     value: `${roles.length} saved`,              inline: true }
+          { name: '👤 Target',   value: `${user.tag} \`(${user.id})\``, inline: true },
+          { name: '🔨 By',       value: m.user.tag,                      inline: true },
+          { name: '⚠️ Reason',   value: reason,                          inline: false },
+          { name: '⏱️ Duration', value: expireText,                      inline: true },
+          { name: '💾 Roles',    value: `${roles.length} saved`,         inline: true }
         ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
 
       return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle('⛔ User Suspended')
         .addFields(
-          { name: '👤 User',      value: `${user.tag} \`(${user.id})\``,      inline: true },
-          { name: '⚠️ Reason',    value: reason,                               inline: false },
-          { name: '⏱️ Duration',  value: expireText,                           inline: true },
-          { name: '💾 Roles Saved', value: `${roles.length} role(s)`,         inline: true },
+          { name: '👤 User',      value: `${user.tag} \`(${user.id})\``, inline: true },
+          { name: '⚠️ Reason',    value: reason,                          inline: false },
+          { name: '⏱️ Duration',  value: expireText,                      inline: true },
+          { name: '💾 Roles',     value: `${roles.length} saved`,         inline: true },
           { name: '🔒 Channels',  value: 'All channels locked for Suspended role', inline: false }
-        ).setTimestamp().setFooter({ text: 'Use /unsuspend to restore manually' })] });
+        ).setTimestamp().setFooter({ text: 'Use /unsuspend to restore' })] });
     }
 
     // ── /unsuspend ────────────────────────────────────────────────────
