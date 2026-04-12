@@ -60,6 +60,26 @@ A Discord security bot with no web dashboard. All logic via slash commands and a
 | **sticker_delete** | Sticker deleted | Threshold → suspend |
 | **vanity_update** | Vanity URL changed | **Instant revert + suspend** (no threshold) |
 
+## Suspend System (v2)
+- **Channel Overwrites**: On `/suspend`, ALL channels get deny overwrites for the Suspended role (SendMessages, AddReactions, Speak, Connect, etc.)
+- **Snapshot Sync**: Every 6h snapshot also re-syncs Suspended role deny overwrites across all channels
+- **channelCreate**: New channels automatically get Suspended role deny overwrite
+- **Hierarchy Protection**: If a user (untrusted) tries to suspend someone with equal/higher role → BOTH suspended
+- **Permission**: ManageRoles OR Administrator (either is sufficient; trust levels bypass)
+- **Bot-Safe**: Uses `roles.remove` + `roles.add` instead of `roles.set` (safe for bots with managed roles)
+- **Unsuspend**: Removes Suspended role then adds back saved roles (not a blind set)
+
+## Trust System v2 (Refined)
+- **L1**: Immune to EVERYTHING (threshold events + instant-action events, @everyone, webhooks, vanity)
+- **L2**: Immune to THRESHOLD monitors ONLY — still caught by: dangerous perm grants, vanity URL change, webhook spam, @everyone abuse
+- **L3**: Permission bypass for mod commands only
+- **Owner tier** (guild owner + role above bot + Admin): Same as L1 immunity in suspendUser
+
+## Security Fixes
+- **No double log**: `handleNukeEvent` no longer sends per-action warning log — only logs on suspension (from suspendUser)
+- **Audit log dedup**: `_seenEntries` Set prevents same audit entry from triggering handler twice
+- **Starboard**: Added `Partials.Message/Channel/Reaction` to Client config + proper fetch chain — fixes reactions on old/uncached messages
+
 ## Key Features
 - **Auto-Revert**: On nuke threshold, deleted channels/roles recreated from snapshot with full overwrites
 - **False-positive fix**: Audit log entries checked by timestamp AND target ID (within 5s)

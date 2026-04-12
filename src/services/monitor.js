@@ -15,7 +15,6 @@ function logAction(guildId, userId, type) {
 function checkThreshold(guildId, userId, type) {
   const key = `${guildId}:${userId}:${type}`;
   if (!actionLog.has(key)) return false;
-
   const { limit_count, time_window } = db.getThreshold(guildId, type);
   const now = Date.now();
   const recent = actionLog.get(key).filter(t => t > now - time_window);
@@ -32,15 +31,21 @@ async function sendLog(guild, embed) {
 }
 
 // ── Suspend a user ────────────────────────────────────────────────────────────
-async function suspendUser(member, reason, evidence = '') {
+// force=false → skip L1 (fully immune); L2 NOT skipped (caught by instant-action events)
+// force=true  → bypass all trust (hierarchy discipline use only)
+async function suspendUser(member, reason, evidence = '', force = false) {
   const guild = member.guild;
 
-  // Immunity check
-  const trust = db.getTrust(guild.id, member.id);
-  if (trust && trust.level <= 2) return;
+  if (!force) {
+    if (member.id === guild.ownerId) return; // Server owner always immune
+    const trust = db.getTrust(guild.id, member.id);
+    if (trust && trust.level === 1) return; // L1: fully immune to everything
+  }
 
-  // Save roles before stripping
-  const roles = member.roles.cache.filter(r => r.id !== guild.id).map(r => r.id);
+  // Save non-managed roles (safe for bots — managed roles can't be removed anyway)
+  const roles = member.roles.cache
+    .filter(r => !r.managed && r.id !== guild.id && r.name !== 'Suspended')
+    .map(r => r.id);
   db.saveRoles(guild.id, member.id, roles.join(','), 1);
 
   // Ensure Suspended role exists
@@ -49,30 +54,29 @@ async function suspendUser(member, reason, evidence = '') {
     suspendedRole = await guild.roles.create({
       name: 'Suspended',
       permissions: [],
-      colors: [0x000000],
+      color: 0x000000,
       reason: 'Daddy USSR: Auto-created Suspended role'
     }).catch(() => null);
   }
-
   if (!suspendedRole) return;
 
-  await member.roles.set([suspendedRole.id], `Daddy USSR: ${reason}`).catch(() => {});
+  // Remove non-managed roles, add Suspended — safe for bots with managed roles
+  if (roles.length) await member.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {});
+  await member.roles.add(suspendedRole, `Daddy USSR: ${reason}`).catch(() => {});
 
-  // Log it
-  const embed = new EmbedBuilder()
+  // Log the suspension
+  await sendLog(guild, new EmbedBuilder()
     .setColor(0xff0000)
     .setTitle('🚨 SECURITY — User Suspended')
     .setThumbnail(member.user.displayAvatarURL())
     .addFields(
-      { name: '👤 User', value: `${member.user.tag} \`(${member.id})\``, inline: true },
-      { name: '⚠️ Reason', value: reason, inline: true },
-      { name: '🔍 Evidence', value: evidence || 'N/A', inline: false },
+      { name: '👤 User',        value: `${member.user.tag} \`(${member.id})\``, inline: true },
+      { name: '⚠️ Reason',      value: reason,                                   inline: true },
+      { name: '🔍 Evidence',    value: evidence || 'N/A',                        inline: false },
       { name: '💾 Saved Roles', value: roles.length ? `${roles.length} roles saved` : 'None', inline: true }
     )
     .setTimestamp()
-    .setFooter({ text: 'Daddy USSR Security Engine' });
-
-  await sendLog(guild, embed);
+    .setFooter({ text: 'Daddy USSR Security Engine' }));
 }
 
 module.exports = { logAction, checkThreshold, suspendUser, sendLog };

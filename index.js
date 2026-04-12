@@ -1,6 +1,6 @@
 require('dotenv').config();
 const {
-  Client, GatewayIntentBits, AuditLogEvent, ChannelType,
+  Client, GatewayIntentBits, Partials, AuditLogEvent, ChannelType,
   PermissionFlagsBits, EmbedBuilder, REST, Routes,
   ActionRowBuilder, ButtonBuilder, ButtonStyle
 } = require('discord.js');
@@ -87,7 +87,8 @@ const client = new Client({
     GatewayIntentBits.GuildModeration, GatewayIntentBits.GuildMessages,
     GatewayIntentBits.MessageContent, GatewayIntentBits.GuildWebhooks,
     GatewayIntentBits.GuildEmojisAndStickers, GatewayIntentBits.GuildMessageReactions
-  ]
+  ],
+  partials: [Partials.Message, Partials.Channel, Partials.Reaction]
 });
 
 // ═══════════════════════════════════════════════════════════════════
@@ -145,14 +146,18 @@ async function autoRevertRole(guild, deletedRole) {
 }
 
 // ═══════════════════════════════════════════════════════════════════
-//  AUDIT LOG HELPER — prevents false-positive logs (race condition)
+//  AUDIT LOG HELPER — prevents false-positive + duplicate processing
 // ═══════════════════════════════════════════════════════════════════
+const _seenEntries = new Set();
 async function fetchAuditEntry(guild, type, targetId = null, maxAge = 5000) {
   const logs = await guild.fetchAuditLogs({ type, limit: 3 }).catch(() => null);
   if (!logs) return null;
   for (const entry of logs.entries.values()) {
     if (Date.now() - entry.createdTimestamp > maxAge) break;
     if (targetId && entry.targetId !== targetId) continue;
+    if (_seenEntries.has(entry.id)) return null; // already handled this entry
+    _seenEntries.add(entry.id);
+    setTimeout(() => _seenEntries.delete(entry.id), 60_000);
     return entry;
   }
   return null;
@@ -166,23 +171,16 @@ async function handleNukeEvent(guild, executorId, type, reason, evidence, revert
   if (!executorId || executorId === client.user.id) return;
   const cfg = db.getGuildConfig(guild.id);
   if (cfg.antinuke_enabled === 0) return;
-  if (!db.isMonitorEnabled(guild.id, type)) return; // Per-monitor toggle
+  if (!db.isMonitorEnabled(guild.id, type)) return;
 
   const trust = db.getTrust(guild.id, executorId);
-  if (trust && trust.level <= 2) return; // L1 and L2 are nuke-immune
+  if (trust && trust.level <= 2) return; // L1 + L2 immune to threshold monitors
 
   logAction(guild.id, executorId, type);
 
-  await sendLog(guild, new EmbedBuilder().setColor(0xff6600)
-    .setTitle(`⚠️ Monitor: ${type.replace(/_/g,' ').toUpperCase()}`)
-    .addFields(
-      { name: '👤 Executor', value: `<@${executorId}> \`(${executorId})\``, inline: true },
-      { name: '📋 Evidence', value: evidence }
-    ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
-
   if (checkThreshold(guild.id, executorId, type)) {
     const member = await guild.members.fetch(executorId).catch(() => null);
-    if (member) await suspendUser(member, reason, evidence);
+    if (member) await suspendUser(member, reason, evidence); // suspendUser sends its own log
     if (revertTarget) {
       if (type === 'channel_delete') await autoRevertChannel(guild, revertTarget);
       if (type === 'role_delete')    await autoRevertRole(guild, revertTarget);
@@ -198,10 +196,30 @@ client.on('channelDelete', async c => {
   if (e) await handleNukeEvent(c.guild, e.executorId, 'channel_delete', 'Channel Deletion Spam', `Deleted: #${c.name} (${c.id})`, c);
 });
 
+// ── Suspended role channel lockout helper ────────────────────────────────────
+const SUSPEND_DENY = {
+  SendMessages: false, SendMessagesInThreads: false, AddReactions: false,
+  AttachFiles: false, EmbedLinks: false, CreatePublicThreads: false,
+  CreatePrivateThreads: false, Speak: false, Connect: false
+};
+async function applySuspendedRoleOverwrites(guild) {
+  const sr = guild.roles.cache.find(r => r.name === 'Suspended');
+  if (!sr) return;
+  for (const [, ch] of guild.channels.cache) {
+    if (!ch.permissionOverwrites) continue;
+    await ch.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'Daddy USSR: Suspended role lockout' }).catch(() => {});
+  }
+}
+
 // Channel Create
 client.on('channelCreate', async c => {
   const e = await fetchAuditEntry(c.guild, AuditLogEvent.ChannelCreate, c.id);
   if (e) await handleNukeEvent(c.guild, e.executorId, 'channel_create', 'Channel Creation Spam', `Created: #${c.name}`);
+  // Apply Suspended role deny to new channels immediately
+  const sr = c.guild.roles.cache.find(r => r.name === 'Suspended');
+  if (sr && c.permissionOverwrites) {
+    await c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'Daddy USSR: Suspended role lockout' }).catch(() => {});
+  }
 });
 
 // Channel Update
@@ -277,7 +295,7 @@ client.on('webhookUpdate', async channel => {
   const cfg = db.getGuildConfig(channel.guild.id);
   if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(channel.guild.id, 'webhook_create')) return;
   const trust = db.getTrust(channel.guild.id, e.executorId);
-  if (trust && trust.level <= 2) return;
+  if (trust && trust.level <= 1) return; // Only L1 immune to instant-action
 
   // Delete the webhook
   const webhooks = await channel.fetchWebhooks().catch(() => null);
@@ -328,7 +346,7 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
   const cfg   = db.getGuildConfig(newGuild.id);
   if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(newGuild.id, 'vanity_update')) return;
   const trust = db.getTrust(newGuild.id, e.executorId);
-  if (trust && trust.level <= 2) return;
+  if (trust && trust.level <= 1) return; // Only L1 immune to instant-action
 
   // Revert vanity immediately
   if (oldGuild.vanityURLCode) {
@@ -363,12 +381,12 @@ client.on('guildMemberAdd', async member => {
 client.on('messageCreate', async message => {
   if (!message.guild || message.author.bot) return;
 
-  // @everyone / @here — instant suspend unless trusted
+  // @everyone / @here — instant suspend (only L1 + owner-tier immune)
   if (message.mentions.everyone) {
-    const trust = db.getTrust(message.guild.id, message.author.id);
-    if (!trust || trust.level > 2) {
+    const mb = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
+    const t  = mb ? effectiveTrust(mb) : -1;
+    if (t !== 0 && t !== 1) { // Bot-owner tier (0) and L1 (1) are immune; L2/L3/untrusted get suspended
       await message.delete().catch(() => {});
-      const mb = await message.guild.members.fetch(message.author.id).catch(() => null);
       if (mb) await suspendUser(mb, '@everyone / @here Abuse', `In #${message.channel.name}`);
       return;
     }
@@ -418,7 +436,11 @@ client.on('messageCreate', async message => {
 // ── Starboard ─────────────────────────────────────────────────────────────────
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
-  if (reaction.partial) await reaction.fetch().catch(() => null);
+  try {
+    if (reaction.partial) reaction = await reaction.fetch();
+    if (reaction.message.partial) await reaction.message.fetch();
+  } catch { return; }
+
   if (!reaction.message.guild) return;
   const sb = db.getStarboard(reaction.message.guild.id);
   if (!sb?.enabled || !sb.channel_id) return;
@@ -431,8 +453,8 @@ client.on('messageReactionAdd', async (reaction, user) => {
   const sbCh = reaction.message.guild.channels.cache.get(sb.channel_id);
   if (!sbCh) return;
 
-  const msg    = reaction.message.partial ? await reaction.message.fetch().catch(() => null) : reaction.message;
-  if (!msg) return;
+  const msg = reaction.message;
+  if (!msg.author) return; // still partial somehow
 
   const embed = new EmbedBuilder()
     .setColor(0xFFD700)
@@ -492,6 +514,8 @@ async function takeSnapshots() {
       }))
     };
     db.saveSnapshot(guild.id, data);
+    // Keep Suspended role channel overwrites in sync
+    await applySuspendedRoleOverwrites(guild);
   }
 }
 setInterval(takeSnapshots, 6 * 60 * 60 * 1000);
@@ -505,7 +529,9 @@ async function doUnsuspend(guildId, userId) {
   const member = await guild.members.fetch(userId).catch(() => null);
   if (member) {
     const valid = data.roles.split(',').filter(id => id && guild.roles.cache.has(id));
-    await member.roles.set(valid).catch(() => {});
+    const sr = guild.roles.cache.find(r => r.name === 'Suspended');
+    if (sr) await member.roles.remove(sr).catch(() => {});
+    if (valid.length) await member.roles.add(valid).catch(() => {});
   }
   db.clearRoles(guildId, userId);
   db.deleteSuspensionTimer(guildId, userId);
@@ -936,23 +962,59 @@ client.on('interactionCreate', async interaction => {
 
     // ── /suspend ──────────────────────────────────────────────────────
     if (cn === 'suspend') {
-      if (!hasBotPerm(m, PermissionFlagsBits.ManageRoles))
-        return interaction.reply({ content: '❌ You need Manage Roles permission.', ephemeral: true });
-      const user = o.getUser('user'), reason = o.getString('reason') || 'Manual lockdown', durRaw = o.getString('duration');
+      // Require ManageRoles OR Administrator (either one is sufficient)
+      const offenderTrust = effectiveTrust(m);
+      const hasSuspendPerm = offenderTrust !== -1
+        || m.permissions.has(PermissionFlagsBits.ManageRoles)
+        || m.permissions.has(PermissionFlagsBits.Administrator);
+      if (!hasSuspendPerm)
+        return interaction.reply({ content: '❌ You need **Manage Roles** or **Administrator** to suspend users.', ephemeral: true });
+
+      const user = o.getUser('user'), reason = o.getString('reason') || 'Manual suspension', durRaw = o.getString('duration');
       const durMs = durRaw ? parseDuration(durRaw) : null;
       if (durRaw && !durMs) return interaction.reply({ content: '❌ Invalid duration. Use `10m`, `1h`, `1d`.', ephemeral: true });
 
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
 
-      // Save CURRENT roles (fresh save — ignores any old save)
-      const roles = target.roles.cache.filter(r => r.id !== g.id && r.name !== 'Suspended').map(r => r.id);
+      // Cannot suspend the guild owner
+      if (target.id === g.ownerId)
+        return interaction.reply({ content: '❌ Cannot suspend the server owner.', ephemeral: true });
+
+      // Cannot suspend L1 trusted users
+      const targetTrust = effectiveTrust(target);
+      if (targetTrust === 0 || targetTrust === 1)
+        return interaction.reply({ content: '❌ Cannot suspend this user — they are fully protected.', ephemeral: true });
+
+      // ── Hierarchy check: targeting equal/higher role → double suspend ────────
+      if (offenderTrust === -1 && target.roles.highest.position >= m.roles.highest.position) {
+        await interaction.deferReply({ ephemeral: true });
+        await suspendUser(target, `Hierarchy violation by ${m.user.tag}`, `${m.user.tag} tried to suspend them`);
+        await suspendUser(m, 'Abused /suspend against equal/higher rank user', `Targeted: ${target.user.tag}`, true);
+        return interaction.editReply({ content: `⚠️ **Hierarchy violation.** You tried to suspend someone equal or higher rank. **Both you and ${user.tag} have been suspended.**` });
+      }
+
+      await interaction.deferReply();
+
+      // Ensure Suspended role exists + apply channel overwrites
+      let sr = g.roles.cache.find(r => r.name === 'Suspended');
+      if (!sr) {
+        sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000, reason: 'Daddy USSR: Suspended role' }).catch(() => null);
+      }
+      if (!sr) return interaction.editReply({ content: '❌ Could not create Suspended role. Check bot permissions.' });
+
+      // Apply deny overwrites to ALL channels for the Suspended role
+      await applySuspendedRoleOverwrites(g);
+
+      // Save non-managed roles (fresh save)
+      const roles = target.roles.cache
+        .filter(r => !r.managed && r.id !== g.id && r.name !== 'Suspended')
+        .map(r => r.id);
       db.saveRoles(g.id, user.id, roles.join(','), 1);
 
-      let sr = g.roles.cache.find(r => r.name === 'Suspended');
-      if (!sr) sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000, reason: 'Daddy USSR: Suspended role' }).catch(() => null);
-      if (!sr) return interaction.reply({ content: '❌ Could not create Suspended role. Check bot permissions.', ephemeral: true });
-      await target.roles.set([sr.id], `Daddy USSR: ${reason}`).catch(e => console.error('Suspend err:', e.message));
+      // Strip non-managed roles and add Suspended (safe for bots)
+      if (roles.length) await target.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {});
+      await target.roles.add(sr, `Daddy USSR: ${reason}`).catch(() => {});
 
       let expireText = 'Permanent';
       if (durMs) {
@@ -961,13 +1023,23 @@ client.on('interactionCreate', async interaction => {
         expireText = `<t:${Math.floor(expiresAt / 1000)}:R>`;
         scheduleUnsuspend(g.id, user.id, durMs);
       }
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle('⛔ User Suspended')
+
+      await sendLog(g, new EmbedBuilder().setColor(0xff0000).setTitle('⛔ User Suspended (Manual)')
         .addFields(
-          { name: '👤 User',         value: `${user.tag} \`(${user.id})\``,   inline: true },
-          { name: user.bot ? '🤖' : '⚠️', value: user.bot ? 'Bot' : 'User', inline: true },
-          { name: '⚠️ Reason',        value: reason,                           inline: false },
-          { name: '⏱️ Duration',      value: expireText,                       inline: true },
-          { name: '💾 Roles Saved',   value: `${roles.length} role(s) — fresh save`, inline: true }
+          { name: '👤 Target',    value: `${user.tag} \`(${user.id})\``,      inline: true },
+          { name: '🔨 By',        value: `${m.user.tag}`,                      inline: true },
+          { name: '⚠️ Reason',    value: reason,                               inline: false },
+          { name: '⏱️ Duration',  value: expireText,                           inline: true },
+          { name: '💾 Roles',     value: `${roles.length} saved`,              inline: true }
+        ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+
+      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle('⛔ User Suspended')
+        .addFields(
+          { name: '👤 User',      value: `${user.tag} \`(${user.id})\``,      inline: true },
+          { name: '⚠️ Reason',    value: reason,                               inline: false },
+          { name: '⏱️ Duration',  value: expireText,                           inline: true },
+          { name: '💾 Roles Saved', value: `${roles.length} role(s)`,         inline: true },
+          { name: '🔒 Channels',  value: 'All channels locked for Suspended role', inline: false }
         ).setTimestamp().setFooter({ text: 'Use /unsuspend to restore manually' })] });
     }
 
@@ -980,13 +1052,22 @@ client.on('interactionCreate', async interaction => {
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
       const valid = data.roles.split(',').filter(id => id && g.roles.cache.has(id));
-      await target.roles.set(valid).catch(() => {});
-      db.clearRoles(g.id, user.id);          // Clear so next suspend starts fresh
+      const sr = g.roles.cache.find(r => r.name === 'Suspended');
+      if (sr) await target.roles.remove(sr).catch(() => {});
+      if (valid.length) await target.roles.add(valid).catch(() => {});
+      db.clearRoles(g.id, user.id);
       db.deleteSuspensionTimer(g.id, user.id);
+      await sendLog(g, new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ User Unsuspended')
+        .addFields(
+          { name: '👤 User', value: `${user.tag} \`(${user.id})\``, inline: true },
+          { name: '🔨 By',   value: m.user.tag,                      inline: true },
+          { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true }
+        ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Unsuspended')
-        .addFields({ name: '👤 User', value: `${user.tag}`, inline: true },
-                   { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true })
-        .setTimestamp()] });
+        .addFields(
+          { name: '👤 User',            value: `${user.tag}`,          inline: true },
+          { name: '🔄 Roles Restored',  value: `${valid.length} roles`, inline: true }
+        ).setTimestamp()] });
     }
 
     // ── /scan ─────────────────────────────────────────────────────────
@@ -1000,93 +1081,112 @@ client.on('interactionCreate', async interaction => {
       ]);
 
       const DPERM = [
-        [PermissionFlagsBits.Administrator,   'Administrator'],
-        [PermissionFlagsBits.ManageGuild,      'ManageServer'],
-        [PermissionFlagsBits.ManageRoles,      'ManageRoles'],
-        [PermissionFlagsBits.ManageChannels,   'ManageChannels'],
-        [PermissionFlagsBits.BanMembers,       'BanMembers'],
-        [PermissionFlagsBits.KickMembers,      'KickMembers'],
-        [PermissionFlagsBits.ManageWebhooks,   'ManageWebhooks'],
-        [PermissionFlagsBits.MentionEveryone,  'MentionEveryone'],
+        [PermissionFlagsBits.Administrator,  'Admin'],
+        [PermissionFlagsBits.ManageGuild,    'ManageSvr'],
+        [PermissionFlagsBits.ManageRoles,    'ManageRoles'],
+        [PermissionFlagsBits.ManageChannels, 'ManageCh'],
+        [PermissionFlagsBits.BanMembers,     'Ban'],
+        [PermissionFlagsBits.KickMembers,    'Kick'],
+        [PermissionFlagsBits.ManageWebhooks, 'Webhooks'],
+        [PermissionFlagsBits.MentionEveryone,'Mention@everyone'],
       ];
-      const permLabel = mb => {
-        if (mb.permissions.has(PermissionFlagsBits.Administrator)) return '🚨 **ADMIN**';
-        const found = DPERM.slice(1).filter(([p]) => mb.permissions.has(p)).map(([,n]) => n);
-        return found.length ? `⚠️ ${found.join(', ')}` : '✅ Safe';
-      };
+      const botMe   = g.members.me;
+      const myId    = client.user.id;
 
-      // ── Bots ───────────────────────────────────────────────────────
-      const bots      = members.filter(mb => mb.user.bot);
-      const dangerBot = bots.filter(mb => mb.permissions.has(PermissionFlagsBits.Administrator)
-                          || DPERM.slice(1).some(([p]) => mb.permissions.has(p)));
-      const botLines  = bots.map(b => `**${b.user.tag}** — ${permLabel(b)}`).join('\n') || 'None.';
+      // ── Bots (exclude self) ────────────────────────────────────────
+      const otherBots = members.filter(mb => mb.user.bot && mb.id !== myId);
+      const adminBots = otherBots.filter(mb => mb.permissions.has(PermissionFlagsBits.Administrator));
+      const elevBots  = otherBots.filter(mb => !mb.permissions.has(PermissionFlagsBits.Administrator)
+                          && DPERM.slice(1).some(([p]) => mb.permissions.has(p)));
+      const safeBots  = otherBots.size - adminBots.size - elevBots.size;
 
-      // ── Roles with dangerous permissions ───────────────────────────
-      const dangerRoles = g.roles.cache.filter(r =>
+      const botParts = [];
+      if (adminBots.size) botParts.push(`🚨 **Admin:** ${adminBots.map(b => b.user.username).join(', ')}`);
+      if (elevBots.size)  botParts.push(...elevBots.map(b => {
+        const p = DPERM.slice(1).filter(([pf]) => b.permissions.has(pf)).map(([,n]) => n).join('+');
+        return `⚠️ **${b.user.username}** — ${p}`;
+      }));
+      if (safeBots > 0)   botParts.push(`✅ ${safeBots} safe bot(s)`);
+      const botValue = botParts.join('\n') || '✅ No other bots.';
+
+      // ── Dangerous Roles (compact) ──────────────────────────────────
+      const dangerRoles = [...g.roles.cache.values()].filter(r =>
         r.id !== g.id && DPERM.some(([p]) => r.permissions.has(p))
-      );
-      const roleLines = dangerRoles.map(r => {
-        const perms = DPERM.filter(([p]) => r.permissions.has(p)).map(([,n]) => n);
-        const aboveBot = r.comparePositionTo(g.members.me.roles.highest) > 0 ? ' 🔺above bot' : '';
-        return `**${r.name}** (${r.members.size} members) — ${perms.join(', ')}${aboveBot}`;
-      }).join('\n') || 'No dangerous roles.';
+      ).sort((a, b) => {
+        const aAdmin = a.permissions.has(PermissionFlagsBits.Administrator);
+        const bAdmin = b.permissions.has(PermissionFlagsBits.Administrator);
+        return (bAdmin - aAdmin) || (b.members.size - a.members.size);
+      });
 
-      // ── Human admins ────────────────────────────────────────────────
+      const MAX_ROLES = 12;
+      const roleLines = dangerRoles.slice(0, MAX_ROLES).map(r => {
+        const perms = DPERM.filter(([p]) => r.permissions.has(p)).map(([,n]) => n).join('+');
+        const flag  = r.comparePositionTo(botMe.roles.highest) > 0 ? ' 🔺' : '';
+        return `• **${r.name}** (${r.members.size})${flag} — ${perms}`;
+      });
+      if (dangerRoles.length > MAX_ROLES) roleLines.push(`_…+${dangerRoles.length - MAX_ROLES} more_`);
+      const roleValue = roleLines.join('\n') || '✅ No dangerous roles.';
+
+      // ── Non-owner human admins ─────────────────────────────────────
       const humanAdmins = members.filter(mb =>
         !mb.user.bot && mb.permissions.has(PermissionFlagsBits.Administrator) && mb.id !== g.ownerId
       );
-      const adminLines = humanAdmins.map(mb => `<@${mb.id}>`).join(' ') || 'None (only owner).';
+      const adminValue = humanAdmins.size
+        ? humanAdmins.map(mb => `<@${mb.id}>`).join(' ').slice(0, 900)
+        : '✅ None (only server owner has Admin)';
 
-      // ── Channel overwrite risks ─────────────────────────────────────
+      // ── Risky @everyone channel overwrites ─────────────────────────
       const riskyChannels = [];
       for (const [, ch] of g.channels.cache) {
         if (!ch.permissionOverwrites) continue;
-        const everyoneOW = ch.permissionOverwrites.cache.get(g.id);
-        if (!everyoneOW) continue;
-        const dangerAllow = DPERM.filter(([p]) => everyoneOW.allow.has(p)).map(([,n]) => n);
-        if (dangerAllow.length) riskyChannels.push(`**#${ch.name}** — @everyone has: ${dangerAllow.join(', ')}`);
+        const ow = ch.permissionOverwrites.cache.get(g.id);
+        if (!ow) continue;
+        const dangerAllow = DPERM.filter(([p]) => ow.allow.has(p)).map(([,n]) => n);
+        if (dangerAllow.length) riskyChannels.push(`#${ch.name}: ${dangerAllow.join('+')}`);
       }
-      const chLines = riskyChannels.join('\n') || '✅ No dangerous @everyone overrides found.';
+      const chValue = riskyChannels.length
+        ? riskyChannels.slice(0, 15).join('\n')
+        : '✅ No dangerous @everyone overrides.';
 
-      // ── Server safety settings ──────────────────────────────────────
-      const mfa        = g.mfaLevel === 1 ? '✅ Required'  : '⚠️ Not required';
-      const verify     = ['❌ None','⚠️ Low','✅ Medium','✅ High','✅ Highest'][g.verificationLevel] || '?';
-      const autoMod    = (autoModRules?.size || 0) > 0;
-      const wbCount    = webhooks?.size || 0;
-      const trustedCount = db.listTrust(g.id).length;
+      // ── Server settings ────────────────────────────────────────────
+      const mfa      = g.mfaLevel === 1 ? '✅ On' : '⚠️ Off';
+      const verify   = ['❌ None','⚠️ Low','✅ Med','✅ High','✅ Highest'][g.verificationLevel] || '?';
+      const autoMod  = (autoModRules?.size || 0) > 0;
+      const wbCount  = webhooks?.size || 0;
+      const trustCnt = db.listTrust(g.id).length;
 
-      // ── Risk score ──────────────────────────────────────────────────
-      let risk = 0, riskReasons = [];
-      if (dangerBot.size > 0)       { risk += dangerBot.size * 2;  riskReasons.push(`${dangerBot.size} bot(s) with elevated perms`); }
-      if (humanAdmins.size > 3)     { risk += humanAdmins.size;    riskReasons.push(`${humanAdmins.size} non-owner admins`); }
-      if (g.mfaLevel !== 1)         { risk += 2;                   riskReasons.push('2FA not required for mods'); }
-      if (wbCount > 10)             { risk += 2;                   riskReasons.push(`${wbCount} webhooks`); }
-      if (riskyChannels.length > 0) { risk += riskyChannels.length; riskReasons.push(`${riskyChannels.length} risky channel overwrite(s)`); }
-      if (!autoMod)                 { risk += 1;                   riskReasons.push('Native AutoMod disabled'); }
-      const riskLabel = risk === 0 ? '🟢 **Low — All clear**'
-                      : risk <= 4  ? '🟡 **Medium — Review flagged items**'
-                      : risk <= 8  ? '🟠 **High — Action recommended**'
-                      :              '🔴 **Critical — Immediate action needed**';
+      // ── Risk score ─────────────────────────────────────────────────
+      let risk = 0, flags = [];
+      if (adminBots.size)           { risk += adminBots.size * 3; flags.push(`${adminBots.size} admin bot(s)`); }
+      if (elevBots.size)            { risk += elevBots.size;      flags.push(`${elevBots.size} elevated bot(s)`); }
+      if (humanAdmins.size > 3)     { risk += humanAdmins.size;  flags.push(`${humanAdmins.size} non-owner admins`); }
+      if (g.mfaLevel !== 1)         { risk += 2;                 flags.push('2FA off'); }
+      if (wbCount > 10)             { risk += 2;                 flags.push(`${wbCount} webhooks`); }
+      if (riskyChannels.length > 0) { risk += riskyChannels.length; flags.push(`${riskyChannels.length} risky ch`); }
+      if (!autoMod)                 { risk += 1;                 flags.push('AutoMod off'); }
 
-      // Build embeds (split across 2 to avoid 6000 char limit)
-      const embed1 = new EmbedBuilder().setColor(risk === 0 ? 0x2ecc71 : risk <= 4 ? 0xf39c12 : 0xe74c3c)
+      const riskColor = risk === 0 ? 0x2ecc71 : risk <= 4 ? 0xf39c12 : 0xe74c3c;
+      const riskLabel = risk === 0 ? '🟢 Low' : risk <= 4 ? '🟡 Medium' : risk <= 8 ? '🟠 High' : '🔴 Critical';
+      const flagStr   = flags.length ? `\n**Flags:** ${flags.join(' • ')}` : '';
+
+      const embed1 = new EmbedBuilder().setColor(riskColor)
         .setTitle('🔍 Security Scan')
-        .setDescription(`**Risk Level:** ${riskLabel}${riskReasons.length ? `\n⚠️ Flags: ${riskReasons.join(' • ')}` : ''}`)
+        .setDescription(`**Risk:** ${riskLabel}${flagStr}\n*Server settings (2FA/verify) are owner choices — not personal flags.*`)
         .addFields(
-          { name: `🤖 Bots (${bots.size} total, ${dangerBot.size} elevated)`, value: botLines.slice(0, 1024) },
-          { name: `🔰 Dangerous Roles (${dangerRoles.size})`, value: roleLines.slice(0, 1024) }
+          { name: `🤖 Other Bots — ${otherBots.size} total (${adminBots.size + elevBots.size} flagged)`, value: botValue.slice(0, 1024) },
+          { name: `🔰 Dangerous Roles — ${dangerRoles.length} found`, value: roleValue.slice(0, 1024) }
         ).setTimestamp().setFooter({ text: 'Daddy USSR Security Scan' });
 
       const embed2 = new EmbedBuilder().setColor(0x3498db)
         .addFields(
-          { name: `👑 Non-Owner Admins (${humanAdmins.size})`, value: adminLines.slice(0, 1024) },
-          { name: '⚠️ Risky Channel Overwrites',               value: chLines.slice(0, 1024) },
-          { name: '🔒 2FA for Mods',        value: mfa,                                   inline: true },
-          { name: '✅ Verification Level',  value: verify,                                 inline: true },
-          { name: '🛡️ Native AutoMod',     value: autoMod ? '✅ Enabled' : '❌ Disabled', inline: true },
-          { name: '🔗 Webhooks',            value: `${wbCount} total`,                     inline: true },
-          { name: '🤝 Trusted Users',       value: `${trustedCount} configured`,           inline: true },
-          { name: '💡 Next Steps',          value: 'Use `/antinuke status` to view monitors • `/trust list` for trusted users', inline: false }
+          { name: `👑 Non-Owner Admins — ${humanAdmins.size}`, value: adminValue.slice(0, 1024) },
+          { name: `⚠️ @everyone Channel Overrides — ${riskyChannels.length}`, value: chValue.slice(0, 1024) },
+          { name: '🔒 2FA for Mods',      value: mfa,                                    inline: true },
+          { name: '✅ Verification',      value: verify,                                  inline: true },
+          { name: '🛡️ AutoMod',          value: autoMod ? '✅ On' : '❌ Off',            inline: true },
+          { name: '🔗 Webhooks',          value: `${wbCount}`,                            inline: true },
+          { name: '🤝 Trusted Users',     value: `${trustCnt}`,                           inline: true },
+          { name: '💡 Tips',              value: '`/antinuke status` — monitors\n`/trust list` — trusted users', inline: true }
         );
 
       return interaction.editReply({ embeds: [embed1, embed2] });
