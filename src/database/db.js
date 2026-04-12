@@ -66,6 +66,13 @@ db.exec(`
     perms_json TEXT,
     PRIMARY KEY (guild_id, channel_id)
   );
+  CREATE TABLE IF NOT EXISTS bot_managed_role_perms (
+    guild_id    TEXT,
+    user_id     TEXT,
+    role_id     TEXT,
+    permissions TEXT,
+    PRIMARY KEY (guild_id, user_id, role_id)
+  );
 `);
 
 // Safely add new columns to existing tables (no-op if already exist)
@@ -178,6 +185,16 @@ module.exports = {
     db.prepare('SELECT * FROM starboard_posts WHERE guild_id=? AND message_id=?').get(gid, mid),
   saveStarboardPost: (gid, mid, smid) =>
     db.prepare('INSERT OR REPLACE INTO starboard_posts VALUES (?,?,?)').run(gid, mid, smid),
+
+  // Bot managed role permissions (saved during suspension, restored on unsuspend)
+  saveBotManagedPerm: (gid, uid, roleId, perms) =>
+    db.prepare(`INSERT INTO bot_managed_role_perms (guild_id, user_id, role_id, permissions) VALUES (?,?,?,?)
+      ON CONFLICT(guild_id, user_id, role_id) DO UPDATE SET permissions=excluded.permissions`)
+      .run(gid, uid, roleId, perms.toString()),
+  getBotManagedPerms: (gid, uid) =>
+    db.prepare('SELECT * FROM bot_managed_role_perms WHERE guild_id=? AND user_id=?').all(gid, uid),
+  clearBotManagedPerms: (gid, uid) =>
+    db.prepare('DELETE FROM bot_managed_role_perms WHERE guild_id=? AND user_id=?').run(gid, uid),
 
   // Lockdown backup
   saveLockdownBackup: (gid, cid, permsJson) =>

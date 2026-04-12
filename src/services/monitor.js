@@ -86,6 +86,15 @@ async function suspendUser(member, reason, evidence = '', force = false) {
     member.roles.add(suspendedRole, `Daddy USSR: ${reason}`).catch(() => {})
   ]);
 
+  // For bots: zero out managed role permissions and save for restore on unsuspend
+  if (member.user.bot) {
+    const managedRoles = [...member.roles.cache.values()].filter(r => r.managed && r.permissions.bitfield !== 0n);
+    await Promise.all(managedRoles.map(async r => {
+      db.saveBotManagedPerm(guild.id, member.id, r.id, r.permissions.bitfield.toString());
+      await r.setPermissions(0n, `Daddy USSR: Bot suspended — ${reason}`).catch(() => {});
+    }));
+  }
+
   // Log the suspension
   await sendLog(guild, new EmbedBuilder()
     .setColor(0xff0000)

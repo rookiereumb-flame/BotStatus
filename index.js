@@ -524,6 +524,16 @@ async function doUnsuspend(guildId, userId) {
     const sr = guild.roles.cache.find(r => r.name === 'Suspended');
     if (sr) await member.roles.remove(sr).catch(() => {});
     if (valid.length) await member.roles.add(valid).catch(() => {});
+
+    // For bots: restore managed role permissions that were zeroed on suspend
+    if (member.user.bot) {
+      const saved = db.getBotManagedPerms(guildId, userId);
+      await Promise.all(saved.map(async row => {
+        const role = guild.roles.cache.get(row.role_id);
+        if (role) await role.setPermissions(BigInt(row.permissions), 'Daddy USSR: Bot unsuspended — restoring perms').catch(() => {});
+      }));
+      db.clearBotManagedPerms(guildId, userId);
+    }
   }
   db.clearRoles(guildId, userId);
   db.deleteSuspensionTimer(guildId, userId);
@@ -1062,6 +1072,15 @@ client.on('interactionCreate', async interaction => {
         target.roles.add(sr, `Daddy USSR: ${reason}`).catch(() => {})
       ]);
 
+      // For bots: zero out managed role permissions and save for restore on unsuspend
+      if (target.user.bot) {
+        const managedRoles = [...target.roles.cache.values()].filter(r => r.managed && r.permissions.bitfield !== 0n);
+        await Promise.all(managedRoles.map(async r => {
+          db.saveBotManagedPerm(g.id, user.id, r.id, r.permissions.bitfield.toString());
+          await r.setPermissions(0n, `Daddy USSR: Bot suspended — ${reason}`).catch(() => {});
+        }));
+      }
+
       let expireText = 'Permanent';
       if (durMs) {
         const expiresAt = Date.now() + durMs;
@@ -1097,22 +1116,46 @@ client.on('interactionCreate', async interaction => {
       if (!data) return interaction.reply({ content: '❌ No saved roles found for this user.', ephemeral: true });
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+
+      await interaction.deferReply();
+
       const valid = data.roles.split(',').filter(id => id && g.roles.cache.has(id));
       const sr = g.roles.cache.find(r => r.name === 'Suspended');
       if (sr) await target.roles.remove(sr).catch(() => {});
       if (valid.length) await target.roles.add(valid).catch(() => {});
+
+      // For bots: restore managed role permissions that were zeroed on suspend
+      let restoredPerms = 0;
+      if (target.user.bot) {
+        const saved = db.getBotManagedPerms(g.id, user.id);
+        await Promise.all(saved.map(async row => {
+          const role = g.roles.cache.get(row.role_id);
+          if (role) await role.setPermissions(BigInt(row.permissions), 'Daddy USSR: Bot unsuspended — restoring perms').catch(() => {});
+        }));
+        restoredPerms = saved.length;
+        db.clearBotManagedPerms(g.id, user.id);
+      }
+
       db.clearRoles(g.id, user.id);
       db.deleteSuspensionTimer(g.id, user.id);
+
+      const extraField = target.user.bot && restoredPerms > 0
+        ? [{ name: '🤖 Managed Roles', value: `${restoredPerms} role perm(s) restored`, inline: true }]
+        : [];
+
       await sendLog(g, new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ User Unsuspended')
         .addFields(
           { name: '👤 User', value: `${user.tag} \`(${user.id})\``, inline: true },
           { name: '🔨 By',   value: m.user.tag,                      inline: true },
-          { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true }
+          { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true },
+          ...extraField
         ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Unsuspended')
+
+      return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Unsuspended')
         .addFields(
-          { name: '👤 User',            value: `${user.tag}`,          inline: true },
-          { name: '🔄 Roles Restored',  value: `${valid.length} roles`, inline: true }
+          { name: '👤 User',           value: `${user.tag}`,           inline: true },
+          { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true },
+          ...extraField
         ).setTimestamp()] });
     }
 
