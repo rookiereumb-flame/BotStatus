@@ -569,6 +569,7 @@ function buildHelpPages() {
       .addFields(
         { name: '/config [type] [limit] [time]', value: 'Set anti-nuke thresholds — e.g. `3 / 10s`' },
         { name: '/setup [#channel]',             value: 'Set security log channel' },
+        { name: '/setup-suspend',                value: 'Create Suspended role + apply deny overwrites to all channels' },
         { name: '/antinuke enable|disable|status', value: 'Toggle or view all monitors + thresholds' },
         { name: '/trust add|remove|list',        value: 'L1=Fully Immune  L2=Nuke-Immune  L3=Permit' },
         { name: '/suspend @user [dur]',          value: 'Manually suspend (works on users AND bots)' },
@@ -914,6 +915,52 @@ client.on('interactionCreate', async interaction => {
       db.setLogChannel(g.id, ch.id);
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Log Channel Set')
         .setDescription(`Security logs → ${ch}`).setTimestamp()] });
+    }
+
+    // ── /setup-suspend ────────────────────────────────────────────────
+    if (cn === 'setup-suspend') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator))
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+
+      await interaction.deferReply();
+
+      // 1. Create the Suspended role if it doesn't already exist
+      let sr = g.roles.cache.find(r => r.name === 'Suspended');
+      const roleCreated = !sr;
+      if (!sr) {
+        sr = await g.roles.create({
+          name: 'Suspended',
+          permissions: [],
+          color: 0x808080,
+          reason: 'Daddy USSR: Suspended role setup'
+        }).catch(() => null);
+      }
+      if (!sr) return interaction.editReply({ content: '❌ Failed to create the Suspended role. Make sure the bot has **Manage Roles**.' });
+
+      // 2. Apply deny overwrites to every channel in parallel
+      const channels = [...g.channels.cache.values()].filter(c => c.permissionOverwrites);
+      const results = await Promise.allSettled(
+        channels.map(c => c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'Daddy USSR: setup-suspend' }))
+      );
+      const ok     = results.filter(r => r.status === 'fulfilled').length;
+      const failed = results.filter(r => r.status === 'rejected').length;
+
+      const embed = new EmbedBuilder()
+        .setColor(0x5865f2)
+        .setTitle('🔒 Suspend System Configured')
+        .addFields(
+          { name: '🎭 Suspended Role', value: roleCreated ? `Created \`Suspended\` (${sr})` : `Already existed (${sr})`, inline: false },
+          { name: '✅ Channels Updated', value: `${ok} channel${ok !== 1 ? 's' : ''} locked`, inline: true },
+          { name: failed ? '⚠️ Channels Skipped' : '📋 Skipped', value: failed ? `${failed} (no overwrite permission)` : 'None', inline: true },
+          { name: '📌 What This Does', value:
+            '• **Suspended** users are denied: Send Messages, Add Reactions, Attach Files, Embed Links, Speak, Connect in every channel\n' +
+            '• New channels are automatically locked when created\n' +
+            '• Every snapshot (6h) re-syncs the overwrites across all channels', inline: false }
+        )
+        .setTimestamp()
+        .setFooter({ text: 'Daddy USSR Security Engine' });
+
+      return interaction.editReply({ embeds: [embed] });
     }
 
     // ── /trust ────────────────────────────────────────────────────────
@@ -1353,6 +1400,7 @@ const commands = [
     {name:'time',    type:3,              description:'Time window — e.g. 10s 5m 1h (required when setting threshold)'}
   ]},
   { name:'setup', description:'Set log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Log channel',channel_types:[0]}] },
+  { name:'setup-suspend', description:'Create the Suspended role and apply deny overwrites to all channels (Admin)' },
   { name:'trust', description:'Manage trusted users (Owner)', options:[
     {name:'add',    type:1,description:'Add trust',    options:[{name:'user',type:6,required:true,description:'User'},{name:'level',type:4,required:true,description:'Level',choices:[{name:'1 — Owner/Fully Immune',value:1},{name:'2 — Trustee/Nuke-Immune',value:2},{name:'3 — Permit/Mod',value:3}]}]},
     {name:'remove', type:1,description:'Remove trust', options:[{name:'user',type:6,required:true,description:'User'}]},

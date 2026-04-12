@@ -32,6 +32,7 @@ A Discord security bot with no web dashboard. All logic via slash commands and a
 | `/unlockdown` | ManageChannels | Restore exact pre-lockdown state |
 | `/config [type] [limit] [time]` | Administrator | Set anti-nuke thresholds |
 | `/setup [#channel]` | Administrator | Set log channel |
+| `/setup-suspend` | Administrator | Create Suspended role + apply deny overwrites to all channels |
 | `/antinuke enable\|disable\|status` | Administrator | Toggle/view all monitors |
 | `/trust add\|remove\|list` | Server Owner | Manage trusted users |
 | `/scan` | Any | Audit bots + check AutoMod |
