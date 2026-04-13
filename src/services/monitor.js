@@ -8,8 +8,26 @@ const actionLog = new Map();
 const SUSPEND_DENY = {
   SendMessages: false, SendMessagesInThreads: false, AddReactions: false,
   AttachFiles: false,  EmbedLinks: false,             CreatePublicThreads: false,
-  CreatePrivateThreads: false, Speak: false,           Connect: false
+  CreatePrivateThreads: false, Speak: false,           Connect: false,
+  UseVAD: false,       Stream: false
 };
+
+// ── Security embed builder (matches screenshot style) ────────────────────────
+// lines: [['Label', 'value'], ...]
+// details: [['Label', 'value'], ...] — shown under "More Details:" separator
+function securityEmbed(color, title, lines, details = []) {
+  let desc = lines.map(([lbl, val]) => `▶ **${lbl}:** ${val}`).join('\n');
+  if (details.length) {
+    desc += '\n\n**More Details:**\n' +
+      details.map(([lbl, val]) => `▶ **${lbl}:** ${val}`).join('\n');
+  }
+  return new EmbedBuilder()
+    .setColor(color)
+    .setTitle(title)
+    .setDescription(desc)
+    .setTimestamp()
+    .setFooter({ text: 'Daddy USSR Security Engine' });
+}
 
 // ── Log action timestamp ──────────────────────────────────────────────────────
 function logAction(guildId, userId, type) {
@@ -56,9 +74,9 @@ async function suspendUser(member, reason, evidence = '', force = false) {
   const guild = member.guild;
 
   if (!force) {
-    if (member.id === guild.ownerId) return; // Server owner always immune
+    if (member.id === guild.ownerId) return;
     const trust = db.getTrust(guild.id, member.id);
-    if (trust && trust.level === 1) return;  // L1: fully immune
+    if (trust && trust.level === 1) return;
   }
 
   // Save non-managed roles (managed roles can't be removed — safe for bots)
@@ -71,7 +89,7 @@ async function suspendUser(member, reason, evidence = '', force = false) {
   let suspendedRole = guild.roles.cache.find(r => r.name === 'Suspended');
   if (!suspendedRole) {
     suspendedRole = await guild.roles.create({
-      name: 'Suspended', permissions: [], color: 0x000000,
+      name: 'Suspended', permissions: [], color: 0x808080,
       reason: 'Daddy USSR: Auto-created Suspended role'
     }).catch(() => null);
   }
@@ -95,20 +113,21 @@ async function suspendUser(member, reason, evidence = '', force = false) {
     }));
   }
 
-  // Log the suspension
-  await sendLog(guild, new EmbedBuilder()
-    .setColor(0xff0000)
-    .setTitle('🚨 SECURITY — User Suspended')
-    .setThumbnail(member.user.displayAvatarURL())
-    .addFields(
-      { name: '👤 User',        value: `${member.user.tag} \`(${member.id})\``, inline: true },
-      { name: '⚠️ Reason',      value: reason,                                   inline: true },
-      { name: '🔍 Evidence',    value: evidence || 'N/A',                        inline: false },
-      { name: '💾 Saved Roles', value: roles.length ? `${roles.length} roles` : 'None', inline: true },
-      { name: '🔒 Channels',    value: 'All channels locked for Suspended role', inline: true }
-    )
-    .setTimestamp()
-    .setFooter({ text: 'Daddy USSR Security Engine' }));
+  // Log with screenshot-style embed
+  await sendLog(guild, securityEmbed(0xff0000,
+    `${member.user.bot ? '🤖' : '👤'} ${member.user.username} has been suspended!`,
+    [
+      ['Reason',   reason],
+      ['Member',   `<@${member.id}> [${member.user.tag}]`],
+      ['Evidence', evidence || 'N/A'],
+    ],
+    [
+      ['Action Applied', '✅'],
+      ['Role Cleansing',  roles.length ? `✅ (${roles.length} roles removed)` : 'N/A'],
+      ['Channels Locked', '✅ (all channels)'],
+      ...(member.user.bot ? [['Managed Perms Zeroed', '✅']] : [])
+    ]
+  ));
 }
 
-module.exports = { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY };
+module.exports = { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, securityEmbed };

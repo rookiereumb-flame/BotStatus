@@ -6,7 +6,7 @@ const {
 } = require('discord.js');
 
 const db = require('./src/database/db');
-const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY } = require('./src/services/monitor');
+const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, securityEmbed } = require('./src/services/monitor');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -111,16 +111,22 @@ async function autoRevertChannel(guild, deletedCh) {
       parent: saved.parentId || null,
       reason: 'Daddy USSR: Auto-revert'
     });
-    // Restore permission overwrites
-    for (const ow of (saved.permissionOverwrites || [])) {
-      await restored.permissionOverwrites.edit(ow.id, {}, {
-        allow: BigInt(ow.allow), deny: BigInt(ow.deny), type: ow.type
-      }).catch(() => {});
+    // Restore permission overwrites correctly
+    if (saved.permissionOverwrites?.length) {
+      await restored.permissionOverwrites.set(
+        saved.permissionOverwrites.map(ow => ({
+          id: ow.id, type: ow.type,
+          allow: BigInt(ow.allow), deny: BigInt(ow.deny)
+        })),
+        'Daddy USSR: Auto-revert'
+      ).catch(e => console.error('overwrite restore:', e.message));
     }
-    await sendLog(guild, new EmbedBuilder().setColor(0x00ff88)
-      .setTitle('🔄 Auto-Revert: Channel Restored')
-      .addFields({ name: 'Channel', value: `#${saved.name} → ${restored}`, inline: true })
-      .setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+    await sendLog(guild, securityEmbed(0x00ff88, '🔄 Channel Auto-Reverted',
+      [
+        ['Channel', `#${saved.name} → ${restored}`],
+        ['Overwrites', `${saved.permissionOverwrites?.length || 0} restored`]
+      ]
+    ));
   } catch(e) { console.error('auto-revert channel:', e.message); }
 }
 
@@ -138,10 +144,12 @@ async function autoRevertRole(guild, deletedRole) {
       color: saved.color || 0, hoist: saved.hoist || false, mentionable: saved.mentionable || false,
       reason: 'Daddy USSR: Auto-revert'
     });
-    await sendLog(guild, new EmbedBuilder().setColor(0x00ff88)
-      .setTitle('🔄 Auto-Revert: Role Restored')
-      .addFields({ name: 'Role', value: `"${saved.name}" → ${restored}`, inline: true })
-      .setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+    await sendLog(guild, securityEmbed(0x00ff88, '🔄 Role Auto-Reverted',
+      [
+        ['Role', `"${saved.name}" → ${restored}`],
+        ['Permissions', `\`${saved.permissions || '0'}\``]
+      ]
+    ));
   } catch(e) { console.error('auto-revert role:', e.message); }
 }
 
@@ -295,12 +303,14 @@ client.on('webhookUpdate', async channel => {
   if (target) await target.delete('Daddy USSR: Unauthorized webhook removed').catch(() => {});
 
   logAction(channel.guild.id, e.executorId, 'webhook_create');
-  await sendLog(channel.guild, new EmbedBuilder().setColor(0xff6600)
-    .setTitle('⚠️ Monitor: WEBHOOK CREATE — Deleted')
-    .addFields(
-      { name: '👤 Executor', value: `<@${e.executorId}> \`(${e.executorId})\``, inline: true },
-      { name: '📋 Action',   value: `Webhook created in #${channel.name} — auto-deleted` }
-    ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+  await sendLog(channel.guild, securityEmbed(0xff6600,
+    `⚠️ Webhook deleted in #${channel.name}`,
+    [
+      ['Executor', `<@${e.executorId}> [${(await channel.guild.members.fetch(e.executorId).catch(()=>({user:{tag:e.executorId}})))?.user?.tag}]`],
+      ['Channel',  `#${channel.name}`],
+      ['Action',   'Webhook auto-deleted instantly']
+    ]
+  ));
 
   if (checkThreshold(channel.guild.id, e.executorId, 'webhook_create')) {
     const member = await channel.guild.members.fetch(e.executorId).catch(() => null);
@@ -347,18 +357,69 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
   const member = await newGuild.members.fetch(e.executorId).catch(() => null);
   if (member) await suspendUser(member, 'Vanity URL Changed', `${oldGuild.vanityURLCode || 'none'} → ${newGuild.vanityURLCode || 'none'}`);
 
-  await sendLog(newGuild, new EmbedBuilder().setColor(0xff0000)
-    .setTitle('🚨 INSTANT ACTION: Vanity URL Change')
-    .addFields(
-      { name: '👤 Executor', value: `<@${e.executorId}>`, inline: true },
-      { name: '🔗 Change',   value: `\`${oldGuild.vanityURLCode||'none'}\` → \`${newGuild.vanityURLCode||'none'}\``, inline: true },
-      { name: '⚡ Action',   value: 'Reverted + User suspended instantly', inline: false }
-    ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+  await sendLog(newGuild, securityEmbed(0xff0000,
+    `🚨 ${member?.user?.username || e.executorId} changed the vanity URL!`,
+    [
+      ['Executor', `<@${e.executorId}> [${member?.user?.tag || e.executorId}]`],
+      ['Change',   `\`${oldGuild.vanityURLCode || 'none'}\` → \`${newGuild.vanityURLCode || 'none'}\``],
+    ],
+    [
+      ['Reverted',       '✅'],
+      ['Action Applied', '✅ Suspended instantly']
+    ]
+  ));
 });
 
-// ── Role Memory Restore on Rejoin ─────────────────────────────────────────────
+// ── In-memory join tracker for raid detection ─────────────────────────────────
+const _recentJoins = new Map(); // guildId → [timestamp, ...]
+
+// ── Role Memory Restore on Rejoin + Raid Detection ───────────────────────────
 client.on('guildMemberAdd', async member => {
-  const data = db.getRoles(member.guild.id, member.id);
+  const gid = member.guild.id;
+
+  // ── Raid Detection ─────────────────────────────────────────────────────────
+  const raidCfg = db.getRaidConfig(gid);
+  if (raidCfg.enabled) {
+    if (!_recentJoins.has(gid)) _recentJoins.set(gid, []);
+    const joins = _recentJoins.get(gid);
+    joins.push(Date.now());
+    // Prune old entries outside the window
+    const cutoff = Date.now() - raidCfg.join_window;
+    const fresh  = joins.filter(t => t > cutoff);
+    _recentJoins.set(gid, fresh);
+
+    const accountAgeDays = (Date.now() - member.user.createdTimestamp) / 86400000;
+    const isNewAccount   = accountAgeDays < raidCfg.min_age_days;
+    const isJoinSpike    = fresh.length >= raidCfg.join_limit;
+
+    if (isJoinSpike || (isNewAccount && fresh.length >= Math.ceil(raidCfg.join_limit / 2))) {
+      const action = raidCfg.action;
+      await sendLog(member.guild, securityEmbed(0xff4400,
+        `🛡️ Raid Detected in ${member.guild.name}!`,
+        [
+          ['Trigger',      isJoinSpike ? `${fresh.length} joins in ${raidCfg.join_window / 1000}s` : `New account spike (${Math.floor(accountAgeDays)}d old)`],
+          ['Latest Join',  `<@${member.id}> [${member.user.tag}]`],
+          ['Account Age',  `${Math.floor(accountAgeDays)}d`],
+          ['Action',       action === 'lockdown' ? 'Auto-lockdown triggered' : action === 'kick' ? 'Member kicked' : 'Alert only']
+        ]
+      ));
+
+      if (action === 'kick') {
+        await member.kick('Daddy USSR: Raid detection').catch(() => {});
+      } else if (action === 'lockdown') {
+        // Lock all text channels for @everyone if not already locked
+        const everyone = member.guild.roles.everyone;
+        for (const [, ch] of member.guild.channels.cache) {
+          if (!ch.permissionOverwrites) continue;
+          await ch.permissionOverwrites.edit(everyone, { SendMessages: false, AddReactions: false },
+            { reason: 'Daddy USSR: Raid auto-lockdown' }).catch(() => {});
+        }
+      }
+    }
+  }
+
+  // ── Role Memory Restore ────────────────────────────────────────────────────
+  const data = db.getRoles(gid, member.id);
   if (!data) return;
   if (data.is_suspended) {
     const sr = member.guild.roles.cache.find(r => r.name === 'Suspended');
@@ -369,15 +430,72 @@ client.on('guildMemberAdd', async member => {
   }
 });
 
-// ── @everyone protection + Counting ──────────────────────────────────────────
+// ── In-memory message rate tracker for dynamic slowmode ──────────────────────
+const _msgRates = new Map(); // `${gid}:${cid}` → [timestamp, ...]
+const SLOWMODE_SPIKE_LIMIT  = 12; // messages per 10s before slowmode activates
+const SLOWMODE_SPIKE_WINDOW = 10000;
+const SLOWMODE_DELAY_MAX    = 21600; // Discord max slowmode (6h in seconds)
+
+// ── Evidence Locker — capture deleted messages ────────────────────────────────
+client.on('messageDelete', async message => {
+  if (!message.guild || !message.author || message.author.bot) return;
+  if (!message.content && !message.attachments.size) return;
+  const attachments = [...message.attachments.values()].map(a => ({ name: a.name, url: a.url }));
+  db.addEvidence(
+    message.guild.id, message.author.id, message.channel.id,
+    message.id, message.content || '', attachments
+  );
+});
+
+// ── @everyone protection + Shadow Ban + Watchlist + Slowmode + Counting ───────
 client.on('messageCreate', async message => {
   if (!message.guild || message.author.bot) return;
+
+  // ── Shadow Ban — silently delete messages ──────────────────────────────────
+  if (db.isShadowBanned(message.guild.id, message.author.id)) {
+    await message.delete().catch(() => {});
+    return; // no further processing
+  }
+
+  // ── Silent Watchlist Alert ─────────────────────────────────────────────────
+  const watch = db.getWatchlist(message.guild.id, message.author.id);
+  if (watch) {
+    await sendLog(message.guild, securityEmbed(0xffa500,
+      `👁️ Watched user active: ${message.author.username}`,
+      [
+        ['Member',  `<@${message.author.id}> [${message.author.tag}]`],
+        ['Channel', `<#${message.channel.id}> [${message.channel.name}]`],
+        ['Message', message.content?.slice(0, 200) || '*(attachment/embed)*'],
+        ['Reason',  watch.reason || 'No reason']
+      ],
+      [['Watchlist', 'Silent alert — no action taken']]
+    ));
+  }
+
+  // ── Dynamic Slowmode ───────────────────────────────────────────────────────
+  const rateKey = `${message.guild.id}:${message.channel.id}`;
+  if (!_msgRates.has(rateKey)) _msgRates.set(rateKey, []);
+  const rates = _msgRates.get(rateKey);
+  rates.push(Date.now());
+  const freshRates = rates.filter(t => t > Date.now() - SLOWMODE_SPIKE_WINDOW);
+  _msgRates.set(rateKey, freshRates);
+
+  if (message.channel.rateLimitPerUser !== undefined) {
+    const currentSlowmode = message.channel.rateLimitPerUser;
+    if (freshRates.length >= SLOWMODE_SPIKE_LIMIT && currentSlowmode < 5) {
+      // Activity spike — set 5s slowmode
+      await message.channel.setRateLimitPerUser(5, 'Daddy USSR: Activity spike').catch(() => {});
+    } else if (freshRates.length < 4 && currentSlowmode > 0) {
+      // Quiet again — remove slowmode
+      await message.channel.setRateLimitPerUser(0, 'Daddy USSR: Activity normalized').catch(() => {});
+    }
+  }
 
   // @everyone / @here — instant suspend (only L1 + owner-tier immune)
   if (message.mentions.everyone) {
     const mb = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
     const t  = mb ? effectiveTrust(mb) : -1;
-    if (t !== 0 && t !== 1) { // Bot-owner tier (0) and L1 (1) are immune; L2/L3/untrusted get suspended
+    if (t !== 0 && t !== 1) {
       await message.delete().catch(() => {});
       if (mb) await suspendUser(mb, '@everyone / @here Abuse', `In #${message.channel.name}`);
       return;
@@ -537,10 +655,17 @@ async function doUnsuspend(guildId, userId) {
   }
   db.clearRoles(guildId, userId);
   db.deleteSuspensionTimer(guildId, userId);
-  await sendLog(guild, new EmbedBuilder().setColor(0x2ecc71)
-    .setTitle('✅ Auto-Unsuspend')
-    .setDescription(`<@${userId}> — suspension expired, roles restored.`)
-    .setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+  await sendLog(guild, securityEmbed(0x2ecc71,
+    `✅ ${member?.user?.username || userId} has been auto-unsuspended!`,
+    [
+      ['Member',  `<@${userId}>`],
+      ['Reason',  'Suspension timer expired'],
+    ],
+    [
+      ['Roles Restored', member ? `✅ (${(data.roles.split(',').filter(Boolean)).length} roles)` : '❌ (user left)'],
+      ['Action',         'Automatic']
+    ]
+  ));
 }
 function scheduleUnsuspend(guildId, userId, ms) {
   const MAX = 2_000_000_000;
@@ -573,13 +698,13 @@ function buildHelpPages() {
         { name: '/unsuspend @user',            value: "Restore suspended user's roles" },
         { name: '/lockdown [reason]',          value: 'Lock all text channels (saves exact overwrites)' },
         { name: '/unlockdown',                 value: 'Restore channels to exact pre-lockdown state' }
-      ).setFooter({ text: 'Page 1/4 • Use buttons to navigate' }),
+      ).setFooter({ text: 'Page 1/5 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 2/4: Anti-Nuke')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 2/5: Anti-Nuke & Security')
       .addFields(
         { name: '/config [type] [limit] [time]', value: 'Set anti-nuke thresholds — e.g. `3 / 10s`' },
         { name: '/setup [#channel]',             value: 'Set security log channel' },
-        { name: '/setup-suspend',                value: 'Create Suspended role + apply deny overwrites to all channels' },
+        { name: '/setup-suspend',                value: 'Create Suspended role + deny overwrites on all channels' },
         { name: '/antinuke enable|disable|status', value: 'Toggle or view all monitors + thresholds' },
         { name: '/trust add|remove|list',        value: 'L1=Fully Immune  L2=Nuke-Immune  L3=Permit' },
         { name: '/suspend @user [dur]',          value: 'Manually suspend (works on users AND bots)' },
@@ -591,8 +716,10 @@ function buildHelpPages() {
         '• **Vanity URL guard** — instant revert + suspend\n' +
         '• **@everyone protection** — instant suspend\n' +
         '• **Role memory** — save/restore on leave/rejoin\n' +
-        '• **Auto-revert** — deleted channels/roles rebuilt from snapshot on nuke'
-      }).setFooter({ text: 'Page 2/4 • Use buttons to navigate' }),
+        '• **Auto-revert** — deleted channels/roles rebuilt from snapshot on nuke\n' +
+        '• **Dynamic slowmode** — auto-adjusts on message spikes\n' +
+        '• **Raid detection** — join spike → lockdown/kick/alert'
+      }).setFooter({ text: 'Page 2/5 • Use buttons to navigate' }),
 
     new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 3/4: Snapshots & Revert')
       .addFields(
@@ -608,9 +735,26 @@ function buildHelpPages() {
         '**L3 (Permit)** — Bypasses Discord permission checks for mod commands (ban/kick/mute/suspend)\n' +
         '**Bot-Owner tier** — Administrator + role above bot = owner access\n' +
         '*All trusted users are immune to @everyone suspend*'
-      }).setFooter({ text: 'Page 3/4 • Use buttons to navigate' }),
+      }).setFooter({ text: 'Page 3/5 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 4/4: Fun & Features')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 4/5: Intelligence Systems')
+      .addFields(
+        { name: '/watchlist add|remove|list',     value: 'Silent watchlist — alerts staff when watched user sends a message' },
+        { name: '/evidence view|clear [@user]',   value: 'View deleted messages stored in the evidence locker' },
+        { name: '/shadow-ban [@user] [reason]',   value: 'Shadow-ban — messages silently deleted, user unaware' },
+        { name: '/shadow-unban [@user]',          value: 'Lift a shadow-ban' },
+        { name: '/staff-log [mod]',               value: 'View recent mod actions — filter by specific moderator' },
+        { name: '/raid-config set|disable|status', value: 'Configure join-spike raid detection (limit, window, action)' }
+      )
+      .addFields({ name: '🤖 Auto Intelligence', value:
+        '• **Evidence Locker** — every deleted message is captured automatically\n' +
+        '• **Watchlist alerts** — silent log-channel pings when a watched user is active\n' +
+        '• **Shadow ban** — user continues posting, nobody else sees it\n' +
+        '• **Raid detection** — join spikes or fresh-account waves trigger lockdown/kick/alert\n' +
+        '• **Dynamic slowmode** — spikes (12 msg/10s) auto-set 5s delay; clears when quiet'
+      }).setFooter({ text: 'Page 4/5 • Use buttons to navigate' }),
+
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 5/5: Fun & Features')
       .addFields(
         { name: '/ask [question]',               value: '🎱 Magic 8-Ball' },
         { name: '/say [message]',                value: 'Send a message as the bot (DMs & User App supported)' },
@@ -619,7 +763,7 @@ function buildHelpPages() {
         { name: '/starboard-disable',            value: 'Disable starboard' }
       )
       .addFields({ name: '⏱️ Duration Format', value: '`10s` · `5m` · `2h` · `1d` · `1w` — used in /mute /suspend /config' })
-      .setFooter({ text: 'Page 4/4 • Daddy USSR Security Engine' })
+      .setFooter({ text: 'Page 5/5 • Daddy USSR Security Engine' })
   ];
 }
 
@@ -682,6 +826,7 @@ client.on('interactionCreate', async interaction => {
       if (!target) return interaction.reply({ content: '❌ User not found in server.', ephemeral: true });
       if (!target.bannable) return interaction.reply({ content: '❌ Cannot ban this user (insufficient hierarchy).', ephemeral: true });
       await target.ban({ reason });
+      db.logStaffAction(g.id, m.id, 'ban', user.id, reason);
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('🔨 Banned')
         .addFields({ name: 'User', value: `${user.tag}`, inline: true }, { name: 'Reason', value: reason, inline: true })
         .setTimestamp()] });
@@ -706,6 +851,7 @@ client.on('interactionCreate', async interaction => {
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
       if (!target.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
       await target.kick(reason);
+      db.logStaffAction(g.id, m.id, 'kick', user.id, reason);
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xe67e22).setTitle('👢 Kicked')
         .addFields({ name: 'User', value: `${user.tag}`, inline: true }, { name: 'Reason', value: reason, inline: true })
         .setTimestamp()] });
@@ -722,6 +868,7 @@ client.on('interactionCreate', async interaction => {
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
       await target.timeout(durMs, reason);
+      db.logStaffAction(g.id, m.id, 'mute', user.id, `${formatDuration(durMs)} — ${reason}`);
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xf39c12).setTitle('🔇 Muted')
         .addFields({ name: 'User', value: `${user.tag}`, inline: true },
                    { name: 'Duration', value: formatDuration(durMs), inline: true },
@@ -1089,14 +1236,22 @@ client.on('interactionCreate', async interaction => {
         scheduleUnsuspend(g.id, user.id, durMs);
       }
 
-      await sendLog(g, new EmbedBuilder().setColor(0xff0000).setTitle('⛔ Suspended (Manual)')
-        .addFields(
-          { name: '👤 Target',   value: `${user.tag} \`(${user.id})\``, inline: true },
-          { name: '🔨 By',       value: m.user.tag,                      inline: true },
-          { name: '⚠️ Reason',   value: reason,                          inline: false },
-          { name: '⏱️ Duration', value: expireText,                      inline: true },
-          { name: '💾 Roles',    value: `${roles.length} saved`,         inline: true }
-        ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+      db.logStaffAction(g.id, m.id, 'suspend', user.id, reason);
+      await sendLog(g, securityEmbed(0xff0000,
+        `⛔ ${target.user.username} has been suspended!`,
+        [
+          ['Reason',   reason],
+          ['Member',   `<@${user.id}> [${user.tag}]`],
+          ['Duration', expireText],
+        ],
+        [
+          ['Moderator',      `${m.user.tag}`],
+          ['Action Applied', '✅'],
+          ['Role Cleansing',  `✅ (${roles.length} roles removed)`],
+          ['Channels Locked', '✅'],
+          ...(target.user.bot ? [['Managed Perms Zeroed', '✅']] : [])
+        ]
+      ));
 
       return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xff0000).setTitle('⛔ User Suspended')
         .addFields(
@@ -1143,13 +1298,18 @@ client.on('interactionCreate', async interaction => {
         ? [{ name: '🤖 Managed Roles', value: `${restoredPerms} role perm(s) restored`, inline: true }]
         : [];
 
-      await sendLog(g, new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ User Unsuspended')
-        .addFields(
-          { name: '👤 User', value: `${user.tag} \`(${user.id})\``, inline: true },
-          { name: '🔨 By',   value: m.user.tag,                      inline: true },
-          { name: '🔄 Roles Restored', value: `${valid.length} roles`, inline: true },
-          ...extraField
-        ).setTimestamp().setFooter({ text: 'Daddy USSR Security Engine' }));
+      db.logStaffAction(g.id, m.id, 'unsuspend', user.id, 'Manual unsuspend');
+      await sendLog(g, securityEmbed(0x2ecc71,
+        `✅ ${target.user.username} has been unsuspended!`,
+        [
+          ['Member', `<@${user.id}> [${user.tag}]`],
+        ],
+        [
+          ['Moderator',      m.user.tag],
+          ['Roles Restored', `✅ (${valid.length} roles)`],
+          ...extraField.map(f => [f.name.replace(/[^a-zA-Z ]/g, '').trim(), f.value])
+        ]
+      ));
 
       return interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Unsuspended')
         .addFields(
@@ -1357,6 +1517,134 @@ client.on('interactionCreate', async interaction => {
         .setTimestamp()] });
     }
 
+    // ── /watchlist ────────────────────────────────────────────────────
+    if (cn === 'watchlist') {
+      if (!m.permissions.has(PermissionFlagsBits.ManageGuild))
+        return interaction.reply({ content: '❌ Manage Server required.', ephemeral: true });
+      const sub = o.getSubcommand();
+      if (sub === 'add') {
+        const user   = o.getUser('user');
+        const reason = o.getString('reason') || 'No reason';
+        db.addWatchlist(g.id, user.id, reason, m.id);
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xffa500).setTitle('👁️ Added to Watchlist')
+          .setDescription(`▶ **Member:** <@${user.id}> [${user.tag}]\n▶ **Reason:** ${reason}\n▶ **Added by:** ${m.user.tag}`)
+          .setTimestamp()], ephemeral: true });
+      }
+      if (sub === 'remove') {
+        const user = o.getUser('user');
+        db.removeWatchlist(g.id, user.id);
+        return interaction.reply({ content: `✅ Removed <@${user.id}> from watchlist.`, ephemeral: true });
+      }
+      if (sub === 'list') {
+        const list = db.listWatchlist(g.id);
+        if (!list.length) return interaction.reply({ content: 'Watchlist is empty.', ephemeral: true });
+        const desc = list.map(r => `▶ <@${r.user_id}> — *${r.reason}* (added <t:${Math.floor(r.added_at/1000)}:R>)`).join('\n');
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xffa500).setTitle(`👁️ Watchlist (${list.length})`)
+          .setDescription(desc).setTimestamp()], ephemeral: true });
+      }
+    }
+
+    // ── /evidence ─────────────────────────────────────────────────────
+    if (cn === 'evidence') {
+      if (!m.permissions.has(PermissionFlagsBits.ManageGuild))
+        return interaction.reply({ content: '❌ Manage Server required.', ephemeral: true });
+      const sub  = o.getSubcommand();
+      const user = o.getUser('user');
+      if (sub === 'view') {
+        const rows = db.getEvidence(g.id, user.id, 8);
+        if (!rows.length) return interaction.reply({ content: `No deleted messages on record for ${user.tag}.`, ephemeral: true });
+        const desc = rows.map(r => {
+          const atts = JSON.parse(r.attachments || '[]');
+          const ts   = `<t:${Math.floor(r.timestamp/1000)}:R>`;
+          return `▶ ${ts} in <#${r.channel_id}>\n  \`${(r.content||'').slice(0,120) || '*(no text)*'}${r.content?.length>120?'…':''}${atts.length?` [+${atts.length} file]`:''}`;
+        }).join('\n\n');
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff6600).setTitle(`🗃️ Evidence Locker — ${user.tag}`)
+          .setDescription(desc).setTimestamp().setFooter({ text: `${rows.length} most recent deleted messages` })], ephemeral: true });
+      }
+      if (sub === 'clear') {
+        if (!m.permissions.has(PermissionFlagsBits.Administrator))
+          return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+        db.clearEvidence(g.id, user.id);
+        return interaction.reply({ content: `✅ Evidence cleared for ${user.tag}.`, ephemeral: true });
+      }
+    }
+
+    // ── /shadow-ban ───────────────────────────────────────────────────
+    if (cn === 'shadow-ban') {
+      if (!m.permissions.has(PermissionFlagsBits.ManageGuild))
+        return interaction.reply({ content: '❌ Manage Server required.', ephemeral: true });
+      const user   = o.getUser('user');
+      const reason = o.getString('reason') || 'No reason';
+      if (user.id === m.id) return interaction.reply({ content: '❌ Cannot shadow-ban yourself.', ephemeral: true });
+      db.addShadowBan(g.id, user.id, m.id, reason);
+      db.logStaffAction(g.id, m.id, 'shadow-ban', user.id, reason);
+      return interaction.reply({ content: `✅ **${user.tag}** is now shadow-banned. Their messages will be silently deleted.`, ephemeral: true });
+    }
+
+    // ── /shadow-unban ─────────────────────────────────────────────────
+    if (cn === 'shadow-unban') {
+      if (!m.permissions.has(PermissionFlagsBits.ManageGuild))
+        return interaction.reply({ content: '❌ Manage Server required.', ephemeral: true });
+      const user = o.getUser('user');
+      db.removeShadowBan(g.id, user.id);
+      db.logStaffAction(g.id, m.id, 'shadow-unban', user.id, 'Shadow-ban removed');
+      return interaction.reply({ content: `✅ Shadow-ban lifted for **${user.tag}**.`, ephemeral: true });
+    }
+
+    // ── /staff-log ────────────────────────────────────────────────────
+    if (cn === 'staff-log') {
+      if (!m.permissions.has(PermissionFlagsBits.ManageGuild))
+        return interaction.reply({ content: '❌ Manage Server required.', ephemeral: true });
+      const filterUser = o.getUser('mod');
+      const rows = db.getStaffActions(g.id, filterUser?.id || null, 15);
+      if (!rows.length) return interaction.reply({ content: 'No staff actions recorded yet.', ephemeral: true });
+      const ACTION_ICON = { ban:'🔨', kick:'👢', mute:'🔇', suspend:'⛔', unsuspend:'✅', 'shadow-ban':'🌑', 'shadow-unban':'☀️' };
+      const desc = rows.map(r =>
+        `▶ ${ACTION_ICON[r.action] || '🔹'} **${r.action.toUpperCase()}** — <@${r.target_id}>\n` +
+        `  by <@${r.mod_id}> • ${r.reason} • <t:${Math.floor(r.timestamp/1000)}:R>`
+      ).join('\n\n');
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2)
+        .setTitle(`📋 Staff Log${filterUser ? ` — ${filterUser.tag}` : ''}`)
+        .setDescription(desc).setTimestamp().setFooter({ text: `Last ${rows.length} actions` })], ephemeral: true });
+    }
+
+    // ── /raid-config ──────────────────────────────────────────────────
+    if (cn === 'raid-config') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator))
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      const sub = o.getSubcommand();
+      if (sub === 'set') {
+        const limit   = o.getInteger('limit')   || 10;
+        const window  = (o.getInteger('window') || 30) * 1000;
+        const minage  = o.getInteger('min-age') || 7;
+        const action  = o.getString('action')   || 'lockdown';
+        db.setRaidConfig(g.id, { enabled: 1, join_limit: limit, join_window: window, min_age_days: minage, action });
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff4400).setTitle('🛡️ Raid Detection Configured')
+          .setDescription(
+            `▶ **Join Limit:** ${limit} per ${window/1000}s\n` +
+            `▶ **Min Account Age:** ${minage}d\n` +
+            `▶ **Action:** ${action}\n` +
+            `▶ **Status:** ✅ Enabled`
+          ).setTimestamp()] });
+      }
+      if (sub === 'disable') {
+        const cfg = db.getRaidConfig(g.id);
+        db.setRaidConfig(g.id, { ...cfg, enabled: 0 });
+        return interaction.reply({ content: '✅ Raid detection disabled.', ephemeral: true });
+      }
+      if (sub === 'status') {
+        const cfg = db.getRaidConfig(g.id);
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(cfg.enabled ? 0xff4400 : 0x888888)
+          .setTitle('🛡️ Raid Detection Status')
+          .setDescription(
+            `▶ **Status:** ${cfg.enabled ? '✅ Enabled' : '❌ Disabled'}\n` +
+            `▶ **Join Limit:** ${cfg.join_limit} per ${cfg.join_window/1000}s\n` +
+            `▶ **Min Account Age:** ${cfg.min_age_days}d\n` +
+            `▶ **Action:** ${cfg.action}`
+          ).setTimestamp()], ephemeral: true });
+      }
+    }
+
     // ── /help ─────────────────────────────────────────────────────────
     if (cn === 'help') {
       const pages = buildHelpPages();
@@ -1444,6 +1732,32 @@ const commands = [
   ]},
   { name:'setup', description:'Set log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Log channel',channel_types:[0]}] },
   { name:'setup-suspend', description:'Create the Suspended role and apply deny overwrites to all channels (Admin)' },
+  { name:'watchlist', description:'Manage the silent watchlist (ManageServer)', options:[
+    {name:'add',    type:1, description:'Add user to watchlist',    options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}]},
+    {name:'remove', type:1, description:'Remove from watchlist',    options:[{name:'user',type:6,required:true,description:'User'}]},
+    {name:'list',   type:1, description:'List all watched users'}
+  ]},
+  { name:'evidence', description:'View/clear deleted-message evidence locker (ManageServer)', options:[
+    {name:'view',  type:1, description:'View evidence for a user', options:[{name:'user',type:6,required:true,description:'User'}]},
+    {name:'clear', type:1, description:'Clear evidence for a user (Admin)', options:[{name:'user',type:6,required:true,description:'User'}]}
+  ]},
+  { name:'shadow-ban',   description:'Silently delete all messages from a user (ManageServer)', options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
+  { name:'shadow-unban', description:'Remove shadow-ban from a user (ManageServer)', options:[{name:'user',type:6,required:true,description:'User'}] },
+  { name:'staff-log', description:'View recent staff actions (ManageServer)', options:[{name:'mod',type:6,description:'Filter by specific moderator'}] },
+  { name:'raid-config', description:'Configure predictive raid detection (Admin)', options:[
+    {name:'set', type:1, description:'Set raid detection parameters', options:[
+      {name:'limit',   type:4,description:'Joins to trigger alert (default 10)', min_value:2},
+      {name:'window',  type:4,description:'Time window in seconds (default 30)', min_value:5},
+      {name:'min-age', type:4,description:'Min account age in days to flag (default 7)', min_value:0},
+      {name:'action',  type:3,description:'Action on detection', choices:[
+        {name:'lockdown — lock all channels', value:'lockdown'},
+        {name:'kick — kick the joiner', value:'kick'},
+        {name:'alert — log only', value:'alert'}
+      ]}
+    ]},
+    {name:'disable', type:1, description:'Disable raid detection'},
+    {name:'status',  type:1, description:'View current raid detection config'}
+  ]},
   { name:'trust', description:'Manage trusted users (Owner)', options:[
     {name:'add',    type:1,description:'Add trust',    options:[{name:'user',type:6,required:true,description:'User'},{name:'level',type:4,required:true,description:'Level',choices:[{name:'1 — Owner/Fully Immune',value:1},{name:'2 — Trustee/Nuke-Immune',value:2},{name:'3 — Permit/Mod',value:3}]}]},
     {name:'remove', type:1,description:'Remove trust', options:[{name:'user',type:6,required:true,description:'User'}]},
@@ -1469,7 +1783,7 @@ const commands = [
     {name:'roles',    type:1, description:'Restore missing roles + permissions'},
     {name:'all',      type:1, description:'Restore both channels and roles at once'}
   ]},
-  { name:'help', description:'Show all commands with navigation', options:[{name:'page',type:4,description:'Page 1–4',min_value:1,max_value:4}] }
+  { name:'help', description:'Show all commands with navigation', options:[{name:'page',type:4,description:'Page 1–5',min_value:1,max_value:5}] }
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);

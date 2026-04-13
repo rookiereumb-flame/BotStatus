@@ -73,6 +73,49 @@ db.exec(`
     permissions TEXT,
     PRIMARY KEY (guild_id, user_id, role_id)
   );
+  CREATE TABLE IF NOT EXISTS watchlist (
+    guild_id TEXT,
+    user_id  TEXT,
+    reason   TEXT,
+    added_by TEXT,
+    added_at INTEGER,
+    PRIMARY KEY (guild_id, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS evidence_locker (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id    TEXT,
+    user_id     TEXT,
+    channel_id  TEXT,
+    message_id  TEXT,
+    content     TEXT,
+    attachments TEXT,
+    timestamp   INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS shadow_bans (
+    guild_id TEXT,
+    user_id  TEXT,
+    added_by TEXT,
+    reason   TEXT,
+    added_at INTEGER,
+    PRIMARY KEY (guild_id, user_id)
+  );
+  CREATE TABLE IF NOT EXISTS staff_actions (
+    id        INTEGER PRIMARY KEY AUTOINCREMENT,
+    guild_id  TEXT,
+    mod_id    TEXT,
+    action    TEXT,
+    target_id TEXT,
+    reason    TEXT,
+    timestamp INTEGER
+  );
+  CREATE TABLE IF NOT EXISTS raid_config (
+    guild_id     TEXT PRIMARY KEY,
+    enabled      INTEGER DEFAULT 1,
+    join_limit   INTEGER DEFAULT 10,
+    join_window  INTEGER DEFAULT 30000,
+    min_age_days INTEGER DEFAULT 7,
+    action       TEXT DEFAULT 'lockdown'
+  );
 `);
 
 // Safely add new columns to existing tables (no-op if already exist)
@@ -195,6 +238,60 @@ module.exports = {
     db.prepare('SELECT * FROM bot_managed_role_perms WHERE guild_id=? AND user_id=?').all(gid, uid),
   clearBotManagedPerms: (gid, uid) =>
     db.prepare('DELETE FROM bot_managed_role_perms WHERE guild_id=? AND user_id=?').run(gid, uid),
+
+  // Watchlist
+  addWatchlist: (gid, uid, reason, addedBy) =>
+    db.prepare(`INSERT INTO watchlist (guild_id, user_id, reason, added_by, added_at) VALUES (?,?,?,?,?)
+      ON CONFLICT(guild_id, user_id) DO UPDATE SET reason=excluded.reason, added_by=excluded.added_by, added_at=excluded.added_at`)
+      .run(gid, uid, reason, addedBy, Date.now()),
+  removeWatchlist: (gid, uid) =>
+    db.prepare('DELETE FROM watchlist WHERE guild_id=? AND user_id=?').run(gid, uid),
+  getWatchlist: (gid, uid) =>
+    db.prepare('SELECT * FROM watchlist WHERE guild_id=? AND user_id=?').get(gid, uid),
+  listWatchlist: gid =>
+    db.prepare('SELECT * FROM watchlist WHERE guild_id=?').all(gid),
+
+  // Evidence Locker
+  addEvidence: (gid, uid, cid, mid, content, attachments) =>
+    db.prepare(`INSERT INTO evidence_locker (guild_id, user_id, channel_id, message_id, content, attachments, timestamp)
+      VALUES (?,?,?,?,?,?,?)`)
+      .run(gid, uid, cid, mid, content, JSON.stringify(attachments), Date.now()),
+  getEvidence: (gid, uid, limit = 10) =>
+    db.prepare('SELECT * FROM evidence_locker WHERE guild_id=? AND user_id=? ORDER BY timestamp DESC LIMIT ?').all(gid, uid, limit),
+  clearEvidence: (gid, uid) =>
+    db.prepare('DELETE FROM evidence_locker WHERE guild_id=? AND user_id=?').run(gid, uid),
+
+  // Shadow Bans
+  addShadowBan: (gid, uid, addedBy, reason) =>
+    db.prepare(`INSERT INTO shadow_bans (guild_id, user_id, added_by, reason, added_at) VALUES (?,?,?,?,?)
+      ON CONFLICT(guild_id, user_id) DO UPDATE SET added_by=excluded.added_by, reason=excluded.reason, added_at=excluded.added_at`)
+      .run(gid, uid, addedBy, reason, Date.now()),
+  removeShadowBan: (gid, uid) =>
+    db.prepare('DELETE FROM shadow_bans WHERE guild_id=? AND user_id=?').run(gid, uid),
+  isShadowBanned: (gid, uid) =>
+    !!db.prepare('SELECT 1 FROM shadow_bans WHERE guild_id=? AND user_id=?').get(gid, uid),
+  listShadowBans: gid =>
+    db.prepare('SELECT * FROM shadow_bans WHERE guild_id=?').all(gid),
+
+  // Staff Actions
+  logStaffAction: (gid, modId, action, targetId, reason) =>
+    db.prepare(`INSERT INTO staff_actions (guild_id, mod_id, action, target_id, reason, timestamp)
+      VALUES (?,?,?,?,?,?)`)
+      .run(gid, modId, action, targetId, reason || 'No reason', Date.now()),
+  getStaffActions: (gid, modId = null, limit = 15) => modId
+    ? db.prepare('SELECT * FROM staff_actions WHERE guild_id=? AND mod_id=? ORDER BY timestamp DESC LIMIT ?').all(gid, modId, limit)
+    : db.prepare('SELECT * FROM staff_actions WHERE guild_id=? ORDER BY timestamp DESC LIMIT ?').all(gid, limit),
+
+  // Raid Config
+  getRaidConfig: gid =>
+    db.prepare('SELECT * FROM raid_config WHERE guild_id=?').get(gid)
+    || { enabled: 1, join_limit: 10, join_window: 30000, min_age_days: 7, action: 'lockdown' },
+  setRaidConfig: (gid, cfg) =>
+    db.prepare(`INSERT INTO raid_config (guild_id, enabled, join_limit, join_window, min_age_days, action)
+      VALUES (?,?,?,?,?,?)
+      ON CONFLICT(guild_id) DO UPDATE SET enabled=excluded.enabled, join_limit=excluded.join_limit,
+        join_window=excluded.join_window, min_age_days=excluded.min_age_days, action=excluded.action`)
+      .run(gid, cfg.enabled ?? 1, cfg.join_limit ?? 10, cfg.join_window ?? 30000, cfg.min_age_days ?? 7, cfg.action ?? 'lockdown'),
 
   // Lockdown backup
   saveLockdownBackup: (gid, cid, permsJson) =>
