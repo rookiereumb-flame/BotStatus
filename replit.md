@@ -1,11 +1,11 @@
-# Daddy USSR — Discord Security Bot
+# beni — Discord Security Bot
 
 ## Overview
-A Discord security bot with no web dashboard. All logic via slash commands and a persistent SQLite database. Features 14+ security monitors, trust system, role memory, state snapshots with auto-revert, lockdown, suspend system, intelligence systems, and fun commands.
+A Discord security/moderation bot with no web dashboard. All logic via slash commands and a persistent SQLite database. Features 14+ security monitors, trust system, role memory, state snapshots with auto-revert, lockdown, suspend system, Wick-style case/modlog system, intelligence systems, and fun commands.
 
 ## Current Status
-- **Bot Tag**: Daddy USSR#2234
-- **Commands**: 29 slash commands registered globally
+- **Bot Tag**: Kisuke Urahara#2234 (display name: beni)
+- **Commands**: 35+ slash commands registered globally
 - **DB**: SQLite (`security.db`) via `better-sqlite3`
 
 ## Architecture

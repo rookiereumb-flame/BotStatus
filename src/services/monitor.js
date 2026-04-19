@@ -26,7 +26,7 @@ function securityEmbed(color, title, lines, details = []) {
     .setTitle(title)
     .setDescription(desc)
     .setTimestamp()
-    .setFooter({ text: 'Daddy USSR Security Engine' });
+    .setFooter({ text: 'beni Security Engine' });
 }
 
 // ── Log action timestamp ──────────────────────────────────────────────────────
@@ -62,7 +62,7 @@ async function applySuspendedOverwrites(guild, suspendedRole) {
       .filter(ch => ch.permissionOverwrites)
       .map(ch => ch.permissionOverwrites.edit(
         suspendedRole, SUSPEND_DENY,
-        { reason: 'Daddy USSR: Suspended role lockout' }
+        { reason: 'beni: Suspended role lockout' }
       ).catch(() => {}))
   );
 }
@@ -90,7 +90,7 @@ async function suspendUser(member, reason, evidence = '', force = false) {
   if (!suspendedRole) {
     suspendedRole = await guild.roles.create({
       name: 'Suspended', permissions: [], color: 0x808080,
-      reason: 'Daddy USSR: Auto-created Suspended role'
+      reason: 'beni: Auto-created Suspended role'
     }).catch(() => null);
   }
   if (!suspendedRole) return;
@@ -100,8 +100,8 @@ async function suspendUser(member, reason, evidence = '', force = false) {
 
   // Remove non-managed roles, add Suspended (parallel — safe for bots)
   await Promise.all([
-    roles.length ? member.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {}) : Promise.resolve(),
-    member.roles.add(suspendedRole, `Daddy USSR: ${reason}`).catch(() => {})
+    roles.length ? member.roles.remove(roles, `beni: ${reason}`).catch(() => {}) : Promise.resolve(),
+    member.roles.add(suspendedRole, `beni: ${reason}`).catch(() => {})
   ]);
 
   // For bots: zero out managed role permissions and save for restore on unsuspend
@@ -109,7 +109,7 @@ async function suspendUser(member, reason, evidence = '', force = false) {
     const managedRoles = [...member.roles.cache.values()].filter(r => r.managed && r.permissions.bitfield !== 0n);
     await Promise.all(managedRoles.map(async r => {
       db.saveBotManagedPerm(guild.id, member.id, r.id, r.permissions.bitfield.toString());
-      await r.setPermissions(0n, `Daddy USSR: Bot suspended — ${reason}`).catch(() => {});
+      await r.setPermissions(0n, `beni: Bot suspended — ${reason}`).catch(() => {});
     }));
   }
 

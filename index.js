@@ -5,7 +5,9 @@ const {
   ActionRowBuilder, ButtonBuilder, ButtonStyle
 } = require('discord.js');
 
-const db = require('./src/database/db');
+const db    = require('./src/database/db');
+const botDb = require('./src/database');
+const { buildResultEmbed, buildCaseEmbed, sendModlog } = require('./src/utils/modlog');
 const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, securityEmbed } = require('./src/services/monitor');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
@@ -109,7 +111,7 @@ async function autoRevertChannel(guild, deletedCh) {
     const restored = await guild.channels.create({
       name: saved.name, type: saved.type,
       parent: saved.parentId || null,
-      reason: 'Daddy USSR: Auto-revert'
+      reason: 'beni: Auto-revert'
     });
     // Restore permission overwrites correctly
     if (saved.permissionOverwrites?.length) {
@@ -118,7 +120,7 @@ async function autoRevertChannel(guild, deletedCh) {
           id: ow.id, type: ow.type,
           allow: BigInt(ow.allow), deny: BigInt(ow.deny)
         })),
-        'Daddy USSR: Auto-revert'
+        'beni: Auto-revert'
       ).catch(e => console.error('overwrite restore:', e.message));
     }
     await sendLog(guild, securityEmbed(0x00ff88, '🔄 Channel Auto-Reverted',
@@ -142,7 +144,7 @@ async function autoRevertRole(guild, deletedRole) {
     const restored = await guild.roles.create({
       name: saved.name, permissions: BigInt(saved.permissions || '0'),
       color: saved.color || 0, hoist: saved.hoist || false, mentionable: saved.mentionable || false,
-      reason: 'Daddy USSR: Auto-revert'
+      reason: 'beni: Auto-revert'
     });
     await sendLog(guild, securityEmbed(0x00ff88, '🔄 Role Auto-Reverted',
       [
@@ -218,7 +220,7 @@ client.on('channelCreate', async c => {
   // Apply Suspended role deny to new channels immediately
   const sr = c.guild.roles.cache.find(r => r.name === 'Suspended');
   if (sr && c.permissionOverwrites) {
-    await c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'Daddy USSR: Suspended role lockout' }).catch(() => {});
+    await c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'beni: Suspended role lockout' }).catch(() => {});
   }
 });
 
@@ -253,7 +255,7 @@ client.on('roleUpdate', async (oldRole, newRole) => {
   const gotDangerous = DANGEROUS_PERMS.some(p => (addedPerms & p) === p);
   if (gotDangerous) {
     // Immediately revert
-    await newRole.setPermissions(oldRole.permissions, 'Daddy USSR: Dangerous perm grant blocked').catch(() => {});
+    await newRole.setPermissions(oldRole.permissions, 'beni: Dangerous perm grant blocked').catch(() => {});
     const member = await newRole.guild.members.fetch(e.executorId).catch(() => null);
     if (member) await suspendUser(member, 'Dangerous Permission Grant', `Role "${newRole.name}" given: ${DANGEROUS_PERMS.filter(p=>(addedPerms&p)===p).map(p=>Object.entries(PermissionFlagsBits).find(([,v])=>v===p)?.[0]).filter(Boolean).join(', ')}`);
     return;
@@ -262,7 +264,7 @@ client.on('roleUpdate', async (oldRole, newRole) => {
   // Protect Suspended role and bot role from edits by non-immune users
   const botTop = newRole.guild.members.me?.roles.highest;
   if (newRole.name === 'Suspended' || newRole.id === botTop?.id) {
-    await newRole.setPermissions(oldRole.permissions, 'Daddy USSR: Hierarchy protection').catch(() => {});
+    await newRole.setPermissions(oldRole.permissions, 'beni: Hierarchy protection').catch(() => {});
     const member = await newRole.guild.members.fetch(e.executorId).catch(() => null);
     if (member) await suspendUser(member, 'Unauthorized Hierarchy Edit', `Edited protected role "${newRole.name}"`);
   }
@@ -300,7 +302,7 @@ client.on('webhookUpdate', async channel => {
   // Delete the webhook
   const webhooks = await channel.fetchWebhooks().catch(() => null);
   const target   = webhooks?.find(w => w.id === e.targetId);
-  if (target) await target.delete('Daddy USSR: Unauthorized webhook removed').catch(() => {});
+  if (target) await target.delete('beni: Unauthorized webhook removed').catch(() => {});
 
   logAction(channel.guild.id, e.executorId, 'webhook_create');
   await sendLog(channel.guild, securityEmbed(0xff6600,
@@ -352,7 +354,7 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
 
   // Revert vanity immediately
   if (oldGuild.vanityURLCode) {
-    await newGuild.setVanityCode(oldGuild.vanityURLCode, 'Daddy USSR: Vanity URL reverted').catch(() => {});
+    await newGuild.setVanityCode(oldGuild.vanityURLCode, 'beni: Vanity URL reverted').catch(() => {});
   }
   const member = await newGuild.members.fetch(e.executorId).catch(() => null);
   if (member) await suspendUser(member, 'Vanity URL Changed', `${oldGuild.vanityURLCode || 'none'} → ${newGuild.vanityURLCode || 'none'}`);
@@ -405,14 +407,14 @@ client.on('guildMemberAdd', async member => {
       ));
 
       if (action === 'kick') {
-        await member.kick('Daddy USSR: Raid detection').catch(() => {});
+        await member.kick('beni: Raid detection').catch(() => {});
       } else if (action === 'lockdown') {
         // Lock all text channels for @everyone if not already locked
         const everyone = member.guild.roles.everyone;
         for (const [, ch] of member.guild.channels.cache) {
           if (!ch.permissionOverwrites) continue;
           await ch.permissionOverwrites.edit(everyone, { SendMessages: false, AddReactions: false },
-            { reason: 'Daddy USSR: Raid auto-lockdown' }).catch(() => {});
+            { reason: 'beni: Raid auto-lockdown' }).catch(() => {});
         }
       }
     }
@@ -484,10 +486,10 @@ client.on('messageCreate', async message => {
     const currentSlowmode = message.channel.rateLimitPerUser;
     if (freshRates.length >= SLOWMODE_SPIKE_LIMIT && currentSlowmode < 5) {
       // Activity spike — set 5s slowmode
-      await message.channel.setRateLimitPerUser(5, 'Daddy USSR: Activity spike').catch(() => {});
+      await message.channel.setRateLimitPerUser(5, 'beni: Activity spike').catch(() => {});
     } else if (freshRates.length < 4 && currentSlowmode > 0) {
       // Quiet again — remove slowmode
-      await message.channel.setRateLimitPerUser(0, 'Daddy USSR: Activity normalized').catch(() => {});
+      await message.channel.setRateLimitPerUser(0, 'beni: Activity normalized').catch(() => {});
     }
   }
 
@@ -648,7 +650,7 @@ async function doUnsuspend(guildId, userId) {
       const saved = db.getBotManagedPerms(guildId, userId);
       await Promise.all(saved.map(async row => {
         const role = guild.roles.cache.get(row.role_id);
-        if (role) await role.setPermissions(BigInt(row.permissions), 'Daddy USSR: Bot unsuspended — restoring perms').catch(() => {});
+        if (role) await role.setPermissions(BigInt(row.permissions), 'beni: Bot unsuspended — restoring perms').catch(() => {});
       }));
       db.clearBotManagedPerms(guildId, userId);
     }
@@ -687,20 +689,28 @@ const MAGIC8 = [
 // ─── Help pages ───────────────────────────────────────────────────────────────
 function buildHelpPages() {
   return [
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 1/4: Moderation')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 1/5: Moderation')
       .addFields(
-        { name: '/ban @user [reason]',        value: 'Ban a member from the server' },
-        { name: '/unban <user_id> [reason]',   value: 'Unban by user ID' },
-        { name: '/kick @user [reason]',        value: 'Kick a member' },
+        { name: '/warn @user [reason]',           value: 'Issue a warning (creates case + modlog)' },
+        { name: '/ban @user [reason]',             value: 'Ban a member from the server' },
+        { name: '/unban <user_id> [reason]',       value: 'Unban by user ID' },
+        { name: '/kick @user [reason]',            value: 'Kick a member' },
         { name: '/mute @user [duration] [reason]', value: 'Timeout — e.g. `10m` `1h` `28d`' },
-        { name: '/unmute @user',               value: 'Remove timeout' },
-        { name: '/suspend @user [dur] [reason]', value: 'Strip all roles (optional auto-expire)' },
-        { name: '/unsuspend @user',            value: "Restore suspended user's roles" },
-        { name: '/lockdown [reason]',          value: 'Lock all text channels (saves exact overwrites)' },
-        { name: '/unlockdown',                 value: 'Restore channels to exact pre-lockdown state' }
+        { name: '/unmute @user',                   value: 'Remove timeout' },
+        { name: '/suspend @user [dur] [reason]',   value: 'Strip all roles (optional auto-expire)' },
+        { name: '/unsuspend @user',                value: "Restore suspended user's roles" },
+        { name: '/lockdown [reason]',              value: 'Lock all text channels (saves exact overwrites)' },
+        { name: '/unlockdown',                     value: 'Restore channels to exact pre-lockdown state' },
+        { name: '/purge <amount> [@user]',         value: 'Bulk-delete up to 100 messages (<14 days old)' },
+        { name: '/shadow-ban @user [reason]',      value: 'Silently delete all messages from a user' },
+        { name: '/shadow-unban @user',             value: 'Remove shadow ban' },
+        { name: '/cases view [id|@user]',          value: 'View a case or list all cases for a user' },
+        { name: '/cases modify <id> <field> <val>',value: 'Edit a case reason or duration (Admin)' },
+        { name: '/notes add|remove|view|delall',   value: 'Manage staff notes on users' },
+        { name: '/setmodlog #channel',             value: 'Set the channel for case logs (Admin)' }
       ).setFooter({ text: 'Page 1/5 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 2/5: Anti-Nuke & Security')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 2/5: Anti-Nuke & Security')
       .addFields(
         { name: '/config [type] [limit] [time]', value: 'Set anti-nuke thresholds — e.g. `3 / 10s`' },
         { name: '/setup [#channel]',             value: 'Set security log channel' },
@@ -721,7 +731,7 @@ function buildHelpPages() {
         '• **Raid detection** — join spike → lockdown/kick/alert'
       }).setFooter({ text: 'Page 2/5 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 3/4: Snapshots & Revert')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 3/4: Snapshots & Revert')
       .addFields(
         { name: '/snapshot',         value: 'View last saved server state (channels, roles, count)' },
         { name: '/revert channels',  value: 'Restore missing channels + permission overwrites' },
@@ -737,7 +747,7 @@ function buildHelpPages() {
         '*All trusted users are immune to @everyone suspend*'
       }).setFooter({ text: 'Page 3/5 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 4/5: Intelligence Systems')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 4/5: Intelligence Systems')
       .addFields(
         { name: '/watchlist add|remove|list',     value: 'Silent watchlist — alerts staff when watched user sends a message' },
         { name: '/evidence view|clear [@user]',   value: 'View deleted messages stored in the evidence locker' },
@@ -754,7 +764,7 @@ function buildHelpPages() {
         '• **Dynamic slowmode** — spikes (12 msg/10s) auto-set 5s delay; clears when quiet'
       }).setFooter({ text: 'Page 4/5 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Daddy USSR — Page 5/5: Fun & Features')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 5/5: Fun & Features')
       .addFields(
         { name: '/ask [question]',               value: '🎱 Magic 8-Ball' },
         { name: '/say [message]',                value: 'Send a message as the bot (DMs & User App supported)' },
@@ -763,7 +773,7 @@ function buildHelpPages() {
         { name: '/starboard-disable',            value: 'Disable starboard' }
       )
       .addFields({ name: '⏱️ Duration Format', value: '`10s` · `5m` · `2h` · `1d` · `1w` — used in /mute /suspend /config' })
-      .setFooter({ text: 'Page 5/5 • Daddy USSR Security Engine' })
+      .setFooter({ text: 'Page 5/5 • beni Security Engine' })
   ];
 }
 
@@ -827,9 +837,10 @@ client.on('interactionCreate', async interaction => {
       if (!target.bannable) return interaction.reply({ content: '❌ Cannot ban this user (insufficient hierarchy).', ephemeral: true });
       await target.ban({ reason });
       db.logStaffAction(g.id, m.id, 'ban', user.id, reason);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('🔨 Banned')
-        .addFields({ name: 'User', value: `${user.tag}`, inline: true }, { name: 'Reason', value: reason, inline: true })
-        .setTimestamp()] });
+      const banCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'ban', reason);
+      const banCaseData = botDb.getCase(g.id, banCaseId);
+      await sendModlog(g, buildCaseEmbed(banCaseData, user, m.user), botDb);
+      return interaction.reply({ embeds: [buildResultEmbed('ban', reason, m.user, user)] });
     }
 
     // ── /unban ────────────────────────────────────────────────────────
@@ -852,9 +863,10 @@ client.on('interactionCreate', async interaction => {
       if (!target.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
       await target.kick(reason);
       db.logStaffAction(g.id, m.id, 'kick', user.id, reason);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xe67e22).setTitle('👢 Kicked')
-        .addFields({ name: 'User', value: `${user.tag}`, inline: true }, { name: 'Reason', value: reason, inline: true })
-        .setTimestamp()] });
+      const kickCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'kick', reason);
+      const kickCaseData = botDb.getCase(g.id, kickCaseId);
+      await sendModlog(g, buildCaseEmbed(kickCaseData, user, m.user), botDb);
+      return interaction.reply({ embeds: [buildResultEmbed('kick', reason, m.user, user)] });
     }
 
     // ── /mute ─────────────────────────────────────────────────────────
@@ -867,12 +879,13 @@ client.on('interactionCreate', async interaction => {
       if (durMs > 2419200000) return interaction.reply({ content: '❌ Max mute is 28 days.', ephemeral: true });
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+      const durFmt = formatDuration(durMs);
       await target.timeout(durMs, reason);
-      db.logStaffAction(g.id, m.id, 'mute', user.id, `${formatDuration(durMs)} — ${reason}`);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xf39c12).setTitle('🔇 Muted')
-        .addFields({ name: 'User', value: `${user.tag}`, inline: true },
-                   { name: 'Duration', value: formatDuration(durMs), inline: true },
-                   { name: 'Reason', value: reason, inline: true }).setTimestamp()] });
+      db.logStaffAction(g.id, m.id, 'mute', user.id, `${durFmt} — ${reason}`);
+      const muteCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'mute', reason, durFmt);
+      const muteCaseData = botDb.getCase(g.id, muteCaseId);
+      await sendModlog(g, buildCaseEmbed(muteCaseData, user, m.user), botDb);
+      return interaction.reply({ embeds: [buildResultEmbed('mute', reason, m.user, user, { duration: durFmt })] });
     }
 
     // ── /unmute ───────────────────────────────────────────────────────
@@ -974,7 +987,7 @@ client.on('interactionCreate', async interaction => {
         // Fully restore ALL overwrites to exact pre-lockdown state
         await ch.permissionOverwrites.set(
           savedOverwrites.map(ow => ({ id: ow.id, type: ow.type, allow: BigInt(ow.allow), deny: BigInt(ow.deny) })),
-          'Daddy USSR: Lockdown lifted — exact restore'
+          'beni: Lockdown lifted — exact restore'
         ).catch(e => console.error(`Restore ${ch.name}:`, e.message));
         restored++;
       }
@@ -1089,7 +1102,7 @@ client.on('interactionCreate', async interaction => {
           name: 'Suspended',
           permissions: [],
           color: 0x808080,
-          reason: 'Daddy USSR: Suspended role setup'
+          reason: 'beni: Suspended role setup'
         }).catch(() => null);
       }
       if (!sr) return interaction.editReply({ content: '❌ Failed to create the Suspended role. Make sure the bot has **Manage Roles**.' });
@@ -1097,7 +1110,7 @@ client.on('interactionCreate', async interaction => {
       // 2. Apply deny overwrites to every channel in parallel
       const channels = [...g.channels.cache.values()].filter(c => c.permissionOverwrites);
       const results = await Promise.allSettled(
-        channels.map(c => c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'Daddy USSR: setup-suspend' }))
+        channels.map(c => c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'beni: setup-suspend' }))
       );
       const ok     = results.filter(r => r.status === 'fulfilled').length;
       const failed = results.filter(r => r.status === 'rejected').length;
@@ -1115,7 +1128,7 @@ client.on('interactionCreate', async interaction => {
             '• Every snapshot (6h) re-syncs the overwrites across all channels', inline: false }
         )
         .setTimestamp()
-        .setFooter({ text: 'Daddy USSR Security Engine' });
+        .setFooter({ text: 'beni Security Engine' });
 
       return interaction.editReply({ embeds: [embed] });
     }
@@ -1200,7 +1213,7 @@ client.on('interactionCreate', async interaction => {
       // Ensure Suspended role exists
       let sr = g.roles.cache.find(r => r.name === 'Suspended');
       if (!sr) {
-        sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000, reason: 'Daddy USSR: Suspended role' }).catch(() => null);
+        sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000, reason: 'beni: Suspended role' }).catch(() => null);
       }
       if (!sr) return interaction.editReply({ content: '❌ Could not create Suspended role. Check bot permissions.' });
 
@@ -1215,8 +1228,8 @@ client.on('interactionCreate', async interaction => {
 
       // Strip non-managed roles and add Suspended (parallel, safe for bots)
       await Promise.all([
-        roles.length ? target.roles.remove(roles, `Daddy USSR: ${reason}`).catch(() => {}) : Promise.resolve(),
-        target.roles.add(sr, `Daddy USSR: ${reason}`).catch(() => {})
+        roles.length ? target.roles.remove(roles, `beni: ${reason}`).catch(() => {}) : Promise.resolve(),
+        target.roles.add(sr, `beni: ${reason}`).catch(() => {})
       ]);
 
       // For bots: zero out managed role permissions and save for restore on unsuspend
@@ -1224,7 +1237,7 @@ client.on('interactionCreate', async interaction => {
         const managedRoles = [...target.roles.cache.values()].filter(r => r.managed && r.permissions.bitfield !== 0n);
         await Promise.all(managedRoles.map(async r => {
           db.saveBotManagedPerm(g.id, user.id, r.id, r.permissions.bitfield.toString());
-          await r.setPermissions(0n, `Daddy USSR: Bot suspended — ${reason}`).catch(() => {});
+          await r.setPermissions(0n, `beni: Bot suspended — ${reason}`).catch(() => {});
         }));
       }
 
@@ -1237,6 +1250,9 @@ client.on('interactionCreate', async interaction => {
       }
 
       db.logStaffAction(g.id, m.id, 'suspend', user.id, reason);
+      const suspCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'suspend', reason, durMs ? expireText : null);
+      const suspCaseData = botDb.getCase(g.id, suspCaseId);
+      await sendModlog(g, buildCaseEmbed(suspCaseData, user, m.user), botDb);
       await sendLog(g, securityEmbed(0xff0000,
         `⛔ ${target.user.username} has been suspended!`,
         [
@@ -1285,7 +1301,7 @@ client.on('interactionCreate', async interaction => {
         const saved = db.getBotManagedPerms(g.id, user.id);
         await Promise.all(saved.map(async row => {
           const role = g.roles.cache.get(row.role_id);
-          if (role) await role.setPermissions(BigInt(row.permissions), 'Daddy USSR: Bot unsuspended — restoring perms').catch(() => {});
+          if (role) await role.setPermissions(BigInt(row.permissions), 'beni: Bot unsuspended — restoring perms').catch(() => {});
         }));
         restoredPerms = saved.length;
         db.clearBotManagedPerms(g.id, user.id);
@@ -1424,7 +1440,7 @@ client.on('interactionCreate', async interaction => {
         .addFields(
           { name: `🤖 Other Bots — ${otherBots.size} total (${adminBots.size + elevBots.size} flagged)`, value: botValue.slice(0, 1024) },
           { name: `🔰 Dangerous Roles — ${dangerRoles.length} found`, value: roleValue.slice(0, 1024) }
-        ).setTimestamp().setFooter({ text: 'Daddy USSR Security Scan' });
+        ).setTimestamp().setFooter({ text: 'beni Security Scan' });
 
       const embed2 = new EmbedBuilder().setColor(0x3498db)
         .addFields(
@@ -1478,12 +1494,12 @@ client.on('interactionCreate', async interaction => {
             const created = await g.channels.create({
               name: saved.name, type: saved.type,
               parent: saved.parentId || null,
-              reason: 'Daddy USSR: Manual revert'
+              reason: 'beni: Manual revert'
             }).catch(() => null);
             if (created && saved.permissionOverwrites?.length) {
               await created.permissionOverwrites.set(
                 saved.permissionOverwrites.map(ow => ({ id: ow.id, type: ow.type, allow: BigInt(ow.allow), deny: BigInt(ow.deny) })),
-                'Daddy USSR: Restore overwrites'
+                'beni: Restore overwrites'
               ).catch(() => {});
             }
             if (created) chRestored++;
@@ -1500,7 +1516,7 @@ client.on('interactionCreate', async interaction => {
               name: saved.name, color: saved.color || 0,
               permissions: BigInt(saved.permissions || '0'),
               hoist: saved.hoist || false, mentionable: saved.mentionable || false,
-              reason: 'Daddy USSR: Manual revert'
+              reason: 'beni: Manual revert'
             }).catch(() => null);
             roleRestored++;
           }
@@ -1578,7 +1594,10 @@ client.on('interactionCreate', async interaction => {
       if (user.id === m.id) return interaction.reply({ content: '❌ Cannot shadow-ban yourself.', ephemeral: true });
       db.addShadowBan(g.id, user.id, m.id, reason);
       db.logStaffAction(g.id, m.id, 'shadow-ban', user.id, reason);
-      return interaction.reply({ content: `✅ **${user.tag}** is now shadow-banned. Their messages will be silently deleted.`, ephemeral: true });
+      const sbCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'shadowban', reason);
+      const sbCaseData = botDb.getCase(g.id, sbCaseId);
+      await sendModlog(g, buildCaseEmbed(sbCaseData, user, m.user), botDb);
+      return interaction.reply({ embeds: [buildResultEmbed('shadowban', reason, m.user, user)], ephemeral: true });
     }
 
     // ── /shadow-unban ─────────────────────────────────────────────────
@@ -1645,6 +1664,184 @@ client.on('interactionCreate', async interaction => {
       }
     }
 
+    // ── /warn ─────────────────────────────────────────────────────────
+    if (cn === 'warn') {
+      if (!hasBotPerm(m, PermissionFlagsBits.ModerateMembers))
+        return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
+      const user = o.getUser('user'), reason = o.getString('reason') || 'No reason.';
+      const target = await g.members.fetch(user.id).catch(() => null);
+      if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+      botDb.addWarning(g.id, user.id, m.id, reason, 1);
+      db.logStaffAction(g.id, m.id, 'warn', user.id, reason);
+      const warnCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'warn', reason);
+      const warnCaseData = botDb.getCase(g.id, warnCaseId);
+      await sendModlog(g, buildCaseEmbed(warnCaseData, user, m.user), botDb);
+      return interaction.reply({ embeds: [buildResultEmbed('warn', reason, m.user, user)] });
+    }
+
+    // ── /setmodlog ────────────────────────────────────────────────────
+    if (cn === 'setmodlog') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator))
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      const ch = o.getChannel('channel');
+      botDb.setModlogChannel(g.id, ch.id);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Mod Log Channel Set')
+        .setDescription(`Moderation case logs → ${ch}`).setTimestamp()] });
+    }
+
+    // ── /cases ────────────────────────────────────────────────────────
+    if (cn === 'cases') {
+      if (!hasBotPerm(m, PermissionFlagsBits.ModerateMembers))
+        return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
+      const sub = o.getSubcommand();
+
+      if (sub === 'view') {
+        const caseId = o.getInteger('case_id');
+        const user   = o.getUser('user');
+
+        if (caseId) {
+          const c = botDb.getCase(g.id, caseId);
+          if (!c) return interaction.reply({ content: `❌ Case #${caseId} not found.`, ephemeral: true });
+          const targetUser = await client.users.fetch(c.user_id).catch(() => null);
+          const modUser    = await client.users.fetch(c.moderator_id).catch(() => null);
+          const embed = buildCaseEmbed(c, targetUser || { tag: c.user_id, id: c.user_id }, modUser || { username: c.moderator_id })
+            .setTitle(`Case #${c.case_id}`);
+          if (c.evidence) embed.addFields({ name: '🔗 Evidence', value: c.evidence, inline: false });
+          return interaction.reply({ embeds: [embed] });
+        }
+
+        if (user) {
+          const cases = botDb.getCases(g.id, user.id);
+          if (!cases.length) return interaction.reply({ content: `No cases found for ${user.tag}.`, ephemeral: true });
+          const ACTION_LABELS = { warn:'WARN', ban:'BAN', kick:'KICK', mute:'TIMEOUT', suspend:'QUARANTINE', shadowban:'SHADOW-BAN' };
+          const lines = cases.slice(0, 20).map(c => {
+            const label = ACTION_LABELS[c.action] || c.action.toUpperCase();
+            return `✅ **${c.case_id}** [+${label}] <t:${Math.floor(c.timestamp/1000)}:R>`;
+          });
+          return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2)
+            .setTitle(`${user.username} Mod Cases (${cases.length}):`)
+            .setDescription(lines.join('\n'))
+            .setThumbnail(user.displayAvatarURL())
+            .setTimestamp()] });
+        }
+
+        return interaction.reply({ content: '❌ Provide either `case_id` or `user`.', ephemeral: true });
+      }
+
+      if (sub === 'modify') {
+        if (!m.permissions.has(PermissionFlagsBits.Administrator))
+          return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+        const caseId = o.getInteger('case_id');
+        const field  = o.getString('field');
+        const value  = o.getString('value');
+        const c = botDb.getCase(g.id, caseId);
+        if (!c) return interaction.reply({ content: `❌ Case #${caseId} not found.`, ephemeral: true });
+
+        const allowed = { reason: true, duration: true };
+        if (!allowed[field])
+          return interaction.reply({ content: '❌ Editable fields: `reason`, `duration`', ephemeral: true });
+
+        botDb.updateCase(g.id, caseId, { [field]: value });
+        await sendModlog(g, new EmbedBuilder().setColor(0x3498DB)
+          .addFields(
+            { name: 'Case Modified:', value: `${caseId} ✅`, inline: false },
+            { name: 'Field:',         value: field,           inline: false },
+            { name: 'New Value:',     value: value,           inline: false },
+            { name: 'Modified by:',   value: `${m.user.username} 👑`, inline: false }
+          ).setTimestamp(), botDb);
+
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498DB)
+          .setTitle(`✅ Case #${caseId} Updated`)
+          .addFields(
+            { name: 'Field',     value: field, inline: true },
+            { name: 'New Value', value: value, inline: true }
+          ).setTimestamp()] });
+      }
+    }
+
+    // ── /notes ────────────────────────────────────────────────────────
+    if (cn === 'notes') {
+      if (!hasBotPerm(m, PermissionFlagsBits.ModerateMembers))
+        return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
+      const sub = o.getSubcommand();
+
+      if (sub === 'add') {
+        const user    = o.getUser('user');
+        const content = o.getString('text');
+        const noteId  = botDb.addNote(g.id, user.id, m.id, content);
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498DB)
+          .setTitle('📝 Note Added')
+          .addFields(
+            { name: 'User',    value: `${user.tag} \`[${user.id}]\``, inline: false },
+            { name: 'Note ID', value: `${noteId}`,                     inline: true  },
+            { name: 'Content', value: content,                         inline: false }
+          ).setTimestamp()], ephemeral: true });
+      }
+
+      if (sub === 'remove') {
+        const user   = o.getUser('user');
+        const noteId = o.getInteger('note_id');
+        const ok     = botDb.removeNote(g.id, user.id, noteId);
+        return interaction.reply({ content: ok ? `✅ Note #${noteId} removed.` : `❌ Note #${noteId} not found for that user.`, ephemeral: true });
+      }
+
+      if (sub === 'view') {
+        const user  = o.getUser('user');
+        const notes = botDb.getNotes(g.id, user.id);
+        if (!notes.length) return interaction.reply({ content: `No notes found for ${user.tag}.`, ephemeral: true });
+        const lines = notes.map(n => `**#${n.id}** — <t:${Math.floor(n.timestamp/1000)}:R> by <@${n.author_id}>\n> ${n.content}`);
+        const chunks = [];
+        let cur = '';
+        for (const line of lines) {
+          if ((cur + '\n\n' + line).length > 4000) { chunks.push(cur); cur = line; }
+          else cur = cur ? cur + '\n\n' + line : line;
+        }
+        if (cur) chunks.push(cur);
+        const embeds = chunks.map((chunk, i) => new EmbedBuilder().setColor(0x3498DB)
+          .setTitle(i === 0 ? `📝 Notes — ${user.tag} (${notes.length})` : null)
+          .setDescription(chunk)
+          .setTimestamp());
+        return interaction.reply({ embeds: embeds.slice(0, 10), ephemeral: true });
+      }
+
+      if (sub === 'delall') {
+        if (!m.permissions.has(PermissionFlagsBits.Administrator))
+          return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+        const user    = o.getUser('user');
+        const deleted = botDb.deleteAllNotes(g.id, user.id);
+        return interaction.reply({ content: `✅ Deleted **${deleted}** note(s) for ${user.tag}.`, ephemeral: true });
+      }
+    }
+
+    // ── /purge ────────────────────────────────────────────────────────
+    if (cn === 'purge') {
+      if (!m.permissions.has(PermissionFlagsBits.ManageMessages))
+        return interaction.reply({ content: '❌ You need Manage Messages permission.', ephemeral: true });
+
+      const amount  = Math.min(o.getInteger('amount'), 100);
+      const target  = o.getUser('user');
+
+      if (amount < 1) return interaction.reply({ content: '❌ Amount must be at least 1.', ephemeral: true });
+
+      await interaction.deferReply({ ephemeral: true });
+
+      const messages = await interaction.channel.messages.fetch({ limit: 100 }).catch(() => null);
+      if (!messages) return interaction.editReply({ content: '❌ Could not fetch messages.' });
+
+      const fourteenDaysAgo = Date.now() - 14 * 24 * 60 * 60 * 1000;
+      let filtered = [...messages.values()].filter(msg => msg.createdTimestamp > fourteenDaysAgo);
+
+      if (target) filtered = filtered.filter(msg => msg.author.id === target.id);
+
+      const toDelete = filtered.slice(0, amount);
+      if (!toDelete.length) return interaction.editReply({ content: '❌ No eligible messages found (must be under 14 days old).' });
+
+      const deleted = await interaction.channel.bulkDelete(toDelete, true).catch(() => null);
+      const count   = deleted?.size ?? 0;
+
+      return interaction.editReply({ content: `✅ Deleted **${count}** message${count !== 1 ? 's' : ''}${target ? ` from ${target.tag}` : ''}.` });
+    }
+
     // ── /help ─────────────────────────────────────────────────────────
     if (cn === 'help') {
       const pages = buildHelpPages();
@@ -1664,7 +1861,7 @@ client.on('interactionCreate', async interaction => {
 //  READY
 // ═══════════════════════════════════════════════════════════════════
 client.once('ready', async () => {
-  console.log(`🚀 Daddy USSR Online: ${client.user.tag}`);
+  console.log(`🚀 beni Online: ${client.user.tag}`);
   await takeSnapshots();
   console.log(`📸 Snapshot saved for ${client.guilds.cache.size} guild(s).`);
   const pending = db.getAllSuspensionTimers();
@@ -1705,11 +1902,34 @@ const commands = [
   { name: 'ask',  description: 'Ask the Magic 8-Ball',      integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your question' }] },
 
   // Moderation
+  { name:'warn',   description:'Warn a member', options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
   { name:'ban',    description:'Ban a member',    options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
   { name:'unban',  description:'Unban a user',    options:[{name:'user_id',type:3,required:true,description:'User ID'},{name:'reason',type:3,description:'Reason'}] },
   { name:'kick',   description:'Kick a member',   options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
   { name:'mute',   description:'Timeout a member', options:[{name:'user',type:6,required:true,description:'User'},{name:'duration',type:3,description:'e.g. 10m 1h 28d'},{name:'reason',type:3,description:'Reason'}] },
   { name:'unmute', description:'Remove a timeout', options:[{name:'user',type:6,required:true,description:'User'}] },
+  { name:'purge',  description:'Delete messages (max 100)', options:[
+    {name:'amount',type:4,required:true,description:'Number of messages to delete',min_value:1,max_value:100},
+    {name:'user',  type:6,description:'Delete messages from a specific user only'}
+  ]},
+  { name:'cases', description:'View or modify moderation cases', options:[
+    {name:'view', type:1, description:'View a case or all cases for a user', options:[
+      {name:'case_id',type:4,description:'Case ID to look up'},
+      {name:'user',   type:6,description:'Show all cases for this user'}
+    ]},
+    {name:'modify', type:1, description:'Modify a case field (Admin)', options:[
+      {name:'case_id',type:4,required:true,description:'Case ID'},
+      {name:'field',  type:3,required:true,description:'Field to edit',choices:[{name:'reason',value:'reason'},{name:'duration',value:'duration'}]},
+      {name:'value',  type:3,required:true,description:'New value'}
+    ]}
+  ]},
+  { name:'notes', description:'Manage user notes', options:[
+    {name:'add',    type:1, description:'Add a note to a user', options:[{name:'user',type:6,required:true,description:'User'},{name:'text',type:3,required:true,description:'Note content'}]},
+    {name:'remove', type:1, description:'Remove a specific note', options:[{name:'user',type:6,required:true,description:'User'},{name:'note_id',type:4,required:true,description:'Note ID'}]},
+    {name:'view',   type:1, description:'View all notes for a user', options:[{name:'user',type:6,required:true,description:'User'}]},
+    {name:'delall', type:1, description:'Delete all notes for a user (Admin)', options:[{name:'user',type:6,required:true,description:'User'}]}
+  ]},
+  { name:'setmodlog', description:'Set the moderation log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Channel for case logs',channel_types:[0]}] },
 
   // Fun / Features
   { name:'counting-toggle',  description:'Enable/disable counting game', options:[

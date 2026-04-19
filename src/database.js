@@ -63,13 +63,6 @@ try {
   db.exec(`ALTER TABLE guild_config ADD COLUMN automod_punishment_duration TEXT DEFAULT '1h';`);
 }
 
-// Add missing columns to warnings table if they don't exist
-try {
-  db.prepare('SELECT is_manual FROM warnings LIMIT 1').get();
-} catch (e) {
-  db.exec(`ALTER TABLE warnings ADD COLUMN is_manual INTEGER DEFAULT 1;`);
-}
-
 db.exec(`
 
   CREATE TABLE IF NOT EXISTS warnings (
@@ -857,3 +850,71 @@ module.exports = {
     stmt.run(channelId, guildId);
   }
 };
+
+// ─── Modlog channel ───────────────────────────────────────────────────────────
+try { db.prepare('SELECT modlog_channel_id FROM guild_config LIMIT 1').get(); }
+catch (e) { db.exec(`ALTER TABLE guild_config ADD COLUMN modlog_channel_id TEXT;`); }
+
+const setModlogChannel = (guildId, channelId) => {
+  db.prepare(`INSERT INTO guild_config (guild_id, modlog_channel_id) VALUES (?, ?)
+    ON CONFLICT(guild_id) DO UPDATE SET modlog_channel_id = ?`)
+    .run(guildId, channelId, channelId);
+};
+
+// ─── Evidence column on cases ─────────────────────────────────────────────────
+try { db.prepare('SELECT evidence FROM cases LIMIT 1').get(); }
+catch (e) { db.exec(`ALTER TABLE cases ADD COLUMN evidence TEXT;`); }
+
+const createCaseWithEvidence = (guildId, userId, moderatorId, action, reason, duration = null, evidence = null) => {
+  const caseId = getNextCaseId(guildId);
+  db.prepare(`INSERT INTO cases (case_id, guild_id, user_id, moderator_id, action, reason, duration, evidence, timestamp)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+    .run(caseId, guildId, userId, moderatorId, action, reason, duration, evidence, Date.now());
+  return caseId;
+};
+
+// ─── Notes table ─────────────────────────────────────────────────────────────
+try { db.prepare('SELECT * FROM user_notes LIMIT 1').get(); }
+catch (e) {
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_notes (
+      id          INTEGER PRIMARY KEY AUTOINCREMENT,
+      guild_id    TEXT NOT NULL,
+      user_id     TEXT NOT NULL,
+      author_id   TEXT NOT NULL,
+      content     TEXT NOT NULL,
+      timestamp   INTEGER NOT NULL
+    );
+  `);
+}
+
+const addNote = (guildId, userId, authorId, content) => {
+  const info = db.prepare(`INSERT INTO user_notes (guild_id, user_id, author_id, content, timestamp)
+    VALUES (?, ?, ?, ?, ?)`)
+    .run(guildId, userId, authorId, content, Date.now());
+  return info.lastInsertRowid;
+};
+
+const removeNote = (guildId, userId, noteId) => {
+  const info = db.prepare('DELETE FROM user_notes WHERE guild_id = ? AND user_id = ? AND id = ?')
+    .run(guildId, userId, noteId);
+  return info.changes > 0;
+};
+
+const getNotes = (guildId, userId) => {
+  return db.prepare('SELECT * FROM user_notes WHERE guild_id = ? AND user_id = ? ORDER BY timestamp ASC')
+    .all(guildId, userId);
+};
+
+const deleteAllNotes = (guildId, userId) => {
+  const info = db.prepare('DELETE FROM user_notes WHERE guild_id = ? AND user_id = ?')
+    .run(guildId, userId);
+  return info.changes;
+};
+
+module.exports.setModlogChannel      = setModlogChannel;
+module.exports.createCaseWithEvidence = createCaseWithEvidence;
+module.exports.addNote               = addNote;
+module.exports.removeNote            = removeNote;
+module.exports.getNotes              = getNotes;
+module.exports.deleteAllNotes        = deleteAllNotes;
