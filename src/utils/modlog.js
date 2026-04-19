@@ -89,6 +89,8 @@ function buildCaseEmbed(caseData, targetUser, modUser) {
     : null;
   if (avatarUrl) embed.setThumbnail(avatarUrl);
 
+  if (caseData.evidence) embed.setImage(caseData.evidence);
+
   return embed;
 }
 

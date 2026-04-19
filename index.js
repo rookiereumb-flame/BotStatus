@@ -83,6 +83,30 @@ function hasBotPerm(member, discordPerm) {
   return member.permissions.has(discordPerm);
 }
 
+// Build a DM embed sent to the target user on mod actions
+const DM_ACTION_LABELS = {
+  warn: 'Warned', ban: 'Banned', kick: 'Kicked',
+  mute: 'Timed Out', suspend: 'Quarantined', shadowban: 'Shadow-Banned'
+};
+const DM_ACTION_COLORS = {
+  warn: 0xFFC107, ban: 0xED4245, kick: 0xFFA500,
+  mute: 0xF39C12, suspend: 0xE67E22, shadowban: 0x9B59B6
+};
+function buildDmEmbed(action, guildName, reason, proofUrl = null, duration = null) {
+  const key   = action.toLowerCase();
+  const label = DM_ACTION_LABELS[key] || action;
+  const color = DM_ACTION_COLORS[key] || 0x5865f2;
+  const embed = new EmbedBuilder()
+    .setColor(color)
+    .setTitle(`You have been ${label}`)
+    .addFields({ name: '📋 Server', value: guildName, inline: false })
+    .addFields({ name: '📋 Reason', value: reason, inline: false });
+  if (duration) embed.addFields({ name: '⏱️ Duration', value: duration, inline: false });
+  if (proofUrl) embed.setImage(proofUrl);
+  embed.setTimestamp();
+  return embed;
+}
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds, GatewayIntentBits.GuildMembers,
@@ -707,7 +731,8 @@ function buildHelpPages() {
         { name: '/cases view [id|@user]',          value: 'View a case or list all cases for a user' },
         { name: '/cases modify <id> <field> <val>',value: 'Edit a case reason or duration (Admin)' },
         { name: '/notes add|remove|view|delall',   value: 'Manage staff notes on users' },
-        { name: '/setmodlog #channel',             value: 'Set the channel for case logs (Admin)' }
+        { name: '/setmodlog #channel',             value: 'Set channel for **case logs only** — warn/ban/kick/mute/quarantine/shadow-ban (Admin)' },
+        { name: '/setbotlogs #channel',            value: 'Set channel for **all bot & mod action logs** — security events, anti-nuke, joins, etc. (Admin)' }
       ).setFooter({ text: 'Page 1/5 • Use buttons to navigate' }),
 
     new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 2/5: Anti-Nuke & Security')
@@ -832,12 +857,16 @@ client.on('interactionCreate', async interaction => {
       if (!hasBotPerm(m, PermissionFlagsBits.BanMembers))
         return interaction.reply({ content: '❌ You need Ban Members permission.', ephemeral: true });
       const user = o.getUser('user'), reason = o.getString('reason') || 'No reason.';
+      const dmUser   = o.getBoolean('dm');
+      const proofAtt = o.getAttachment('proof');
+      const proofUrl = proofAtt?.url || null;
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found in server.', ephemeral: true });
       if (!target.bannable) return interaction.reply({ content: '❌ Cannot ban this user (insufficient hierarchy).', ephemeral: true });
+      if (dmUser) await user.send({ embeds: [buildDmEmbed('ban', g.name, reason, proofUrl)] }).catch(() => {});
       await target.ban({ reason });
       db.logStaffAction(g.id, m.id, 'ban', user.id, reason);
-      const banCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'ban', reason);
+      const banCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'ban', reason, null, proofUrl);
       const banCaseData = botDb.getCase(g.id, banCaseId);
       await sendModlog(g, buildCaseEmbed(banCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('ban', reason, m.user, user)] });
@@ -858,12 +887,16 @@ client.on('interactionCreate', async interaction => {
       if (!hasBotPerm(m, PermissionFlagsBits.KickMembers))
         return interaction.reply({ content: '❌ You need Kick Members permission.', ephemeral: true });
       const user = o.getUser('user'), reason = o.getString('reason') || 'No reason.';
+      const dmUser   = o.getBoolean('dm');
+      const proofAtt = o.getAttachment('proof');
+      const proofUrl = proofAtt?.url || null;
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
       if (!target.kickable) return interaction.reply({ content: '❌ Cannot kick this user.', ephemeral: true });
+      if (dmUser) await user.send({ embeds: [buildDmEmbed('kick', g.name, reason, proofUrl)] }).catch(() => {});
       await target.kick(reason);
       db.logStaffAction(g.id, m.id, 'kick', user.id, reason);
-      const kickCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'kick', reason);
+      const kickCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'kick', reason, null, proofUrl);
       const kickCaseData = botDb.getCase(g.id, kickCaseId);
       await sendModlog(g, buildCaseEmbed(kickCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('kick', reason, m.user, user)] });
@@ -874,15 +907,19 @@ client.on('interactionCreate', async interaction => {
       if (!hasBotPerm(m, PermissionFlagsBits.ModerateMembers))
         return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
       const user = o.getUser('user'), durRaw = o.getString('duration') || '10m', reason = o.getString('reason') || 'No reason.';
+      const dmUser   = o.getBoolean('dm');
+      const proofAtt = o.getAttachment('proof');
+      const proofUrl = proofAtt?.url || null;
       const durMs = parseDuration(durRaw);
       if (!durMs) return interaction.reply({ content: '❌ Invalid duration. Use `10m`, `1h`, `1d`.', ephemeral: true });
       if (durMs > 2419200000) return interaction.reply({ content: '❌ Max mute is 28 days.', ephemeral: true });
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
       const durFmt = formatDuration(durMs);
+      if (dmUser) await user.send({ embeds: [buildDmEmbed('mute', g.name, reason, proofUrl, durFmt)] }).catch(() => {});
       await target.timeout(durMs, reason);
       db.logStaffAction(g.id, m.id, 'mute', user.id, `${durFmt} — ${reason}`);
-      const muteCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'mute', reason, durFmt);
+      const muteCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'mute', reason, durFmt, proofUrl);
       const muteCaseData = botDb.getCase(g.id, muteCaseId);
       await sendModlog(g, buildCaseEmbed(muteCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('mute', reason, m.user, user, { duration: durFmt })] });
@@ -1179,10 +1216,13 @@ client.on('interactionCreate', async interaction => {
       if (!hasSuspendPerm)
         return interaction.reply({ content: '❌ You need **Manage Roles** or **Administrator** to use this.', ephemeral: true });
 
-      const user   = o.getUser('user');
-      const reason = o.getString('reason') || 'Manual suspension';
-      const durRaw = o.getString('duration');
-      const durMs  = durRaw ? parseDuration(durRaw) : null;
+      const user     = o.getUser('user');
+      const reason   = o.getString('reason') || 'Manual suspension';
+      const durRaw   = o.getString('duration');
+      const durMs    = durRaw ? parseDuration(durRaw) : null;
+      const dmUser   = o.getBoolean('dm');
+      const proofAtt = o.getAttachment('proof');
+      const proofUrl = proofAtt?.url || null;
       if (durRaw && !durMs)
         return interaction.reply({ content: '❌ Invalid duration. Use `10m`, `1h`, `1d`.', ephemeral: true });
 
@@ -1249,8 +1289,9 @@ client.on('interactionCreate', async interaction => {
         scheduleUnsuspend(g.id, user.id, durMs);
       }
 
+      if (dmUser) await user.send({ embeds: [buildDmEmbed('suspend', g.name, reason, proofUrl, durMs ? expireText : null)] }).catch(() => {});
       db.logStaffAction(g.id, m.id, 'suspend', user.id, reason);
-      const suspCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'suspend', reason, durMs ? expireText : null);
+      const suspCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'suspend', reason, durMs ? expireText : null, proofUrl);
       const suspCaseData = botDb.getCase(g.id, suspCaseId);
       await sendModlog(g, buildCaseEmbed(suspCaseData, user, m.user), botDb);
       await sendLog(g, securityEmbed(0xff0000,
@@ -1589,12 +1630,16 @@ client.on('interactionCreate', async interaction => {
     if (cn === 'shadow-ban') {
       if (!m.permissions.has(PermissionFlagsBits.ManageGuild))
         return interaction.reply({ content: '❌ Manage Server required.', ephemeral: true });
-      const user   = o.getUser('user');
-      const reason = o.getString('reason') || 'No reason';
+      const user     = o.getUser('user');
+      const reason   = o.getString('reason') || 'No reason';
+      const dmUser   = o.getBoolean('dm');
+      const proofAtt = o.getAttachment('proof');
+      const proofUrl = proofAtt?.url || null;
       if (user.id === m.id) return interaction.reply({ content: '❌ Cannot shadow-ban yourself.', ephemeral: true });
+      if (dmUser) await user.send({ embeds: [buildDmEmbed('shadowban', g.name, reason, proofUrl)] }).catch(() => {});
       db.addShadowBan(g.id, user.id, m.id, reason);
       db.logStaffAction(g.id, m.id, 'shadow-ban', user.id, reason);
-      const sbCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'shadowban', reason);
+      const sbCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'shadowban', reason, null, proofUrl);
       const sbCaseData = botDb.getCase(g.id, sbCaseId);
       await sendModlog(g, buildCaseEmbed(sbCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('shadowban', reason, m.user, user)], ephemeral: true });
@@ -1669,11 +1714,15 @@ client.on('interactionCreate', async interaction => {
       if (!hasBotPerm(m, PermissionFlagsBits.ModerateMembers))
         return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
       const user = o.getUser('user'), reason = o.getString('reason') || 'No reason.';
+      const dmUser   = o.getBoolean('dm');
+      const proofAtt = o.getAttachment('proof');
+      const proofUrl = proofAtt?.url || null;
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+      if (dmUser) await user.send({ embeds: [buildDmEmbed('warn', g.name, reason, proofUrl)] }).catch(() => {});
       botDb.addWarning(g.id, user.id, m.id, reason, 1);
       db.logStaffAction(g.id, m.id, 'warn', user.id, reason);
-      const warnCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'warn', reason);
+      const warnCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'warn', reason, null, proofUrl);
       const warnCaseData = botDb.getCase(g.id, warnCaseId);
       await sendModlog(g, buildCaseEmbed(warnCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('warn', reason, m.user, user)] });
@@ -1686,7 +1735,21 @@ client.on('interactionCreate', async interaction => {
       const ch = o.getChannel('channel');
       botDb.setModlogChannel(g.id, ch.id);
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Mod Log Channel Set')
-        .setDescription(`Moderation case logs → ${ch}`).setTimestamp()] });
+        .setDescription(`Case logs will be sent to ${ch}`)
+        .addFields({ name: 'What logs here?', value: 'Every moderation case (warn, ban, kick, mute, quarantine, shadow-ban)', inline: false })
+        .setTimestamp()] });
+    }
+
+    // ── /setbotlogs ───────────────────────────────────────────────────
+    if (cn === 'setbotlogs') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator))
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      const ch = o.getChannel('channel');
+      botDb.setLogChannel(g.id, ch.id);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Bot Log Channel Set')
+        .setDescription(`All bot & mod action logs will be sent to ${ch}`)
+        .addFields({ name: 'What logs here?', value: 'All bot actions, security events, anti-nuke alerts, joins/leaves, role changes — but NOT case embeds (use `/setmodlog` for cases)', inline: false })
+        .setTimestamp()] });
     }
 
     // ── /cases ────────────────────────────────────────────────────────
@@ -1902,11 +1965,32 @@ const commands = [
   { name: 'ask',  description: 'Ask the Magic 8-Ball',      integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your question' }] },
 
   // Moderation
-  { name:'warn',   description:'Warn a member', options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
-  { name:'ban',    description:'Ban a member',    options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
+  { name:'warn',   description:'Warn a member', options:[
+    {name:'user',type:6,required:true,description:'User'},
+    {name:'reason',type:3,description:'Reason'},
+    {name:'proof',type:11,description:'Attach an image or file as proof'},
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
+  ]},
+  { name:'ban',    description:'Ban a member', options:[
+    {name:'user',type:6,required:true,description:'User'},
+    {name:'reason',type:3,description:'Reason'},
+    {name:'proof',type:11,description:'Attach an image or file as proof'},
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
+  ]},
   { name:'unban',  description:'Unban a user',    options:[{name:'user_id',type:3,required:true,description:'User ID'},{name:'reason',type:3,description:'Reason'}] },
-  { name:'kick',   description:'Kick a member',   options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
-  { name:'mute',   description:'Timeout a member', options:[{name:'user',type:6,required:true,description:'User'},{name:'duration',type:3,description:'e.g. 10m 1h 28d'},{name:'reason',type:3,description:'Reason'}] },
+  { name:'kick',   description:'Kick a member', options:[
+    {name:'user',type:6,required:true,description:'User'},
+    {name:'reason',type:3,description:'Reason'},
+    {name:'proof',type:11,description:'Attach an image or file as proof'},
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
+  ]},
+  { name:'mute',   description:'Timeout a member', options:[
+    {name:'user',type:6,required:true,description:'User'},
+    {name:'duration',type:3,description:'e.g. 10m 1h 28d'},
+    {name:'reason',type:3,description:'Reason'},
+    {name:'proof',type:11,description:'Attach an image or file as proof'},
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
+  ]},
   { name:'unmute', description:'Remove a timeout', options:[{name:'user',type:6,required:true,description:'User'}] },
   { name:'purge',  description:'Delete messages (max 100)', options:[
     {name:'amount',type:4,required:true,description:'Number of messages to delete',min_value:1,max_value:100},
@@ -1961,7 +2045,12 @@ const commands = [
     {name:'view',  type:1, description:'View evidence for a user', options:[{name:'user',type:6,required:true,description:'User'}]},
     {name:'clear', type:1, description:'Clear evidence for a user (Admin)', options:[{name:'user',type:6,required:true,description:'User'}]}
   ]},
-  { name:'shadow-ban',   description:'Silently delete all messages from a user (ManageServer)', options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}] },
+  { name:'shadow-ban',   description:'Silently delete all messages from a user (ManageServer)', options:[
+    {name:'user',type:6,required:true,description:'User'},
+    {name:'reason',type:3,description:'Reason'},
+    {name:'proof',type:11,description:'Attach an image or file as proof'},
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
+  ]},
   { name:'shadow-unban', description:'Remove shadow-ban from a user (ManageServer)', options:[{name:'user',type:6,required:true,description:'User'}] },
   { name:'staff-log', description:'View recent staff actions (ManageServer)', options:[{name:'mod',type:6,description:'Filter by specific moderator'}] },
   { name:'raid-config', description:'Configure predictive raid detection (Admin)', options:[
@@ -1991,8 +2080,11 @@ const commands = [
   { name:'suspend',   description:'Suspend a user or bot', options:[
     {name:'user',type:6,required:true,description:'User or bot'},
     {name:'reason',type:3,description:'Reason'},
-    {name:'duration',type:3,description:'Auto-unsuspend after — e.g. 10m 1h 7d'}
+    {name:'duration',type:3,description:'Auto-unsuspend after — e.g. 10m 1h 7d'},
+    {name:'proof',type:11,description:'Attach an image or file as proof'},
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
   ]},
+  { name:'setbotlogs', description:'Set channel for all bot & mod action logs (Admin)', options:[{name:'channel',type:7,required:true,description:'Channel for bot/mod logs',channel_types:[0]}] },
   { name:'unsuspend', description:'Restore a suspended user/bot', options:[{name:'user',type:6,required:true,description:'User'}] },
   { name:'lockdown',  description:'Lock all text channels (saves exact permissions)', options:[{name:'reason',type:3,description:'Reason'}] },
   { name:'unlockdown', description:'Restore channels to exact pre-lockdown state' },
