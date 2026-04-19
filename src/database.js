@@ -158,6 +158,20 @@ db.exec(`
   );
 `);
 
+// ── Auto-feature toggle flags ──────────────────────────────────────────────────
+const AUTO_FEATURES = ['webhook_block','role_perm_guard','vanity_guard','everyone_protect','role_memory','auto_revert','slowmode'];
+for (const feat of AUTO_FEATURES) {
+  try { db.prepare(`SELECT feat_${feat} FROM guild_config LIMIT 1`).get(); }
+  catch { db.exec(`ALTER TABLE guild_config ADD COLUMN feat_${feat} INTEGER DEFAULT 1;`); }
+}
+
+const setAutoFeature = (guildId, feature, value) => {
+  if (!AUTO_FEATURES.includes(feature)) throw new Error(`Unknown feature: ${feature}`);
+  db.prepare(`INSERT INTO guild_config (guild_id, feat_${feature}) VALUES (?, ?) ON CONFLICT(guild_id) DO UPDATE SET feat_${feature} = ?`).run(guildId, value, value);
+};
+module.exports.AUTO_FEATURES   = AUTO_FEATURES;
+module.exports.setAutoFeature  = setAutoFeature;
+
 const getGuildConfig = (guildId) => {
   const stmt = db.prepare('SELECT * FROM guild_config WHERE guild_id = ?');
   return stmt.get(guildId);

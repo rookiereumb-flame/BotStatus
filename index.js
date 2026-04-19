@@ -216,8 +216,11 @@ async function handleNukeEvent(guild, executorId, type, reason, evidence, revert
     const member = await guild.members.fetch(executorId).catch(() => null);
     if (member) await suspendUser(member, reason, evidence); // suspendUser sends its own log
     if (revertTarget) {
-      if (type === 'channel_delete') await autoRevertChannel(guild, revertTarget);
-      if (type === 'role_delete')    await autoRevertRole(guild, revertTarget);
+      const featCfg = botDb.getGuildConfig(guild.id) || {};
+      if (featCfg.feat_auto_revert !== 0) {
+        if (type === 'channel_delete') await autoRevertChannel(guild, revertTarget);
+        if (type === 'role_delete')    await autoRevertRole(guild, revertTarget);
+      }
     }
   }
 }
@@ -277,6 +280,8 @@ client.on('roleUpdate', async (oldRole, newRole) => {
   // Block dangerous perm grants
   const addedPerms = newRole.permissions.bitfield & ~oldRole.permissions.bitfield;
   const gotDangerous = DANGEROUS_PERMS.some(p => (addedPerms & p) === p);
+  const roleFeatCfg = botDb.getGuildConfig(newRole.guild.id) || {};
+  if (gotDangerous && roleFeatCfg.feat_role_perm_guard === 0) return; // feature disabled
   if (gotDangerous) {
     // Immediately revert
     await newRole.setPermissions(oldRole.permissions, 'beni: Dangerous perm grant blocked').catch(() => {});
@@ -308,10 +313,14 @@ client.on('guildMemberRemove', async m => {
   if (kickLog) await handleNukeEvent(m.guild, kickLog.executorId, 'member_kick', 'Kick Spam', `Kicked: ${m.user.tag}`);
 
   // Role memory — only save if NOT currently suspended
-  const data = db.getRoles(m.guild.id, m.id);
-  if (data?.is_suspended) return; // Don't overwrite suspension save
-  const roles = m.roles.cache.filter(r => r.id !== m.guild.id).map(r => r.id);
-  if (roles.length) db.saveRoles(m.guild.id, m.id, roles.join(','), 0);
+  const rmFeatCfg = botDb.getGuildConfig(m.guild.id) || {};
+  if (rmFeatCfg.feat_role_memory !== 0) {
+    const data = db.getRoles(m.guild.id, m.id);
+    if (!data?.is_suspended) {
+      const roles = m.roles.cache.filter(r => r.id !== m.guild.id).map(r => r.id);
+      if (roles.length) db.saveRoles(m.guild.id, m.id, roles.join(','), 0);
+    }
+  }
 });
 
 // Webhook — delete immediately, threshold for repeated attempts
@@ -320,6 +329,8 @@ client.on('webhookUpdate', async channel => {
   if (!e || e.executorId === client.user.id) return;
   const cfg = db.getGuildConfig(channel.guild.id);
   if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(channel.guild.id, 'webhook_create')) return;
+  const webhookFeatCfg = botDb.getGuildConfig(channel.guild.id) || {};
+  if (webhookFeatCfg.feat_webhook_block === 0) return;
   const trust = db.getTrust(channel.guild.id, e.executorId);
   if (trust && trust.level <= 1) return; // Only L1 immune to instant-action
 
@@ -373,6 +384,8 @@ client.on('guildUpdate', async (oldGuild, newGuild) => {
   if (!e || e.executorId === client.user.id) return;
   const cfg   = db.getGuildConfig(newGuild.id);
   if (cfg.antinuke_enabled === 0 || !db.isMonitorEnabled(newGuild.id, 'vanity_update')) return;
+  const vanityFeatCfg = botDb.getGuildConfig(newGuild.id) || {};
+  if (vanityFeatCfg.feat_vanity_guard === 0) return;
   const trust = db.getTrust(newGuild.id, e.executorId);
   if (trust && trust.level <= 1) return; // Only L1 immune to instant-action
 
@@ -445,14 +458,18 @@ client.on('guildMemberAdd', async member => {
   }
 
   // ── Role Memory Restore ────────────────────────────────────────────────────
-  const data = db.getRoles(gid, member.id);
-  if (!data) return;
-  if (data.is_suspended) {
-    const sr = member.guild.roles.cache.find(r => r.name === 'Suspended');
-    if (sr) await member.roles.add(sr).catch(() => {});
-  } else {
-    const valid = data.roles.split(',').filter(id => id && member.guild.roles.cache.has(id));
-    if (valid.length) await member.roles.add(valid).catch(() => {});
+  const rmRestoreCfg = botDb.getGuildConfig(gid) || {};
+  if (rmRestoreCfg.feat_role_memory !== 0) {
+    const data = db.getRoles(gid, member.id);
+    if (data) {
+      if (data.is_suspended) {
+        const sr = member.guild.roles.cache.find(r => r.name === 'Suspended');
+        if (sr) await member.roles.add(sr).catch(() => {});
+      } else {
+        const valid = data.roles.split(',').filter(id => id && member.guild.roles.cache.has(id));
+        if (valid.length) await member.roles.add(valid).catch(() => {});
+      }
+    }
   }
 });
 
@@ -499,6 +516,7 @@ client.on('messageCreate', async message => {
   }
 
   // ── Dynamic Slowmode ───────────────────────────────────────────────────────
+  const msgFeatCfg = botDb.getGuildConfig(message.guild.id) || {};
   const rateKey = `${message.guild.id}:${message.channel.id}`;
   if (!_msgRates.has(rateKey)) _msgRates.set(rateKey, []);
   const rates = _msgRates.get(rateKey);
@@ -506,19 +524,17 @@ client.on('messageCreate', async message => {
   const freshRates = rates.filter(t => t > Date.now() - SLOWMODE_SPIKE_WINDOW);
   _msgRates.set(rateKey, freshRates);
 
-  if (message.channel.rateLimitPerUser !== undefined) {
+  if (msgFeatCfg.feat_slowmode !== 0 && message.channel.rateLimitPerUser !== undefined) {
     const currentSlowmode = message.channel.rateLimitPerUser;
     if (freshRates.length >= SLOWMODE_SPIKE_LIMIT && currentSlowmode < 5) {
-      // Activity spike — set 5s slowmode
       await message.channel.setRateLimitPerUser(5, 'beni: Activity spike').catch(() => {});
     } else if (freshRates.length < 4 && currentSlowmode > 0) {
-      // Quiet again — remove slowmode
       await message.channel.setRateLimitPerUser(0, 'beni: Activity normalized').catch(() => {});
     }
   }
 
   // @everyone / @here — instant suspend (only L1 + owner-tier immune)
-  if (message.mentions.everyone) {
+  if (message.mentions.everyone && msgFeatCfg.feat_everyone_protect !== 0) {
     const mb = message.member || await message.guild.members.fetch(message.author.id).catch(() => null);
     const t  = mb ? effectiveTrust(mb) : -1;
     if (t !== 0 && t !== 1) {
@@ -741,6 +757,7 @@ function buildHelpPages() {
         { name: '/setup [#channel]',             value: 'Set security log channel' },
         { name: '/setup-suspend',                value: 'Create Suspended role + deny overwrites on all channels' },
         { name: '/antinuke enable|disable|status', value: 'Toggle or view all monitors + thresholds' },
+        { name: '/autofeatures enable|disable|status', value: 'Toggle individual auto-features: webhook-block, perm-guard, vanity, @everyone, role-memory, auto-revert, slowmode (Admin)' },
         { name: '/trust add|remove|list',        value: 'L1=Fully Immune  L2=Nuke-Immune  L3=Permit' },
         { name: '/suspend @user [dur]',          value: 'Manually suspend (works on users AND bots)' },
         { name: '/scan',                         value: 'Audit bots + check native AutoMod status' }
@@ -1740,6 +1757,50 @@ client.on('interactionCreate', async interaction => {
         .setTimestamp()] });
     }
 
+    // ── /autofeatures ─────────────────────────────────────────────────
+    if (cn === 'autofeatures') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator))
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+
+      const FEAT_LABELS = {
+        webhook_block:    '🪝 Webhook Block',
+        role_perm_guard:  '🛡️ Role Perm Guard',
+        vanity_guard:     '🔗 Vanity URL Guard',
+        everyone_protect: '📢 @everyone Protection',
+        role_memory:      '🧠 Role Memory',
+        auto_revert:      '♻️ Auto-Revert',
+        slowmode:         '🐢 Dynamic Slowmode',
+      };
+
+      const sub  = o.getSubcommand();
+      const feat = o.getString('feature');
+
+      if (sub === 'enable' || sub === 'disable') {
+        const val = sub === 'enable' ? 1 : 0;
+        botDb.setAutoFeature(g.id, feat, val);
+        return interaction.reply({ embeds: [new EmbedBuilder()
+          .setColor(val ? 0x2ecc71 : 0xe74c3c)
+          .setTitle(`${val ? '✅ Enabled' : '❌ Disabled'}: ${FEAT_LABELS[feat] || feat}`)
+          .setTimestamp()] });
+      }
+
+      if (sub === 'status') {
+        const cfg = botDb.getGuildConfig(g.id) || {};
+        const lines = Object.entries(FEAT_LABELS).map(([key, label]) => {
+          const on = cfg[`feat_${key}`] !== 0;
+          return `${on ? '🟢' : '🔴'} **${label}** — ${on ? 'Enabled' : 'Disabled'}`;
+        });
+        lines.push('');
+        lines.push('🟡 **Raid Detection** — use `/raid-config` to manage');
+        return interaction.reply({ embeds: [new EmbedBuilder()
+          .setColor(0x5865f2)
+          .setTitle('⚡ Auto-Features Status')
+          .setDescription(lines.join('\n'))
+          .setFooter({ text: 'Use /autofeatures enable|disable <feature> to toggle' })
+          .setTimestamp()] });
+      }
+    }
+
     // ── /setbotlogs ───────────────────────────────────────────────────
     if (cn === 'setbotlogs') {
       if (!m.permissions.has(PermissionFlagsBits.Administrator))
@@ -2085,6 +2146,31 @@ const commands = [
     {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
   ]},
   { name:'setbotlogs', description:'Set channel for all bot & mod action logs (Admin)', options:[{name:'channel',type:7,required:true,description:'Channel for bot/mod logs',channel_types:[0]}] },
+  { name:'autofeatures', description:'Enable, disable, or view status of bot auto-features (Admin)', options:[
+    {name:'enable',  type:1, description:'Enable an auto-feature', options:[
+      {name:'feature', type:3, required:true, description:'Feature to enable', choices:[
+        {name:'Webhook Block',          value:'webhook_block'},
+        {name:'Role Perm Guard',        value:'role_perm_guard'},
+        {name:'Vanity URL Guard',       value:'vanity_guard'},
+        {name:'@everyone Protection',   value:'everyone_protect'},
+        {name:'Role Memory',            value:'role_memory'},
+        {name:'Auto-Revert',            value:'auto_revert'},
+        {name:'Dynamic Slowmode',       value:'slowmode'}
+      ]}
+    ]},
+    {name:'disable', type:1, description:'Disable an auto-feature', options:[
+      {name:'feature', type:3, required:true, description:'Feature to disable', choices:[
+        {name:'Webhook Block',          value:'webhook_block'},
+        {name:'Role Perm Guard',        value:'role_perm_guard'},
+        {name:'Vanity URL Guard',       value:'vanity_guard'},
+        {name:'@everyone Protection',   value:'everyone_protect'},
+        {name:'Role Memory',            value:'role_memory'},
+        {name:'Auto-Revert',            value:'auto_revert'},
+        {name:'Dynamic Slowmode',       value:'slowmode'}
+      ]}
+    ]},
+    {name:'status',  type:1, description:'View status of all auto-features'}
+  ]},
   { name:'unsuspend', description:'Restore a suspended user/bot', options:[{name:'user',type:6,required:true,description:'User'}] },
   { name:'lockdown',  description:'Lock all text channels (saves exact permissions)', options:[{name:'reason',type:3,description:'Reason'}] },
   { name:'unlockdown', description:'Restore channels to exact pre-lockdown state' },
