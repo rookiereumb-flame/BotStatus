@@ -19,6 +19,8 @@ A Discord security/moderation bot with no web dashboard. All logic via slash com
 - **Cases modify** — interaction reply is now ephemeral; sendModlog fire-and-forget
 - **Staff log** — uses `globalName || username` instead of deprecated `.tag`
 - **Mod action performance** — all `sendModlog` calls in mod handlers are now fire-and-forget (no await), ensuring interaction reply happens before Discord's 3s timeout
+- **Cases view filters** — `/cases view` now supports `mod` (filter by moderator) + `type` (filter by action: ban/kick/mute/suspend/warn/shadowban), combinable with `user`; shows up to 25 results; `case_id` still does single-case lookup
+- **Setup-suspend upgrade** — `/setup-suspend` accepts optional `role` (use any existing role as Suspended) + optional `channel` (jail: ViewChannel+SendMessages allowed, ReadMessageHistory denied); config saved to DB, all future `/suspend` + auto-suspends inherit the settings; `JAIL_OVERWRITE` constant in monitor.js; `suspend_role_id`+`jail_channel_id` columns added to security.db guild_config
 
 ## Architecture
 - **index.js** — Main bot file: all monitors, event handlers, command handler, command registration

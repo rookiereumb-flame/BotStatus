@@ -8,7 +8,7 @@ const {
 const db    = require('./src/database/db');
 const botDb = require('./src/database');
 const { buildResultEmbed, buildCaseEmbed, sendModlog } = require('./src/utils/modlog');
-const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, securityEmbed } = require('./src/services/monitor');
+const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, JAIL_OVERWRITE, securityEmbed } = require('./src/services/monitor');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -1189,23 +1189,41 @@ client.on('interactionCreate', async interaction => {
 
       await interaction.deferReply();
 
-      // 1. Create the Suspended role if it doesn't already exist
-      let sr = g.roles.cache.find(r => r.name === 'Suspended');
-      const roleCreated = !sr;
-      if (!sr) {
-        sr = await g.roles.create({
-          name: 'Suspended',
-          permissions: [],
-          color: 0x808080,
-          reason: 'beni: Suspended role setup'
-        }).catch(() => null);
-      }
-      if (!sr) return interaction.editReply({ content: '❌ Failed to create the Suspended role. Make sure the bot has **Manage Roles**.' });
+      const customRole    = o.getRole('role');
+      const jailChannel   = o.getChannel('channel');
 
-      // 2. Apply deny overwrites to every channel in parallel
+      // 1. Resolve suspend role — use custom if provided, otherwise find/create "Suspended"
+      let sr;
+      let roleStatus;
+      if (customRole) {
+        sr = customRole;
+        roleStatus = `Using provided role ${customRole} \`[${customRole.id}]\``;
+      } else {
+        sr = g.roles.cache.find(r => r.name === 'Suspended');
+        const roleCreated = !sr;
+        if (!sr) {
+          sr = await g.roles.create({
+            name: 'Suspended', permissions: [], color: 0x808080,
+            reason: 'beni: Suspended role setup'
+          }).catch(() => null);
+        }
+        if (!sr) return interaction.editReply({ content: '❌ Failed to create the Suspended role. Make sure the bot has **Manage Roles**.' });
+        roleStatus = roleCreated ? `Created new \`Suspended\` role (${sr})` : `Using existing \`Suspended\` role (${sr})`;
+      }
+
+      // 2. Save config to DB so /suspend and auto-suspend use the right role + jail
+      db.setSuspendConfig(g.id, {
+        roleId:    sr.id,
+        channelId: jailChannel ? jailChannel.id : null
+      });
+
+      // 3. Apply channel overwrites: SUSPEND_DENY everywhere, JAIL_OVERWRITE on jail
       const channels = [...g.channels.cache.values()].filter(c => c.permissionOverwrites);
-      const results = await Promise.allSettled(
-        channels.map(c => c.permissionOverwrites.edit(sr, SUSPEND_DENY, { reason: 'beni: setup-suspend' }))
+      const results  = await Promise.allSettled(
+        channels.map(c => {
+          const overwrite = (jailChannel && c.id === jailChannel.id) ? JAIL_OVERWRITE : SUSPEND_DENY;
+          return c.permissionOverwrites.edit(sr, overwrite, { reason: 'beni: setup-suspend' });
+        })
       );
       const ok     = results.filter(r => r.status === 'fulfilled').length;
       const failed = results.filter(r => r.status === 'rejected').length;
@@ -1214,13 +1232,16 @@ client.on('interactionCreate', async interaction => {
         .setColor(0x5865f2)
         .setTitle('🔒 Suspend System Configured')
         .addFields(
-          { name: '🎭 Suspended Role', value: roleCreated ? `Created \`Suspended\` (${sr})` : `Already existed (${sr})`, inline: false },
-          { name: '✅ Channels Updated', value: `${ok} channel${ok !== 1 ? 's' : ''} locked`, inline: true },
-          { name: failed ? '⚠️ Channels Skipped' : '📋 Skipped', value: failed ? `${failed} (no overwrite permission)` : 'None', inline: true },
+          { name: '🎭 Suspend Role',     value: roleStatus, inline: false },
+          { name: '🔒 Jail Channel',     value: jailChannel
+              ? `${jailChannel} — suspended users can **see + send** here, history disabled`
+              : 'None — suspended users silenced in all channels', inline: false },
+          { name: '✅ Channels Updated', value: `${ok} channel${ok !== 1 ? 's' : ''} configured`, inline: true },
+          { name: failed ? '⚠️ Skipped' : '📋 Skipped', value: failed ? `${failed} (no overwrite perm)` : 'None', inline: true },
           { name: '📌 What This Does', value:
-            '• **Suspended** users are denied: Send Messages, Add Reactions, Attach Files, Embed Links, Speak, Connect in every channel\n' +
-            '• New channels are automatically locked when created\n' +
-            '• Every snapshot (6h) re-syncs the overwrites across all channels', inline: false }
+            `• **All channels** — Suspended role: no Send, no Reactions, no Attach, no Speak/Connect\n` +
+            (jailChannel ? `• **${jailChannel.name}** — Suspended role: ✅ View + Send, ❌ Read History + everything else\n` : '') +
+            '• Config saved — every future `/suspend` uses this setup automatically', inline: false }
         )
         .setTimestamp()
         .setFooter({ text: 'beni Security Engine' });
@@ -1308,15 +1329,19 @@ client.on('interactionCreate', async interaction => {
       }
 
       // ── Normal suspension path ────────────────────────────────────────────────
-      // Ensure Suspended role exists
-      let sr = g.roles.cache.find(r => r.name === 'Suspended');
+      // Resolve suspend role from DB config, then fall back to find/create
+      const suspCfg     = db.getSuspendConfig(g.id);
+      const jailChanId  = suspCfg.jail_channel_id || null;
+      let sr = suspCfg.suspend_role_id
+        ? (g.roles.cache.get(suspCfg.suspend_role_id) || g.roles.cache.find(r => r.name === 'Suspended'))
+        : g.roles.cache.find(r => r.name === 'Suspended');
       if (!sr) {
         sr = await g.roles.create({ name: 'Suspended', permissions: [], color: 0x000000, reason: 'beni: Suspended role' }).catch(() => null);
       }
       if (!sr) return interaction.editReply({ content: '❌ Could not create Suspended role. Check bot permissions.' });
 
-      // Apply deny overwrites to ALL channels (parallel)
-      await applySuspendedOverwrites(g, sr);
+      // Apply overwrites: deny all channels, jail channel gets limited allow
+      await applySuspendedOverwrites(g, sr, jailChanId);
 
       // Save non-managed roles (fresh save)
       const roles = target.roles.cache
@@ -1867,7 +1892,10 @@ client.on('interactionCreate', async interaction => {
       if (sub === 'view') {
         const caseId = o.getInteger('case_id');
         const user   = o.getUser('user');
+        const mod    = o.getUser('mod');
+        const type   = o.getString('type');
 
+        // Single-case lookup
         if (caseId) {
           const c = botDb.getCase(g.id, caseId);
           if (!c) return interaction.reply({ content: `❌ Case #${caseId} not found.`, ephemeral: true });
@@ -1879,22 +1907,34 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ embeds: [embed] });
         }
 
-        if (user) {
-          const cases = botDb.getCases(g.id, user.id);
-          if (!cases.length) return interaction.reply({ content: `No cases found for ${user.tag}.`, ephemeral: true });
-          const ACTION_LABELS = { warn:'WARN', ban:'BAN', kick:'KICK', mute:'TIMEOUT', suspend:'SUSPEND', shadowban:'SHADOW-BAN' };
-          const lines = cases.slice(0, 20).map(c => {
+        // Filtered list (user / mod / type — any combination)
+        const ACTION_LABELS = { warn:'WARN', ban:'BAN', kick:'KICK', mute:'TIMEOUT', suspend:'SUSPEND', shadowban:'SHADOW-BAN' };
+        if (user || mod || type) {
+          const cases = botDb.getCases(g.id, user?.id || null, { modId: mod?.id || null, action: type || null, limit: 25 });
+          if (!cases.length) {
+            const filters = [user && `user: ${user.username}`, mod && `mod: ${mod.username}`, type && `type: ${type}`].filter(Boolean).join(', ');
+            return interaction.reply({ content: `No cases found${filters ? ` for (${filters})` : ''}.`, ephemeral: true });
+          }
+
+          // Build filter description for embed title
+          const titleParts = [];
+          if (user) titleParts.push(`User: ${user.username}`);
+          if (mod)  titleParts.push(`Mod: ${mod.username}`);
+          if (type) titleParts.push(`Type: ${ACTION_LABELS[type] || type.toUpperCase()}`);
+
+          const lines = cases.map(c => {
             const label = ACTION_LABELS[c.action] || c.action.toUpperCase();
-            return `✅ **${c.case_id}** [+${label}] <t:${Math.floor(c.timestamp/1000)}:R>`;
+            return `✅ **#${c.case_id}** \`[${label}]\` — <@${c.user_id}> • <t:${Math.floor(c.timestamp/1000)}:R>`;
           });
+
           return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2)
-            .setTitle(`${user.username} Mod Cases (${cases.length}):`)
+            .setTitle(`📋 Cases — ${titleParts.join(' • ')} (${cases.length})`)
             .setDescription(lines.join('\n'))
-            .setThumbnail(user.displayAvatarURL())
+            .setFooter({ text: `Showing up to 25 most recent • Use case_id for full detail` })
             .setTimestamp()] });
         }
 
-        return interaction.reply({ content: '❌ Provide either `case_id` or `user`.', ephemeral: true });
+        return interaction.reply({ content: '❌ Provide at least one filter: `case_id`, `user`, `mod`, or `type`.', ephemeral: true });
       }
 
       if (sub === 'modify') {
@@ -2122,9 +2162,18 @@ const commands = [
     {name:'user',  type:6,description:'Delete messages from a specific user only'}
   ]},
   { name:'cases', description:'View or modify moderation cases', options:[
-    {name:'view', type:1, description:'View a case or all cases for a user', options:[
-      {name:'case_id',type:4,description:'Case ID to look up'},
-      {name:'user',   type:6,description:'Show all cases for this user'}
+    {name:'view', type:1, description:'View a case or all cases, with optional filters', options:[
+      {name:'case_id', type:4, description:'Look up a specific case by ID'},
+      {name:'user',    type:6, description:'Filter cases by target user'},
+      {name:'mod',     type:6, description:'Filter cases by moderator'},
+      {name:'type',    type:3, description:'Filter by action type', choices:[
+        {name:'Ban',       value:'ban'},
+        {name:'Kick',      value:'kick'},
+        {name:'Timeout',   value:'mute'},
+        {name:'Suspend',   value:'suspend'},
+        {name:'Warn',      value:'warn'},
+        {name:'Shadow-Ban',value:'shadowban'}
+      ]}
     ]},
     {name:'modify', type:1, description:'Modify a case field (Admin)', options:[
       {name:'case_id',type:4,required:true,description:'Case ID'},
@@ -2169,7 +2218,10 @@ const commands = [
     {name:'time',    type:3,              description:'Time window — e.g. 10s 5m 1h (required when setting threshold)'}
   ]},
   { name:'setup', description:'Set log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Log channel',channel_types:[0]}] },
-  { name:'setup-suspend', description:'Create the Suspended role and apply deny overwrites to all channels (Admin)' },
+  { name:'setup-suspend', description:'Configure the suspend system — role, jail channel, and channel overwrites (Admin)', options:[
+    {name:'role',    type:8, description:'Use an existing role as the Suspended role (leave blank to auto-create "Suspended")'},
+    {name:'channel', type:7, description:'Jail channel where suspended users can see+send but not read history', channel_types:[0]}
+  ]},
   { name:'watchlist', description:'Manage the silent watchlist (ManageServer)', options:[
     {name:'add',    type:1, description:'Add user to watchlist',    options:[{name:'user',type:6,required:true,description:'User'},{name:'reason',type:3,description:'Reason'}]},
     {name:'remove', type:1, description:'Remove from watchlist',    options:[{name:'user',type:6,required:true,description:'User'}]},

@@ -408,16 +408,15 @@ const getCase = (guildId, caseId) => {
   return stmt.get(guildId, caseId);
 };
 
-const getCases = (guildId, userId = null) => {
+const getCases = (guildId, userId = null, { modId = null, action = null, limit = null } = {}) => {
   let query = 'SELECT * FROM cases WHERE guild_id = ?';
-  let params = [guildId];
-  if (userId) {
-    query += ' AND user_id = ?';
-    params.push(userId);
-  }
+  const params = [guildId];
+  if (userId) { query += ' AND user_id = ?';      params.push(userId); }
+  if (modId)  { query += ' AND moderator_id = ?'; params.push(modId);  }
+  if (action) { query += ' AND action = ?';        params.push(action); }
   query += ' ORDER BY case_id DESC';
-  const stmt = db.prepare(query);
-  return stmt.all(...params);
+  if (limit)  { query += ' LIMIT ?';               params.push(limit);  }
+  return db.prepare(query).all(...params);
 };
 
 const updateCaseStatus = (guildId, caseId, status) => {

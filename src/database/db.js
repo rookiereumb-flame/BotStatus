@@ -122,11 +122,13 @@ db.exec(`
 const addCol = (table, col, def) => {
   try { db.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${def}`); } catch (_) {}
 };
-addCol('counting', 'high_score',  'INTEGER DEFAULT 0');
-addCol('counting', 'count_type',  "TEXT DEFAULT 'normal'");
-addCol('starboard', 'emoji',      "TEXT DEFAULT '⭐'");
+addCol('counting', 'high_score',      'INTEGER DEFAULT 0');
+addCol('counting', 'count_type',      "TEXT DEFAULT 'normal'");
+addCol('starboard', 'emoji',          "TEXT DEFAULT '⭐'");
 addCol('guild_config', 'antinuke_enabled', 'INTEGER DEFAULT 1');
-addCol('thresholds', 'enabled',   'INTEGER DEFAULT 1');
+addCol('thresholds', 'enabled',       'INTEGER DEFAULT 1');
+addCol('guild_config', 'suspend_role_id',  'TEXT');
+addCol('guild_config', 'jail_channel_id',  'TEXT');
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 const upsert = (table, keyCol, keyVal, updates) => {
@@ -143,6 +145,16 @@ module.exports = {
     upsert('guild_config', 'guild_id', gid, { log_channel_id: cid }),
   setAntinuke: (gid, val) =>
     upsert('guild_config', 'guild_id', gid, { antinuke_enabled: val }),
+  setSuspendConfig: (gid, { roleId = null, channelId = null } = {}) => {
+    const updates = {};
+    if (roleId    !== undefined) updates.suspend_role_id  = roleId;
+    if (channelId !== undefined) updates.jail_channel_id  = channelId;
+    if (Object.keys(updates).length) upsert('guild_config', 'guild_id', gid, updates);
+  },
+  getSuspendConfig: gid => {
+    const cfg = db.prepare('SELECT suspend_role_id, jail_channel_id FROM guild_config WHERE guild_id = ?').get(gid);
+    return cfg || {};
+  },
 
   // Thresholds
   getThreshold: (gid, type) =>

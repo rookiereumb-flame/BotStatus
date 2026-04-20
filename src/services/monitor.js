@@ -12,6 +12,16 @@ const SUSPEND_DENY = {
   UseVAD: false,       Stream: false
 };
 
+// Permissions for the jail channel — can see + send, can't read history or do anything else
+const JAIL_OVERWRITE = {
+  ViewChannel: true, SendMessages: true,
+  ReadMessageHistory: false,
+  SendMessagesInThreads: false, AddReactions: false,
+  AttachFiles: false, EmbedLinks: false, CreatePublicThreads: false,
+  CreatePrivateThreads: false, Speak: false, Connect: false,
+  UseVAD: false, Stream: false
+};
+
 // ── Security embed builder (matches screenshot style) ────────────────────────
 // lines: [['Label', 'value'], ...]
 // details: [['Label', 'value'], ...] — shown under "More Details:" separator
@@ -56,14 +66,15 @@ async function sendLog(guild, embed) {
 }
 
 // ── Apply Suspended role deny overwrites to all guild channels (parallel) ────
-async function applySuspendedOverwrites(guild, suspendedRole) {
+// If jailChannelId is set, that channel gets JAIL_OVERWRITE instead of SUSPEND_DENY
+async function applySuspendedOverwrites(guild, suspendedRole, jailChannelId = null) {
   await Promise.all(
     [...guild.channels.cache.values()]
       .filter(ch => ch.permissionOverwrites)
-      .map(ch => ch.permissionOverwrites.edit(
-        suspendedRole, SUSPEND_DENY,
-        { reason: 'beni: Suspended role lockout' }
-      ).catch(() => {}))
+      .map(ch => {
+        const overwrite = (jailChannelId && ch.id === jailChannelId) ? JAIL_OVERWRITE : SUSPEND_DENY;
+        return ch.permissionOverwrites.edit(suspendedRole, overwrite, { reason: 'beni: Suspended role lockout' }).catch(() => {});
+      })
   );
 }
 
@@ -79,14 +90,20 @@ async function suspendUser(member, reason, evidence = '', force = false) {
     if (trust && trust.level === 1) return;
   }
 
+  // Load guild suspend config (custom role + jail channel)
+  const suspendCfg = db.getSuspendConfig(guild.id);
+  const jailChannelId = suspendCfg.jail_channel_id || null;
+
   // Save non-managed roles (managed roles can't be removed — safe for bots)
   const roles = member.roles.cache
     .filter(r => !r.managed && r.id !== guild.id && r.name !== 'Suspended')
     .map(r => r.id);
   db.saveRoles(guild.id, member.id, roles.join(','), 1);
 
-  // Ensure Suspended role exists
-  let suspendedRole = guild.roles.cache.find(r => r.name === 'Suspended');
+  // Resolve Suspended role: use configured role first, then find/create "Suspended"
+  let suspendedRole = suspendCfg.suspend_role_id
+    ? (guild.roles.cache.get(suspendCfg.suspend_role_id) || guild.roles.cache.find(r => r.name === 'Suspended'))
+    : guild.roles.cache.find(r => r.name === 'Suspended');
   if (!suspendedRole) {
     suspendedRole = await guild.roles.create({
       name: 'Suspended', permissions: [], color: 0x808080,
@@ -95,8 +112,8 @@ async function suspendUser(member, reason, evidence = '', force = false) {
   }
   if (!suspendedRole) return;
 
-  // Apply deny overwrites to ALL channels in parallel
-  await applySuspendedOverwrites(guild, suspendedRole);
+  // Apply overwrites: SUSPEND_DENY to all channels, JAIL_OVERWRITE to jail channel
+  await applySuspendedOverwrites(guild, suspendedRole, jailChannelId);
 
   // Remove non-managed roles, add Suspended (parallel — safe for bots)
   await Promise.all([
@@ -130,4 +147,4 @@ async function suspendUser(member, reason, evidence = '', force = false) {
   ));
 }
 
-module.exports = { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, securityEmbed };
+module.exports = { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, JAIL_OVERWRITE, securityEmbed };
