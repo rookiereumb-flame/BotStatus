@@ -926,9 +926,17 @@ const deleteAllNotes = (guildId, userId) => {
   return info.changes;
 };
 
+const updateNote = (guildId, userId, noteId, content) => {
+  const info = db.prepare(
+    'UPDATE user_notes SET content = ? WHERE id = ? AND guild_id = ? AND user_id = ?'
+  ).run(content, noteId, guildId, userId);
+  return info.changes > 0;
+};
+
 module.exports.setModlogChannel      = setModlogChannel;
 module.exports.createCaseWithEvidence = createCaseWithEvidence;
 module.exports.addNote               = addNote;
 module.exports.removeNote            = removeNote;
 module.exports.getNotes              = getNotes;
 module.exports.deleteAllNotes        = deleteAllNotes;
+module.exports.updateNote            = updateNote;

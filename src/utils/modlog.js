@@ -15,7 +15,7 @@ const ACTION_TYPE_LABELS = {
   ban:       'Ban',
   kick:      'Kick',
   mute:      'Timeout',
-  suspend:   'Quarantine',
+  suspend:   'Suspend',
   shadowban: 'Shadow-Ban',
   note:      'Note',
 };
@@ -25,7 +25,7 @@ const RESULT_TITLES = {
   ban:       'Ban result:',
   kick:      'Kick result:',
   mute:      'Timeout result:',
-  suspend:   'Quarantine result:',
+  suspend:   'Suspend result:',
   shadowban: 'Shadow-Ban result:',
 };
 
@@ -34,7 +34,7 @@ const PAST_TENSE = {
   ban:       'Banned',
   kick:      'Kicked',
   mute:      'Timed out',
-  suspend:   'Quarantined',
+  suspend:   'Suspended',
   shadowban: 'Shadow-Banned',
 };
 

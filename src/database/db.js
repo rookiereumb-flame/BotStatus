@@ -150,7 +150,7 @@ module.exports = {
     || { limit_count: 3, time_window: 10000, enabled: 1 },
   setThreshold: (gid, type, limit, windowMs) =>
     db.prepare(`INSERT INTO thresholds (guild_id, event_type, limit_count, time_window, enabled) VALUES (?,?,?,?,1)
-      ON CONFLICT(guild_id, event_type) DO UPDATE SET limit_count=excluded.limit_count, time_window=excluded.time_window, enabled=1`)
+      ON CONFLICT(guild_id, event_type) DO UPDATE SET limit_count=excluded.limit_count, time_window=excluded.time_window`)
       .run(gid, type, limit, windowMs),
   setMonitorEnabled: (gid, type, val) => {
     db.prepare(`INSERT OR IGNORE INTO thresholds (guild_id, event_type, limit_count, time_window, enabled) VALUES (?,?,3,10000,?)`).run(gid, type, val);
@@ -210,7 +210,7 @@ module.exports = {
       .run(cid, enabled ? 1 : 0, type, gid);
   },
   updateCount: (gid, count, uid) =>
-    db.prepare('UPDATE counting SET current_count=?, last_user_id=?, high_score=MAX(high_score,?) WHERE guild_id=?')
+    db.prepare('UPDATE counting SET current_count=?, last_user_id=?, high_score=MAX(COALESCE(high_score,0),?) WHERE guild_id=?')
       .run(count, uid, count, gid),
   resetCount: gid =>
     db.prepare('UPDATE counting SET current_count=0, last_user_id=NULL WHERE guild_id=?').run(gid),

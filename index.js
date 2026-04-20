@@ -86,7 +86,7 @@ function hasBotPerm(member, discordPerm) {
 // Build a DM embed sent to the target user on mod actions
 const DM_ACTION_LABELS = {
   warn: 'Warned', ban: 'Banned', kick: 'Kicked',
-  mute: 'Timed Out', suspend: 'Quarantined', shadowban: 'Shadow-Banned'
+  mute: 'Timed Out', suspend: 'Suspended', shadowban: 'Shadow-Banned'
 };
 const DM_ACTION_COLORS = {
   warn: 0xFFC107, ban: 0xED4245, kick: 0xFFA500,
@@ -586,6 +586,9 @@ client.on('messageCreate', async message => {
 });
 
 // ── Starboard ─────────────────────────────────────────────────────────────────
+// In-memory guard to prevent race-condition duplicate starboard posts
+const starboardProcessing = new Set();
+
 client.on('messageReactionAdd', async (reaction, user) => {
   if (user.bot) return;
   try {
@@ -600,7 +603,11 @@ client.on('messageReactionAdd', async (reaction, user) => {
   const emoji = sb.emoji || '⭐';
   if (reaction.emoji.name !== emoji && reaction.emoji.toString() !== emoji) return;
   if (reaction.count < sb.threshold) return;
+
+  const sbKey = `${reaction.message.guild.id}_${reaction.message.id}`;
+  if (starboardProcessing.has(sbKey)) return;
   if (db.getStarboardPost(reaction.message.guild.id, reaction.message.id)) return;
+  starboardProcessing.add(sbKey);
 
   const sbCh = reaction.message.guild.channels.cache.get(sb.channel_id);
   if (!sbCh) return;
@@ -644,6 +651,7 @@ client.on('messageReactionAdd', async (reaction, user) => {
     embeds: [embed]
   }).catch(() => null);
   if (sent) db.saveStarboardPost(reaction.message.guild.id, msg.id, sent.id);
+  starboardProcessing.delete(sbKey);
 });
 
 // ── Snapshot (every 6h) ───────────────────────────────────────────────────────
@@ -746,15 +754,14 @@ function buildHelpPages() {
         { name: '/shadow-unban @user',             value: 'Remove shadow ban' },
         { name: '/cases view [id|@user]',          value: 'View a case or list all cases for a user' },
         { name: '/cases modify <id> <field> <val>',value: 'Edit a case reason or duration (Admin)' },
-        { name: '/notes add|remove|view|delall',   value: 'Manage staff notes on users' },
-        { name: '/setmodlog #channel',             value: 'Set channel for **case logs only** — warn/ban/kick/mute/quarantine/shadow-ban (Admin)' },
-        { name: '/setbotlogs #channel',            value: 'Set channel for **all bot & mod action logs** — security events, anti-nuke, joins, etc. (Admin)' }
+        { name: '/notes add|remove|view|modify|delall', value: 'Manage staff notes on users (modify = edit content, Admin)' },
+        { name: '/setlogs #channel [type]',        value: 'Unified log setup — `both` (default), `cases` only, or `security` only (Admin)' }
       ).setFooter({ text: 'Page 1/5 • Use buttons to navigate' }),
 
     new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 2/5: Anti-Nuke & Security')
       .addFields(
         { name: '/config [type] [limit] [time]', value: 'Set anti-nuke thresholds — e.g. `3 / 10s`' },
-        { name: '/setup [#channel]',             value: 'Set security log channel' },
+        { name: '/setlogs #channel [type]',      value: 'Set log channel — cases / security / both (Admin)' },
         { name: '/setup-suspend',                value: 'Create Suspended role + deny overwrites on all channels' },
         { name: '/antinuke enable|disable|status', value: 'Toggle or view all monitors + thresholds' },
         { name: '/autofeatures enable|disable|status', value: 'Toggle individual auto-features: webhook-block, perm-guard, vanity, @everyone, role-memory, auto-revert, slowmode (Admin)' },
@@ -885,7 +892,7 @@ client.on('interactionCreate', async interaction => {
       db.logStaffAction(g.id, m.id, 'ban', user.id, reason);
       const banCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'ban', reason, null, proofUrl);
       const banCaseData = botDb.getCase(g.id, banCaseId);
-      await sendModlog(g, buildCaseEmbed(banCaseData, user, m.user), botDb);
+      sendModlog(g, buildCaseEmbed(banCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('ban', reason, m.user, user)] });
     }
 
@@ -915,7 +922,7 @@ client.on('interactionCreate', async interaction => {
       db.logStaffAction(g.id, m.id, 'kick', user.id, reason);
       const kickCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'kick', reason, null, proofUrl);
       const kickCaseData = botDb.getCase(g.id, kickCaseId);
-      await sendModlog(g, buildCaseEmbed(kickCaseData, user, m.user), botDb);
+      sendModlog(g, buildCaseEmbed(kickCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('kick', reason, m.user, user)] });
     }
 
@@ -938,7 +945,7 @@ client.on('interactionCreate', async interaction => {
       db.logStaffAction(g.id, m.id, 'mute', user.id, `${durFmt} — ${reason}`);
       const muteCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'mute', reason, durFmt, proofUrl);
       const muteCaseData = botDb.getCase(g.id, muteCaseId);
-      await sendModlog(g, buildCaseEmbed(muteCaseData, user, m.user), botDb);
+      sendModlog(g, buildCaseEmbed(muteCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('mute', reason, m.user, user, { duration: durFmt })] });
     }
 
@@ -1072,21 +1079,26 @@ client.on('interactionCreate', async interaction => {
       if (sub === 'status') {
         const cfg        = db.getGuildConfig(g.id);
         const thresholds = db.getAllThresholds(g.id);
-        const enabled    = cfg.antinuke_enabled !== 0;
+        const masterOn   = cfg.antinuke_enabled !== 0;
+        // System is effectively enabled only if master flag on AND at least one monitor active
+        const anyOn      = thresholds.length === 0
+          ? masterOn  // no rows = all default to on, so effective state = masterOn
+          : thresholds.some(t => t.enabled !== 0);
+        const enabled    = masterOn && anyOn;
         const lines = MONITOR_TYPES.map(mt => {
           const t       = thresholds.find(x => x.event_type === mt.value) || { limit_count: 3, time_window: 10000, enabled: 1 };
-          const on      = t.enabled !== 0;
-          const special = mt.value === 'vanity_update'   ? ' ⚡instant'       :
-                          mt.value === 'webhook_create'  ? ' ⚡delete+suspend' :
-                          mt.value === 'role_update'     ? ' ⚡perm-revert'   : '';
+          // Show as off if master is disabled, regardless of individual setting
+          const on      = masterOn && t.enabled !== 0;
+          const special = mt.value === 'webhook_create' ? ' ⚡delete+suspend' : '';
           return `${on ? '🟢' : '🔴'} \`${mt.value.padEnd(16)}\` ${on ? `${t.limit_count} / ${formatDuration(t.time_window)}${special}` : 'disabled'}`;
         }).join('\n');
         return interaction.reply({ embeds: [new EmbedBuilder()
           .setColor(enabled ? 0x2ecc71 : 0xe74c3c)
           .setTitle(`🛡️ Anti-Nuke — ${enabled ? '✅ ENABLED' : '❌ DISABLED'}`)
+          .setDescription(!masterOn ? '⚠️ Master switch is **OFF** — all monitors are inactive. Use `/antinuke enable` to activate.' : null)
           .addFields({ name: '⚙️ Monitor Thresholds', value: lines })
-          .addFields({ name: '⚡ Instant-Action (no threshold)', value: '• Vanity URL change → revert + suspend\n• Webhook create → deleted + threshold\n• Dangerous permission grant → revert + suspend\n• @everyone abuse → suspend' })
-          .setFooter({ text: 'Change thresholds: /config | Toggle: /antinuke enable/disable' })
+          .addFields({ name: '⚡ Instant-Action (no threshold)', value: '• Vanity URL change → revert + suspend\n• Webhook create → deleted + suspend\n• Dangerous permission grant → revert + suspend\n• @everyone abuse → suspend' })
+          .setFooter({ text: 'Change thresholds: /config | Toggle monitors: /config <type> enabled:on/off' })
           .setTimestamp()] });
       }
     }
@@ -1131,14 +1143,43 @@ client.on('interactionCreate', async interaction => {
         ).setFooter({ text: 'Formats: 10s • 5m • 2h • 1d • 1w' }).setTimestamp()] });
     }
 
-    // ── /setup ────────────────────────────────────────────────────────
+    // ── /setlogs ──────────────────────────────────────────────────────
+    if (cn === 'setlogs') {
+      if (!m.permissions.has(PermissionFlagsBits.Administrator))
+        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+      const ch   = o.getChannel('channel');
+      const type = o.getString('type') || 'both';
+
+      if (type === 'cases' || type === 'both') {
+        botDb.setModlogChannel(g.id, ch.id);
+      }
+      if (type === 'security' || type === 'both') {
+        db.setLogChannel(g.id, ch.id);
+        botDb.setLogChannel(g.id, ch.id);
+      }
+
+      const DESC = {
+        cases:    `📋 **Case logs** (warn/ban/kick/mute/suspend/shadow-ban) → ${ch}`,
+        security: `🛡️ **Security logs** (anti-nuke, joins/leaves, role changes, alerts) → ${ch}`,
+        both:     `📋 **Case logs** + 🛡️ **Security logs** → ${ch}`,
+      };
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2)
+        .setTitle('✅ Log Channel Configured')
+        .setDescription(DESC[type])
+        .addFields({ name: 'Channel', value: `${ch}`, inline: true }, { name: 'Type', value: type, inline: true })
+        .setFooter({ text: 'Use /setlogs again with a different type to split channels' })
+        .setTimestamp()] });
+    }
+
+    // ── /setup (legacy alias for /setlogs security) ───────────────────
     if (cn === 'setup') {
       if (!m.permissions.has(PermissionFlagsBits.Administrator))
         return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
       const ch = o.getChannel('channel');
       db.setLogChannel(g.id, ch.id);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Log Channel Set')
-        .setDescription(`Security logs → ${ch}`).setTimestamp()] });
+      botDb.setLogChannel(g.id, ch.id);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Security Log Channel Set')
+        .setDescription(`Security & bot logs → ${ch}\n\n💡 Use \`/setlogs\` for full dual-channel control.`).setTimestamp()] });
     }
 
     // ── /setup-suspend ────────────────────────────────────────────────
@@ -1310,7 +1351,7 @@ client.on('interactionCreate', async interaction => {
       db.logStaffAction(g.id, m.id, 'suspend', user.id, reason);
       const suspCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'suspend', reason, durMs ? expireText : null, proofUrl);
       const suspCaseData = botDb.getCase(g.id, suspCaseId);
-      await sendModlog(g, buildCaseEmbed(suspCaseData, user, m.user), botDb);
+      sendModlog(g, buildCaseEmbed(suspCaseData, user, m.user), botDb);
       await sendLog(g, securityEmbed(0xff0000,
         `⛔ ${target.user.username} has been suspended!`,
         [
@@ -1658,7 +1699,7 @@ client.on('interactionCreate', async interaction => {
       db.logStaffAction(g.id, m.id, 'shadow-ban', user.id, reason);
       const sbCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'shadowban', reason, null, proofUrl);
       const sbCaseData = botDb.getCase(g.id, sbCaseId);
-      await sendModlog(g, buildCaseEmbed(sbCaseData, user, m.user), botDb);
+      sendModlog(g, buildCaseEmbed(sbCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('shadowban', reason, m.user, user)], ephemeral: true });
     }
 
@@ -1684,8 +1725,9 @@ client.on('interactionCreate', async interaction => {
         `▶ ${ACTION_ICON[r.action] || '🔹'} **${r.action.toUpperCase()}** — <@${r.target_id}>\n` +
         `  by <@${r.mod_id}> • ${r.reason} • <t:${Math.floor(r.timestamp/1000)}:R>`
       ).join('\n\n');
+      const filterName = filterUser ? (filterUser.globalName || filterUser.username || filterUser.id) : null;
       return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2)
-        .setTitle(`📋 Staff Log${filterUser ? ` — ${filterUser.tag}` : ''}`)
+        .setTitle(`📋 Staff Log${filterName ? ` — ${filterName}` : ''}`)
         .setDescription(desc).setTimestamp().setFooter({ text: `Last ${rows.length} actions` })], ephemeral: true });
     }
 
@@ -1741,7 +1783,7 @@ client.on('interactionCreate', async interaction => {
       db.logStaffAction(g.id, m.id, 'warn', user.id, reason);
       const warnCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'warn', reason, null, proofUrl);
       const warnCaseData = botDb.getCase(g.id, warnCaseId);
-      await sendModlog(g, buildCaseEmbed(warnCaseData, user, m.user), botDb);
+      sendModlog(g, buildCaseEmbed(warnCaseData, user, m.user), botDb);
       return interaction.reply({ embeds: [buildResultEmbed('warn', reason, m.user, user)] });
     }
 
@@ -1751,9 +1793,10 @@ client.on('interactionCreate', async interaction => {
         return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
       const ch = o.getChannel('channel');
       botDb.setModlogChannel(g.id, ch.id);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Mod Log Channel Set')
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Case Log Channel Set')
         .setDescription(`Case logs will be sent to ${ch}`)
-        .addFields({ name: 'What logs here?', value: 'Every moderation case (warn, ban, kick, mute, quarantine, shadow-ban)', inline: false })
+        .addFields({ name: 'What logs here?', value: 'Every moderation case (warn, ban, kick, mute, suspend, shadow-ban)', inline: false })
+        .setFooter({ text: '💡 Use /setlogs for unified dual-channel control' })
         .setTimestamp()] });
     }
 
@@ -1806,10 +1849,12 @@ client.on('interactionCreate', async interaction => {
       if (!m.permissions.has(PermissionFlagsBits.Administrator))
         return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
       const ch = o.getChannel('channel');
+      db.setLogChannel(g.id, ch.id);
       botDb.setLogChannel(g.id, ch.id);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Bot Log Channel Set')
-        .setDescription(`All bot & mod action logs will be sent to ${ch}`)
-        .addFields({ name: 'What logs here?', value: 'All bot actions, security events, anti-nuke alerts, joins/leaves, role changes — but NOT case embeds (use `/setmodlog` for cases)', inline: false })
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Security Log Channel Set')
+        .setDescription(`Security & bot action logs will be sent to ${ch}`)
+        .addFields({ name: 'What logs here?', value: 'Anti-nuke alerts, joins/leaves, role changes, audit events — NOT case embeds (use `/setlogs type:cases` for cases)', inline: false })
+        .setFooter({ text: '💡 Use /setlogs for unified dual-channel control' })
         .setTimestamp()] });
     }
 
@@ -1837,7 +1882,7 @@ client.on('interactionCreate', async interaction => {
         if (user) {
           const cases = botDb.getCases(g.id, user.id);
           if (!cases.length) return interaction.reply({ content: `No cases found for ${user.tag}.`, ephemeral: true });
-          const ACTION_LABELS = { warn:'WARN', ban:'BAN', kick:'KICK', mute:'TIMEOUT', suspend:'QUARANTINE', shadowban:'SHADOW-BAN' };
+          const ACTION_LABELS = { warn:'WARN', ban:'BAN', kick:'KICK', mute:'TIMEOUT', suspend:'SUSPEND', shadowban:'SHADOW-BAN' };
           const lines = cases.slice(0, 20).map(c => {
             const label = ACTION_LABELS[c.action] || c.action.toUpperCase();
             return `✅ **${c.case_id}** [+${label}] <t:${Math.floor(c.timestamp/1000)}:R>`;
@@ -1866,7 +1911,7 @@ client.on('interactionCreate', async interaction => {
           return interaction.reply({ content: '❌ Editable fields: `reason`, `duration`', ephemeral: true });
 
         botDb.updateCase(g.id, caseId, { [field]: value });
-        await sendModlog(g, new EmbedBuilder().setColor(0x3498DB)
+        sendModlog(g, new EmbedBuilder().setColor(0x3498DB)
           .addFields(
             { name: 'Case Modified:', value: `${caseId} ✅`, inline: false },
             { name: 'Field:',         value: field,           inline: false },
@@ -1879,7 +1924,7 @@ client.on('interactionCreate', async interaction => {
           .addFields(
             { name: 'Field',     value: field, inline: true },
             { name: 'New Value', value: value, inline: true }
-          ).setTimestamp()] });
+          ).setTimestamp()], ephemeral: true });
       }
     }
 
@@ -1934,6 +1979,25 @@ client.on('interactionCreate', async interaction => {
         const user    = o.getUser('user');
         const deleted = botDb.deleteAllNotes(g.id, user.id);
         return interaction.reply({ content: `✅ Deleted **${deleted}** note(s) for ${user.tag}.`, ephemeral: true });
+      }
+
+      if (sub === 'modify') {
+        if (!m.permissions.has(PermissionFlagsBits.Administrator))
+          return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
+        const user   = o.getUser('user');
+        const noteId = o.getInteger('note_id');
+        const text   = o.getString('text');
+        const ok     = botDb.updateNote(g.id, user.id, noteId, text);
+        return interaction.reply({ embeds: [ok
+          ? new EmbedBuilder().setColor(0x3498DB).setTitle('✏️ Note Updated')
+              .addFields(
+                { name: 'User',    value: `${user.tag}`, inline: true },
+                { name: 'Note ID', value: `${noteId}`,   inline: true },
+                { name: 'New Content', value: text,       inline: false }
+              ).setTimestamp()
+          : new EmbedBuilder().setColor(0xe74c3c).setTitle('❌ Note Not Found')
+              .setDescription(`Note #${noteId} was not found for ${user.tag}.`)
+        ], ephemeral: true });
       }
     }
 
@@ -2069,12 +2133,21 @@ const commands = [
     ]}
   ]},
   { name:'notes', description:'Manage user notes', options:[
-    {name:'add',    type:1, description:'Add a note to a user', options:[{name:'user',type:6,required:true,description:'User'},{name:'text',type:3,required:true,description:'Note content'}]},
-    {name:'remove', type:1, description:'Remove a specific note', options:[{name:'user',type:6,required:true,description:'User'},{name:'note_id',type:4,required:true,description:'Note ID'}]},
-    {name:'view',   type:1, description:'View all notes for a user', options:[{name:'user',type:6,required:true,description:'User'}]},
+    {name:'add',    type:1, description:'Add a note to a user',              options:[{name:'user',type:6,required:true,description:'User'},{name:'text',type:3,required:true,description:'Note content'}]},
+    {name:'remove', type:1, description:'Remove a specific note',            options:[{name:'user',type:6,required:true,description:'User'},{name:'note_id',type:4,required:true,description:'Note ID'}]},
+    {name:'view',   type:1, description:'View all notes for a user',         options:[{name:'user',type:6,required:true,description:'User'}]},
+    {name:'modify', type:1, description:'Edit a note\'s content (Admin)',    options:[{name:'user',type:6,required:true,description:'User'},{name:'note_id',type:4,required:true,description:'Note ID'},{name:'text',type:3,required:true,description:'New note content'}]},
     {name:'delall', type:1, description:'Delete all notes for a user (Admin)', options:[{name:'user',type:6,required:true,description:'User'}]}
   ]},
-  { name:'setmodlog', description:'Set the moderation log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Channel for case logs',channel_types:[0]}] },
+  { name:'setlogs',   description:'Configure log channels — cases, security, or both (Admin)', options:[
+    {name:'channel', type:7, required:true,  description:'Channel to log to',   channel_types:[0]},
+    {name:'type',    type:3, required:false, description:'What to log here',    choices:[
+      {name:'Both (cases + security)',   value:'both'},
+      {name:'Case logs only (mod actions)', value:'cases'},
+      {name:'Security logs only (anti-nuke, events)', value:'security'}
+    ]}
+  ]},
+  { name:'setmodlog', description:'Set the case/modlog channel (Admin) — legacy, use /setlogs', options:[{name:'channel',type:7,required:true,description:'Channel for case logs',channel_types:[0]}] },
 
   // Fun / Features
   { name:'counting-toggle',  description:'Enable/disable counting game', options:[

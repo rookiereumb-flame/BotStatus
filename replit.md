@@ -5,8 +5,20 @@ A Discord security/moderation bot with no web dashboard. All logic via slash com
 
 ## Current Status
 - **Bot Tag**: Kisuke Urahara#2234 (display name: beni)
-- **Commands**: 35+ slash commands registered globally
-- **DB**: SQLite (`security.db`) via `better-sqlite3`
+- **Commands**: 37 slash commands registered globally
+- **DB**: Two SQLite DBs — `security.db` (antinuke/monitors) via `src/database/db.js`; `bot.db` (cases/notes/config) via `src/database.js`
+
+## Recent Fixes (April 2026)
+- **Quarantine → Suspend** — renamed everywhere: modlog labels, DM labels, case view labels, help text
+- **Antinuke status** — now shows monitors as effectively 🔴 when master flag is OFF; title reflects true effective state
+- **setThreshold** — no longer resets individual monitor enabled state to 1 on every update
+- **Starboard** — in-memory `starboardProcessing` Set prevents race-condition duplicate posts
+- **Counting** — `COALESCE(high_score, 0)` fixes null-propagation bug for guilds created before high_score column was added
+- **Log commands merged** — `/setlogs #channel [type]` unifies setup/setmodlog/setbotlogs into one command (old commands kept as legacy aliases)
+- **Notes modify** — `/notes modify @user note_id text` subcommand added; `updateNote()` added to database.js
+- **Cases modify** — interaction reply is now ephemeral; sendModlog fire-and-forget
+- **Staff log** — uses `globalName || username` instead of deprecated `.tag`
+- **Mod action performance** — all `sendModlog` calls in mod handlers are now fire-and-forget (no await), ensuring interaction reply happens before Discord's 3s timeout
 
 ## Architecture
 - **index.js** — Main bot file: all monitors, event handlers, command handler, command registration
