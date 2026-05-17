@@ -1812,19 +1812,6 @@ client.on('interactionCreate', async interaction => {
       return interaction.reply({ embeds: [buildResultEmbed('warn', reason, m.user, user)] });
     }
 
-    // ── /setmodlog ────────────────────────────────────────────────────
-    if (cn === 'setmodlog') {
-      if (!m.permissions.has(PermissionFlagsBits.Administrator))
-        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
-      const ch = o.getChannel('channel');
-      botDb.setModlogChannel(g.id, ch.id);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Case Log Channel Set')
-        .setDescription(`Case logs will be sent to ${ch}`)
-        .addFields({ name: 'What logs here?', value: 'Every moderation case (warn, ban, kick, mute, suspend, shadow-ban)', inline: false })
-        .setFooter({ text: '💡 Use /setlogs for unified dual-channel control' })
-        .setTimestamp()] });
-    }
-
     // ── /autofeatures ─────────────────────────────────────────────────
     if (cn === 'autofeatures') {
       if (!m.permissions.has(PermissionFlagsBits.Administrator))
@@ -1867,20 +1854,6 @@ client.on('interactionCreate', async interaction => {
           .setFooter({ text: 'Use /autofeatures enable|disable <feature> to toggle' })
           .setTimestamp()] });
       }
-    }
-
-    // ── /setbotlogs ───────────────────────────────────────────────────
-    if (cn === 'setbotlogs') {
-      if (!m.permissions.has(PermissionFlagsBits.Administrator))
-        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
-      const ch = o.getChannel('channel');
-      db.setLogChannel(g.id, ch.id);
-      botDb.setLogChannel(g.id, ch.id);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ Security Log Channel Set')
-        .setDescription(`Security & bot action logs will be sent to ${ch}`)
-        .addFields({ name: 'What logs here?', value: 'Anti-nuke alerts, joins/leaves, role changes, audit events — NOT case embeds (use `/setlogs type:cases` for cases)', inline: false })
-        .setFooter({ text: '💡 Use /setlogs for unified dual-channel control' })
-        .setTimestamp()] });
     }
 
     // ── /cases ────────────────────────────────────────────────────────
@@ -2196,7 +2169,6 @@ const commands = [
       {name:'Security logs only (anti-nuke, events)', value:'security'}
     ]}
   ]},
-  { name:'setmodlog', description:'Set the case/modlog channel (Admin) — legacy, use /setlogs', options:[{name:'channel',type:7,required:true,description:'Channel for case logs',channel_types:[0]}] },
 
   // Fun / Features
   { name:'counting-toggle',  description:'Enable/disable counting game', options:[
@@ -2270,7 +2242,6 @@ const commands = [
     {name:'proof',type:11,description:'Attach an image or file as proof'},
     {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
   ]},
-  { name:'setbotlogs', description:'Set channel for all bot & mod action logs (Admin)', options:[{name:'channel',type:7,required:true,description:'Channel for bot/mod logs',channel_types:[0]}] },
   { name:'autofeatures', description:'Enable, disable, or view status of bot auto-features (Admin)', options:[
     {name:'enable',  type:1, description:'Enable an auto-feature', options:[
       {name:'feature', type:3, required:true, description:'Feature to enable', choices:[
