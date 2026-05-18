@@ -31,12 +31,12 @@ const NSFW_KEYWORDS = [
   'naked image','sexual image',
 ];
 
-const URAHARA_ROASTS = [
-  "Well, well... that's not something I'll be helping with. Try something worth my time.",
-  "Hmm. Interesting request. The answer is no — quite decisively, actually.",
-  "Ha. Bold move. I've dismantled Hollows with more elegance than that attempt. Moving on.",
-  "My hat says no. My cane says no. I say no. That's a clean sweep.",
-  "Now, now — even a genius has limits. Mine just happen to be your question. Ask me something real.",
+const NSFW_ROASTS = [
+  "That's a no from me. Ask me something worth answering.",
+  "Nope. Not happening — try a different question.",
+  "Hard pass. I'm here to help, and that doesn't qualify.",
+  "Declined. Efficiently and permanently.",
+  "Not going there. Ask me something real.",
 ];
 
 // ── beni system prompt — personality + full bot knowledge ────────────────────
@@ -171,8 +171,8 @@ function isNSFW(text) {
   return NSFW_KEYWORDS.some(kw => lower.includes(kw));
 }
 
-function yoruichiNSFWRoast() {
-  return URAHARA_ROASTS[Math.floor(Math.random() * URAHARA_ROASTS.length)];
+function nsfwRoast() {
+  return NSFW_ROASTS[Math.floor(Math.random() * NSFW_ROASTS.length)];
 }
 
 function splitIntoChunks(text, limit = DISCORD_LIMIT) {
@@ -375,7 +375,7 @@ module.exports = {
   STREAM_THROTTLE_MS,
   KISUKE_SYSTEM,
   isNSFW,
-  yoruichiNSFWRoast,
+  nsfwRoast,
   splitIntoChunks,
   askGemini,
   streamGemini,

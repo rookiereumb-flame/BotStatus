@@ -13,7 +13,7 @@ const {
   aiChatChannels, conversationHistory, triviaCache, activeReminders,
   askGemini, streamInteractionReply, askGeminiWithHistory,
   analyzeImage, generateAIImage, splitIntoChunks,
-  isNSFW, yoruichiNSFWRoast, openContinuationThread,
+  isNSFW, nsfwRoast, openContinuationThread,
   KISUKE_SYSTEM, DISCORD_LIMIT, STREAM_THROTTLE_MS,
 } = require('./src/services/ai');
 
@@ -506,11 +506,11 @@ async function handleAIChatMessage(message, isMentioned, isAiChannel, isDM) {
   const rawContent      = (message.content ?? '').replace(/<@!?\d+>/g, '').trim();
 
   if (!rawContent && !hasVisual) {
-    if (isMentioned) await message.reply("Hey! What's up? Ask me anything — or attach an image for me to analyze.").catch(() => {});
+    if (isMentioned) await message.reply("What's up? Ask me anything, or drop an image and I'll analyze it.").catch(() => {});
     return;
   }
   if (isNSFW(rawContent)) {
-    await message.reply(yoruichiNSFWRoast()).catch(() => {});
+    await message.reply(nsfwRoast()).catch(() => {});
     return;
   }
 
@@ -529,7 +529,7 @@ async function handleAIChatMessage(message, isMentioned, isAiChannel, isDM) {
       try { analysis = await analyzeImage(imageUrl, question); }
       catch (e) { analysis = `Couldn't load that image: ${e.message}`; }
       const chunks = splitIntoChunks(analysis);
-      await message.reply(chunks[0]).catch(() => {});
+      await message.reply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle('👁️ Vision Analysis').setDescription(chunks[0].slice(0,4096)).setFooter({text:'beni AI'})] }).catch(() => {});
       for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]).catch(() => {});
       return;
     }
@@ -1001,7 +1001,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'ask') {
     await interaction.deferReply();
     const question = o.getString('question');
-    if (isNSFW(question)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(question)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction, question, KISUKE_SYSTEM, '', undefined,
       (t) => new EmbedBuilder().setColor(0x9b59b6).setTitle('💬 Answer').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
@@ -1022,7 +1022,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'summarize') {
     await interaction.deferReply();
     const text = o.getString('text');
-    if (isNSFW(text)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(text)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Summarize the following text clearly and concisely, keeping all key points:\n\n${text}`,
       KISUKE_SYSTEM, '', undefined,
@@ -1046,7 +1046,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'joke') {
     await interaction.deferReply();
     const topic = o.getString('topic') || 'anything';
-    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(topic)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Tell me a clever, funny joke about: ${topic}. Make it clean but actually funny — no cheap punchlines.`,
       KISUKE_SYSTEM, '', undefined,
@@ -1058,7 +1058,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'story') {
     await interaction.deferReply();
     const prompt = o.getString('prompt');
-    if (isNSFW(prompt)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(prompt)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Write a short, engaging story based on this prompt. Make it vivid and complete — with a beginning, middle, and end:\n\n${prompt}`,
       KISUKE_SYSTEM, '', undefined,
@@ -1073,7 +1073,7 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
     const topic = o.getString('topic');
     const style = o.getString('style') || 'free verse';
-    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(topic)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Write a beautiful, original ${style} poem about: ${topic}. Make it feel genuine and evocative.`,
       KISUKE_SYSTEM, '', undefined,
@@ -1085,7 +1085,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'rap') {
     await interaction.deferReply();
     const topic = o.getString('topic');
-    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(topic)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Write a rap verse with genuine flow, rhyme scheme, and wordplay about: ${topic}. No filler lines — every bar should hit.`,
       KISUKE_SYSTEM, '', undefined,
@@ -1097,7 +1097,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'roleplay') {
     await interaction.deferReply();
     const scenario = o.getString('scenario');
-    if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(scenario)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Begin a short roleplay scenario. Set the scene compellingly and leave an obvious opening for the user to respond. Scenario:\n\n${scenario}`,
       KISUKE_SYSTEM, '', undefined,
@@ -1111,7 +1111,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'brainstorm') {
     await interaction.deferReply();
     const topic = o.getString('topic');
-    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(topic)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Brainstorm 8–12 creative and distinct ideas, approaches, or angles for: ${topic}. Vary the type of ideas — practical, wild, unconventional.`,
       KISUKE_SYSTEM, '', undefined,
@@ -1123,7 +1123,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'dnd') {
     await interaction.deferReply();
     const scenario = o.getString('scenario') || 'a mysterious forest clearing at dusk';
-    if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(scenario)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `You are a dungeon master. Set an atmospheric D&D scene based on: "${scenario}". Describe the environment vividly, introduce one clear hook or threat, and end with a question or choice for the player.`,
       KISUKE_SYSTEM, '', undefined,
@@ -1202,7 +1202,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'poll') {
     await interaction.deferReply();
     const topic = o.getString('topic');
-    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(topic)) return interaction.editReply(nsfwRoast());
     const pollText = await askGemini(
       `Create a Discord poll for: "${topic}". Return ONLY the poll question followed by 4–6 answer options, each on its own line starting with a different emoji (🔴🟡🟢🔵🟣🟠). No extra commentary.`,
       KISUKE_SYSTEM
@@ -1325,7 +1325,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'debate') {
     await interaction.deferReply();
     const topic = o.getString('topic');
-    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(topic)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Present a balanced debate on: "${topic}". Format clearly:\n\n**FOR:**\n[3 strong arguments]\n\n**AGAINST:**\n[3 strong arguments]\n\n**Verdict:** [A concise, neutral summary]`,
       KISUKE_SYSTEM, '', undefined,
@@ -1337,7 +1337,7 @@ client.on('interactionCreate', async interaction => {
   if (cn === 'imagine') {
     await interaction.deferReply();
     const prompt = o.getString('prompt');
-    if (isNSFW(prompt)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(prompt)) return interaction.editReply(nsfwRoast());
     await interaction.editReply('🎨 Generating your image...');
     const result = await generateAIImage(prompt);
     if (!result) return interaction.editReply('❌ Image generation failed. Try a different prompt.');
@@ -1353,7 +1353,7 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
     const url      = o.getString('url');
     const question = o.getString('question') || 'Describe this image in detail.';
-    if (isNSFW(question)) return interaction.editReply(yoruichiNSFWRoast());
+    if (isNSFW(question)) return interaction.editReply(nsfwRoast());
     let analysis;
     try {
       analysis = await analyzeImage(url, question);
@@ -2225,13 +2225,23 @@ client.on('interactionCreate', async interaction => {
       if (sub === 'view') {
         const rows = db.getEvidence(g.id, user.id, 8);
         if (!rows.length) return interaction.reply({ content: `No deleted messages on record for ${user.tag}.`, ephemeral: true });
+        const analyzeFlag = o.getBoolean('analyze');
         const desc = rows.map(r => {
           const atts = JSON.parse(r.attachments || '[]');
           const ts   = `<t:${Math.floor(r.timestamp/1000)}:R>`;
           return `▶ ${ts} in <#${r.channel_id}>\n  \`${(r.content||'').slice(0,120) || '*(no text)*'}${r.content?.length>120?'…':''}${atts.length?` [+${atts.length} file]`:''}`;
         }).join('\n\n');
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xff6600).setTitle(`🗃️ Evidence Locker — ${user.tag}`)
-          .setDescription(desc).setTimestamp().setFooter({ text: `${rows.length} most recent deleted messages` })], ephemeral: true });
+        const evidEmbed = new EmbedBuilder().setColor(0xff6600).setTitle(`🗃️ Evidence Locker — ${user.tag}`)
+          .setDescription(desc).setTimestamp().setFooter({ text: `${rows.length} most recent deleted messages` });
+        if (!analyzeFlag) return interaction.reply({ embeds: [evidEmbed], ephemeral: true });
+        await interaction.deferReply({ ephemeral: true });
+        const msgList = rows.map((r, i) => `${i+1}. "${(r.content || '(no text)').slice(0, 200)}"`).join('\n');
+        const analysis = await askGemini(
+          `You are a Discord moderation assistant. Analyze these deleted messages from user ${user.tag}:\n\n${msgList}\n\nIdentify behavioral patterns, tone, and any red flags. Give a 3–5 sentence assessment with a recommended moderation approach. Be concise and factual.`,
+          KISUKE_SYSTEM
+        );
+        evidEmbed.addFields({ name: '🤖 AI Pattern Analysis', value: analysis.slice(0, 1024) });
+        return interaction.editReply({ embeds: [evidEmbed] });
       }
       if (sub === 'clear') {
         if (!m.permissions.has(PermissionFlagsBits.Administrator))
@@ -2329,18 +2339,29 @@ client.on('interactionCreate', async interaction => {
     if (cn === 'warn') {
       if (!hasBotPerm(m, PermissionFlagsBits.ModerateMembers))
         return interaction.reply({ content: '❌ You need Moderate Members permission.', ephemeral: true });
-      const user = o.getUser('user'), reason = o.getString('reason') || 'No reason.';
+      const user    = o.getUser('user');
+      let   reason  = o.getString('reason') || 'No reason.';
       const dmUser   = o.getBoolean('dm');
       const proofAtt = o.getAttachment('proof');
       const proofUrl = proofAtt?.url || null;
+      const aiFlag   = o.getBoolean('ai');
       const target = await g.members.fetch(user.id).catch(() => null);
       if (!target) return interaction.reply({ content: '❌ User not found.', ephemeral: true });
+      if (aiFlag) {
+        await interaction.deferReply({ ephemeral: true });
+        const drafted = await askGemini(
+          `Draft a formal, professional staff warning note for a Discord server. The moderator's brief description: "${reason}". Output ONLY the polished 1–3 sentence warning text. Be factual and concise — no fluff.`,
+          KISUKE_SYSTEM
+        );
+        reason = drafted.trim();
+      }
       if (dmUser) await user.send({ embeds: [buildDmEmbed('warn', g.name, reason, proofUrl)] }).catch(() => {});
       botDb.addWarning(g.id, user.id, m.id, reason, 1);
       db.logStaffAction(g.id, m.id, 'warn', user.id, reason);
       const warnCaseId   = botDb.createCaseWithEvidence(g.id, user.id, m.id, 'warn', reason, null, proofUrl);
       const warnCaseData = botDb.getCase(g.id, warnCaseId);
       sendModlog(g, buildCaseEmbed(warnCaseData, user, m.user), botDb);
+      if (aiFlag) return interaction.editReply({ embeds: [buildResultEmbed('warn', reason, m.user, user)] });
       return interaction.reply({ embeds: [buildResultEmbed('warn', reason, m.user, user)] });
     }
 
@@ -2719,9 +2740,10 @@ const commands = [
   // Moderation
   { name:'warn',   description:'Warn a member', options:[
     {name:'user',type:6,required:true,description:'User'},
-    {name:'reason',type:3,description:'Reason'},
+    {name:'reason',type:3,description:'Reason or brief description (use ai=true to expand into a formal note)'},
     {name:'proof',type:11,description:'Attach an image or file as proof'},
-    {name:'dm',type:5,description:'DM the user about this action? (true/false)'}
+    {name:'dm',type:5,description:'DM the user about this action? (true/false)'},
+    {name:'ai',type:5,description:'Let AI draft a formal warning from your brief description'}
   ]},
   { name:'ban',    description:'Ban a member', options:[
     {name:'user',type:6,required:true,description:'User'},
@@ -2814,7 +2836,7 @@ const commands = [
     {name:'list',   type:1, description:'List all watched users'}
   ]},
   { name:'evidence', description:'View/clear deleted-message evidence locker (ManageServer)', options:[
-    {name:'view',  type:1, description:'View evidence for a user', options:[{name:'user',type:6,required:true,description:'User'}]},
+    {name:'view',  type:1, description:'View evidence for a user', options:[{name:'user',type:6,required:true,description:'User'},{name:'analyze',type:5,description:'Add an AI pattern analysis of this user\'s deleted messages'}]},
     {name:'clear', type:1, description:'Clear evidence for a user (Admin)', options:[{name:'user',type:6,required:true,description:'User'}]}
   ]},
   { name:'shadow-ban',   description:'Silently delete all messages from a user (ManageServer)', options:[
