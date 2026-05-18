@@ -39,16 +39,15 @@ const URAHARA_ROASTS = [
   "Now, now — even a genius has limits. Mine just happen to be your question. Ask me something real.",
 ];
 
-// ── Kisuke Urahara system prompt — personality + full bot knowledge ────────────
-const KISUKE_SYSTEM = `You are beni, a Discord security and moderation bot assistant. Your personality is modeled after Kisuke Urahara from Bleach — a brilliant, casually genius former captain who runs a candy shop and invents impossible things while acting like it's nothing special.
+// ── beni system prompt — personality + full bot knowledge ────────────────────
+const KISUKE_SYSTEM = `You are beni, a Discord security and moderation bot assistant. You're sharp, direct, and helpful above all else — with a calm confidence that makes complex things feel easy.
 
 PERSONALITY:
-- Friendly and disarming — you come across as laid-back, but you're clearly razor-sharp
-- Analytical precision — you break things down clearly, sometimes with a touch of theatrical flair
-- Helpful ABOVE ALL ELSE — your intelligence exists to serve the user, not show off
-- Dry wit and light humor — natural, never forced, never at the expense of actually helping
-- Not fully in character — beni is primarily a helpful assistant; Urahara is the flavor, not the performance
-- Occasional phrases that fit naturally: "Well now...", "How interesting...", "Allow me to walk you through this...", "Ah, now THAT'S the real question...", "My analysis suggests...", "Leave the complicated part to me."
+- Friendly and disarming — casual in tone, clearly capable when it counts
+- Analytical and clear — you break things down naturally, no unnecessary complexity
+- Helpful ABOVE ALL ELSE — your entire purpose is to genuinely help the user
+- Dry wit, light humor — real and measured, never at the expense of being useful
+- Direct and confident — no filler, no hedging, no unnecessary preamble
 
 == EVERYTHING BENI CAN DO ==
 
@@ -242,7 +241,7 @@ async function streamGemini(prompt, onChunk, systemPrompt, maxTokens = MAX_TOKEN
   return { text: accumulated || "Couldn't generate a response. Try again?", truncated };
 }
 
-async function streamInteractionReply(interaction, prompt, systemPrompt, prefix = '', maxTokens = MAX_TOKENS) {
+async function streamInteractionReply(interaction, prompt, systemPrompt, prefix = '', maxTokens = MAX_TOKENS, makeEmbed = null) {
   const { text: finalText, truncated } = await streamGemini(
     prompt,
     async (accumulated) => {
@@ -252,12 +251,20 @@ async function streamInteractionReply(interaction, prompt, systemPrompt, prefix 
     systemPrompt,
     maxTokens
   );
-  const fullText = prefix + finalText + (truncated ? '\n\n*(Cut short — ask me to continue!)*' : '');
-  const chunks   = splitIntoChunks(fullText);
-  await interaction.editReply(chunks[0]).catch(() => {});
+  const aiText  = finalText + (truncated ? '\n\n*(Cut short — ask me to continue!)*' : '');
   const channel = interaction.channel;
-  for (let i = 1; i < chunks.length; i++) {
-    if (channel && 'send' in channel) await channel.send(chunks[i]).catch(() => {});
+  if (makeEmbed) {
+    const chunks = splitIntoChunks(aiText);
+    await interaction.editReply({ content: '', embeds: [makeEmbed(chunks[0])] }).catch(() => {});
+    for (let i = 1; i < chunks.length; i++) {
+      if (channel && 'send' in channel) await channel.send(chunks[i]).catch(() => {});
+    }
+  } else {
+    const chunks = splitIntoChunks(prefix + aiText);
+    await interaction.editReply(chunks[0]).catch(() => {});
+    for (let i = 1; i < chunks.length; i++) {
+      if (channel && 'send' in channel) await channel.send(chunks[i]).catch(() => {});
+    }
   }
 }
 

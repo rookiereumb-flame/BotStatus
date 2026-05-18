@@ -1002,7 +1002,8 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
     const question = o.getString('question');
     if (isNSFW(question)) return interaction.editReply(yoruichiNSFWRoast());
-    await streamInteractionReply(interaction, question, KISUKE_SYSTEM, '');
+    await streamInteractionReply(interaction, question, KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x9b59b6).setTitle('💬 Answer').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1010,12 +1011,10 @@ client.on('interactionCreate', async interaction => {
   if (cn === '8ball') {
     await interaction.deferReply();
     const q8 = o.getString('question');
-    await streamInteractionReply(
-      interaction,
+    await streamInteractionReply(interaction,
       `Someone asked the magic 8-ball: "${q8}". Respond in the style of a mystical, dramatic 8-ball. Start with a classic verdict (Yes/No/Maybe/Ask again later/Outlook uncertain etc.), then add flair. Keep it short and punchy.`,
-      KISUKE_SYSTEM,
-      `🎱 **Q: ${q8}**\n\n*The ball swirls...*\n\n`
-    );
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x5865f2).setTitle(`🎱 ${q8.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1026,7 +1025,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(text)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Summarize the following text clearly and concisely, keeping all key points:\n\n${text}`,
-      KISUKE_SYSTEM, '📝 **Summary**\n\n');
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x3498db).setTitle('📝 Summary').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1037,7 +1037,8 @@ client.on('interactionCreate', async interaction => {
     const lang = o.getString('language') || 'English';
     await streamInteractionReply(interaction,
       `Translate the following text into ${lang}. Provide only the translation — no explanation unless asked:\n\n${txt}`,
-      KISUKE_SYSTEM, `🌐 **Translation → ${lang}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x2ecc71).setTitle(`🌐 Translation → ${lang}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1048,7 +1049,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Tell me a clever, funny joke about: ${topic}. Make it clean but actually funny — no cheap punchlines.`,
-      KISUKE_SYSTEM, `😂 **Joke about: ${topic}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0xf39c12).setTitle(`😂 Joke — ${topic.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1059,7 +1061,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(prompt)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Write a short, engaging story based on this prompt. Make it vivid and complete — with a beginning, middle, and end:\n\n${prompt}`,
-      KISUKE_SYSTEM, `📖 **Story**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x9b59b6).setTitle('📖 Story').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     const msg = await interaction.fetchReply().catch(() => null);
     if (msg) openContinuationThread(msg, `Story: ${prompt.slice(0, 60)}`, prompt, '✍️ Continue the story here — just send messages in this thread!');
     return;
@@ -1073,7 +1076,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Write a beautiful, original ${style} poem about: ${topic}. Make it feel genuine and evocative.`,
-      KISUKE_SYSTEM, `🌸 **Poem — ${topic}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0xe91e63).setTitle(`🌸 ${topic.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1084,7 +1088,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Write a rap verse with genuine flow, rhyme scheme, and wordplay about: ${topic}. No filler lines — every bar should hit.`,
-      KISUKE_SYSTEM, `🎤 **Rap — ${topic}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0xe74c3c).setTitle(`🎤 Rap — ${topic.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1095,7 +1100,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Begin a short roleplay scenario. Set the scene compellingly and leave an obvious opening for the user to respond. Scenario:\n\n${scenario}`,
-      KISUKE_SYSTEM, `🎭 **Roleplay — ${scenario.slice(0, 60)}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x9b59b6).setTitle(`🎭 ${scenario.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     const msg = await interaction.fetchReply().catch(() => null);
     if (msg) openContinuationThread(msg, `RP: ${scenario.slice(0, 60)}`, scenario, '🎭 Continue the roleplay here — just send your actions/dialogue in this thread!');
     return;
@@ -1108,7 +1114,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Brainstorm 8–12 creative and distinct ideas, approaches, or angles for: ${topic}. Vary the type of ideas — practical, wild, unconventional.`,
-      KISUKE_SYSTEM, `💡 **Brainstorm — ${topic}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0xf1c40f).setTitle(`💡 Brainstorm — ${topic.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1119,7 +1126,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `You are a dungeon master. Set an atmospheric D&D scene based on: "${scenario}". Describe the environment vividly, introduce one clear hook or threat, and end with a question or choice for the player.`,
-      KISUKE_SYSTEM, `⚔️ **D&D — Your Adventure Begins**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0xe74c3c).setTitle('⚔️ D&D — Your Adventure Begins').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     const msg = await interaction.fetchReply().catch(() => null);
     if (msg) openContinuationThread(msg, `D&D: ${scenario.slice(0, 60)}`, scenario, '🎲 Your adventure continues here — tell me what you do next!');
     return;
@@ -1132,7 +1140,8 @@ client.on('interactionCreate', async interaction => {
     const mood = o.getString('mood') || 'something great';
     await streamInteractionReply(interaction,
       `Recommend 5 great ${type}s for someone in the mood for: ${mood}. For each, give the title, a 1-sentence hook, and why it fits the mood. Format clearly.`,
-      KISUKE_SYSTEM, `🎬 **${type.charAt(0).toUpperCase() + type.slice(1)} Recommendations**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x2ecc71).setTitle(`🎬 ${type.charAt(0).toUpperCase() + type.slice(1)} Recommendations`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1161,7 +1170,8 @@ client.on('interactionCreate', async interaction => {
     const location = o.getString('location');
     await streamInteractionReply(interaction,
       `Describe the weather in ${location} right now in a vivid, fun way. You don't have real data — make it feel true to the climate/season of that place. Keep it short, punchy, and entertaining.`,
-      KISUKE_SYSTEM, `🌤️ **Weather — ${location}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x3498db).setTitle(`🌤️ Weather — ${location.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1171,7 +1181,8 @@ client.on('interactionCreate', async interaction => {
     const problem = o.getString('problem');
     await streamInteractionReply(interaction,
       `Solve the following math problem step by step. Show your working clearly, then state the final answer:\n\n${problem}`,
-      KISUKE_SYSTEM, `🧮 **Math Solution**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0xf39c12).setTitle('🧮 Math Solution').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1182,7 +1193,8 @@ client.on('interactionCreate', async interaction => {
     const lang    = o.getString('language') || 'the most appropriate language';
     await streamInteractionReply(interaction,
       `${request}\n\nWrite this in ${lang}. Include a brief explanation after the code block. Use proper code formatting.`,
-      KISUKE_SYSTEM, '');
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x2c3e50).setTitle('💻 Code').setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1196,7 +1208,7 @@ client.on('interactionCreate', async interaction => {
       KISUKE_SYSTEM
     );
     const chunks = splitIntoChunks(pollText);
-    await interaction.editReply(`📊 **Poll**\n\n${chunks[0]}`);
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle('📊 Poll').setDescription(chunks[0].slice(0,4096)).setFooter({text:'beni AI'})] });
     for (let i = 1; i < chunks.length; i++) {
       if (interaction.channel && 'send' in interaction.channel) await interaction.channel.send(chunks[i]).catch(() => {});
     }
@@ -1259,7 +1271,7 @@ client.on('interactionCreate', async interaction => {
       `Write a short, clever, funny roast of a Discord user named "${name}". Keep it playful — no real insults, no slurs, no body-shaming. Just witty banter. 2–4 sentences max.`,
       KISUKE_SYSTEM
     );
-    await interaction.editReply(`🔥 **Roasting ${name}...**\n\n${roast}`);
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle(`🔥 Roasting ${name}`).setDescription(roast).setFooter({text:'beni AI'})] });
     return;
   }
 
@@ -1271,7 +1283,7 @@ client.on('interactionCreate', async interaction => {
       `Give me one genuinely fascinating, surprising, or counterintuitive fact about: ${topic}. State the fact clearly, then give 1–2 sentences of context.`,
       KISUKE_SYSTEM
     );
-    await interaction.editReply(`🔬 **Fact — ${topic}**\n\n${fact}`);
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle(`🔬 Fact${topic !== 'anything interesting' ? ` — ${topic.slice(0,150)}` : ''}`).setDescription(fact).setFooter({text:'beni AI'})] });
     return;
   }
 
@@ -1283,7 +1295,7 @@ client.on('interactionCreate', async interaction => {
       `Give me one powerful, thought-provoking quote about ${topic}. Format it as:\n\n"[Quote]"\n— [Author]\n\nThen add a brief (1–2 sentence) reflection on why it matters.`,
       KISUKE_SYSTEM
     );
-    await interaction.editReply(`💬 **Quote — ${topic}**\n\n${quote}`);
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle(`💬 Quote — ${topic.slice(0,200)}`).setDescription(quote).setFooter({text:'beni AI'})] });
     return;
   }
 
@@ -1316,7 +1328,8 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Present a balanced debate on: "${topic}". Format clearly:\n\n**FOR:**\n[3 strong arguments]\n\n**AGAINST:**\n[3 strong arguments]\n\n**Verdict:** [A concise, neutral summary]`,
-      KISUKE_SYSTEM, `⚖️ **Debate — ${topic}**\n\n`);
+      KISUKE_SYSTEM, '', undefined,
+      (t) => new EmbedBuilder().setColor(0x3498db).setTitle(`⚖️ Debate — ${topic.slice(0,200)}`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
     return;
   }
 
@@ -1347,8 +1360,8 @@ client.on('interactionCreate', async interaction => {
     } catch (err) {
       return interaction.editReply(`❌ Couldn't load that image: ${err.message}`);
     }
-    const chunks = splitIntoChunks(`👁️ **Vision Analysis**\n\n${analysis}`);
-    await interaction.editReply(chunks[0]);
+    const chunks = splitIntoChunks(analysis);
+    await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x3498db).setTitle('👁️ Vision Analysis').setDescription(chunks[0].slice(0,4096)).setFooter({text:'beni AI'})] });
     for (let i = 1; i < chunks.length; i++) {
       if (interaction.channel && 'send' in interaction.channel) await interaction.channel.send(chunks[i]).catch(() => {});
     }
