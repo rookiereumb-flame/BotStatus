@@ -9,6 +9,13 @@ const db    = require('./src/database/db');
 const botDb = require('./src/database');
 const { buildResultEmbed, buildCaseEmbed, sendModlog } = require('./src/utils/modlog');
 const { logAction, checkThreshold, suspendUser, sendLog, applySuspendedOverwrites, SUSPEND_DENY, JAIL_OVERWRITE, securityEmbed } = require('./src/services/monitor');
+const {
+  aiChatChannels, conversationHistory, triviaCache, activeReminders,
+  askGemini, streamInteractionReply, askGeminiWithHistory,
+  analyzeImage, generateAIImage, splitIntoChunks,
+  isNSFW, yoruichiNSFWRoast, openContinuationThread,
+  YORUICHI_SYSTEM, DISCORD_LIMIT, STREAM_THROTTLE_MS,
+} = require('./src/services/ai');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
 const CLIENT_ID = process.env.DISCORD_CLIENT_ID || '1437383469528387616';
@@ -491,13 +498,90 @@ client.on('messageDelete', async message => {
 });
 
 // ── @everyone protection + Shadow Ban + Watchlist + Slowmode + Counting ───────
+// ── AI Chat message handler ────────────────────────────────────────────────────
+async function handleAIChatMessage(message, isMentioned, isAiChannel, isDM) {
+  const imageAttachment = message.attachments?.find(a => a.contentType?.startsWith('image/'));
+  const embedImage      = message.embeds?.[0]?.image?.url || message.embeds?.[0]?.thumbnail?.url;
+  const hasVisual       = !!(imageAttachment || embedImage);
+  const rawContent      = (message.content ?? '').replace(/<@!?\d+>/g, '').trim();
+
+  if (!rawContent && !hasVisual) {
+    if (isMentioned) await message.reply("Hey! What's up? Ask me anything — or attach an image for me to analyze.").catch(() => {});
+    return;
+  }
+  if (isNSFW(rawContent)) {
+    await message.reply(yoruichiNSFWRoast()).catch(() => {});
+    return;
+  }
+
+  let typingInterval = null;
+  try {
+    if ('sendTyping' in message.channel) {
+      await message.channel.sendTyping().catch(() => {});
+      typingInterval = setInterval(() => message.channel.sendTyping?.().catch(() => {}), 8000);
+    }
+
+    if (hasVisual) {
+      clearInterval(typingInterval);
+      const imageUrl = imageAttachment?.url || embedImage;
+      const question = rawContent || 'Describe this image in detail.';
+      let analysis;
+      try { analysis = await analyzeImage(imageUrl, question); }
+      catch (e) { analysis = `Couldn't load that image: ${e.message}`; }
+      const chunks = splitIntoChunks(analysis);
+      await message.reply(chunks[0]).catch(() => {});
+      for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]).catch(() => {});
+      return;
+    }
+
+    let sentMsg   = null;
+    let lastEdit  = 0;
+
+    const { text: replyText, truncated } = await askGeminiWithHistory(
+      message.channelId,
+      rawContent,
+      message.author.globalName || message.author.username,
+      async (accumulated) => {
+        const now     = Date.now();
+        const display = accumulated.slice(0, DISCORD_LIMIT) + '▌';
+        if (!sentMsg) {
+          sentMsg  = await message.reply(display).catch(() => null);
+          lastEdit = now;
+        } else if (now - lastEdit >= STREAM_THROTTLE_MS) {
+          lastEdit = now;
+          await sentMsg.edit(display).catch(() => {});
+        }
+      }
+    );
+
+    clearInterval(typingInterval);
+    const full   = replyText + (truncated ? '\n\n*(reply got cut off — say "continue" for more!)*' : '');
+    const chunks = splitIntoChunks(full);
+    if (sentMsg) await sentMsg.edit(chunks[0]).catch(() => {});
+    else         await message.reply(chunks[0]).catch(() => {});
+    for (let i = 1; i < chunks.length; i++) await message.channel.send(chunks[i]).catch(() => {});
+  } catch (err) {
+    clearInterval(typingInterval);
+    console.error('[AI Chat]', err?.message || err);
+    await message.reply("Something went sideways on my end. Try again in a moment.").catch(() => {});
+  }
+}
+
 client.on('messageCreate', async message => {
-  if (!message.guild || message.author.bot) return;
+  if (message.author.bot) return;
+
+  // ── DM handling — AI only ──────────────────────────────────────────────────
+  if (!message.guild) {
+    if (message.channel?.type === ChannelType.DM) {
+      handleAIChatMessage(message, false, false, true).catch(() => {});
+    }
+    return;
+  }
 
   // ── Shadow Ban — silently delete messages ──────────────────────────────────
   if (db.isShadowBanned(message.guild.id, message.author.id)) {
     await message.delete().catch(() => {});
-    return; // no further processing
+    return;
   }
 
   // ── Silent Watchlist Alert ─────────────────────────────────────────────────
@@ -542,6 +626,14 @@ client.on('messageCreate', async message => {
       if (mb) await suspendUser(mb, '@everyone / @here Abuse', `In #${message.channel.name}`);
       return;
     }
+  }
+
+  // ── AI Chat — @mentions and enabled channels ───────────────────────────────
+  const isMentioned = message.mentions.has(client.user?.id);
+  const isAiChannel = aiChatChannels.has(message.channel.id);
+  if (isMentioned || isAiChannel) {
+    handleAIChatMessage(message, isMentioned, isAiChannel, false).catch(() => {});
+    if (!isAiChannel) return; // @mention only: don't fall into counting
   }
 
   // Counting game
@@ -737,7 +829,7 @@ const MAGIC8 = [
 // ─── Help pages ───────────────────────────────────────────────────────────────
 function buildHelpPages() {
   return [
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 1/5: Moderation')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 1/7: Moderation')
       .addFields(
         { name: '/warn @user [reason]',           value: 'Issue a warning (creates case + modlog)' },
         { name: '/ban @user [reason]',             value: 'Ban a member from the server' },
@@ -756,9 +848,9 @@ function buildHelpPages() {
         { name: '/cases modify <id> <field> <val>',value: 'Edit a case reason or duration (Admin)' },
         { name: '/notes add|remove|view|modify|delall', value: 'Manage staff notes on users (modify = edit content, Admin)' },
         { name: '/setlogs #channel [type]',        value: 'Unified log setup — `both` (default), `cases` only, or `security` only (Admin)' }
-      ).setFooter({ text: 'Page 1/5 • Use buttons to navigate' }),
+      ).setFooter({ text: 'Page 1/7 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 2/5: Anti-Nuke & Security')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 2/7: Anti-Nuke & Security')
       .addFields(
         { name: '/config [type] [limit] [time]', value: 'Set anti-nuke thresholds — e.g. `3 / 10s`' },
         { name: '/setlogs #channel [type]',      value: 'Set log channel — cases / security / both (Admin)' },
@@ -778,9 +870,9 @@ function buildHelpPages() {
         '• **Auto-revert** — deleted channels/roles rebuilt from snapshot on nuke\n' +
         '• **Dynamic slowmode** — auto-adjusts on message spikes\n' +
         '• **Raid detection** — join spike → lockdown/kick/alert'
-      }).setFooter({ text: 'Page 2/5 • Use buttons to navigate' }),
+      }).setFooter({ text: 'Page 2/7 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 3/4: Snapshots & Revert')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 3/7: Snapshots & Revert')
       .addFields(
         { name: '/snapshot',         value: 'View last saved server state (channels, roles, count)' },
         { name: '/revert channels',  value: 'Restore missing channels + permission overwrites' },
@@ -794,9 +886,9 @@ function buildHelpPages() {
         '**L3 (Permit)** — Bypasses Discord permission checks for mod commands (ban/kick/mute/suspend)\n' +
         '**Bot-Owner tier** — Administrator + role above bot = owner access\n' +
         '*All trusted users are immune to @everyone suspend*'
-      }).setFooter({ text: 'Page 3/5 • Use buttons to navigate' }),
+      }).setFooter({ text: 'Page 3/7 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 4/5: Intelligence Systems')
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 4/7: Intelligence Systems')
       .addFields(
         { name: '/watchlist add|remove|list',     value: 'Silent watchlist — alerts staff when watched user sends a message' },
         { name: '/evidence view|clear [@user]',   value: 'View deleted messages stored in the evidence locker' },
@@ -811,18 +903,59 @@ function buildHelpPages() {
         '• **Shadow ban** — user continues posting, nobody else sees it\n' +
         '• **Raid detection** — join spikes or fresh-account waves trigger lockdown/kick/alert\n' +
         '• **Dynamic slowmode** — spikes (12 msg/10s) auto-set 5s delay; clears when quiet'
-      }).setFooter({ text: 'Page 4/5 • Use buttons to navigate' }),
+      }).setFooter({ text: 'Page 4/7 • Use buttons to navigate' }),
 
-    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 5/5: Fun & Features')
+    new EmbedBuilder().setColor(0x9b59b6).setTitle('🤖 beni — Page 5/7: AI — Chat & Creative')
+      .setDescription('AI powered by Gemini. Mention the bot anywhere, or use `/enable-chat` in a channel for auto-replies.')
       .addFields(
-        { name: '/ask [question]',               value: '🎱 Magic 8-Ball' },
+        { name: '/ask [question]',         value: 'Ask the AI anything — smart, fast answers (works in DMs too)' },
+        { name: '/summarize [text]',       value: 'Get a clean summary of any text or passage' },
+        { name: '/translate [text] [lang]',value: 'Translate text into any language' },
+        { name: '/story [prompt]',         value: 'Generate a short story — continues in a thread' },
+        { name: '/poem [topic]',           value: 'Write a poem about any topic or feeling' },
+        { name: '/rap [topic]',            value: 'Drop bars on any topic — full rap verse' },
+        { name: '/roleplay [scenario]',    value: 'Start an AI roleplay — continues in a dedicated thread' },
+        { name: '/brainstorm [topic]',     value: 'Generate creative ideas, angles, or approaches' },
+        { name: '/debate [topic]',         value: 'Get both sides of any argument laid out clearly' },
+        { name: '/dnd [scenario]',         value: 'D&D-style adventure — AI is your dungeon master' },
+        { name: '/code [request]',         value: 'Write, explain, or debug code in any language' },
+        { name: '/vision [url] [question]',value: 'Analyze an image URL — describe, read, or answer questions' },
+        { name: '/imagine [prompt]',       value: 'Generate an AI image from a text description' }
+      ).setFooter({ text: 'Page 5/7 • Use buttons to navigate' }),
+
+    new EmbedBuilder().setColor(0x9b59b6).setTitle('🤖 beni — Page 6/7: AI — Games & Utilities')
+      .addFields(
+        { name: '/8ball [question]',        value: '🎱 Magic 8-Ball (now AI-powered for extra drama)' },
+        { name: '/trivia [topic]',          value: 'AI-generated trivia question — use `/answer` to guess' },
+        { name: '/answer [guess]',          value: 'Submit your answer to the current trivia question' },
+        { name: '/joke [topic]',            value: 'Get a joke — any topic, any style' },
+        { name: '/roast [@user]',           value: 'Roast a server member (all in good fun)' },
+        { name: '/fact [topic]',            value: 'Get a wild or interesting fact about anything' },
+        { name: '/quote [topic]',           value: 'Get an inspiring or thought-provoking quote' },
+        { name: '/ship [@user1] [@user2]',  value: 'Check the compatibility between two users' },
+        { name: '/recommend [type] [mood]', value: 'Get AI movie, book, game, or music picks for your mood' },
+        { name: '/remind [time] [message]', value: 'Set a reminder — bot DMs you when time is up' },
+        { name: '/weather [location]',      value: 'Get a vibe-based weather description for any place' },
+        { name: '/math [problem]',          value: 'Solve any math problem with step-by-step working' },
+        { name: '/poll [topic]',            value: 'Generate a poll with emoji options for a topic' }
+      )
+      .addFields({ name: '💬 AI Chat Mode', value:
+        '• **@mention** the bot in any channel or DM for a direct reply\n' +
+        '• `/enable-chat` in a channel → every message gets an AI response\n' +
+        '• `/disable-chat` to turn off auto-replies in a channel\n' +
+        '• `/clear-memory` to reset the conversation history in a channel\n' +
+        '• Attach an image + mention the bot to analyze it with `/vision`-style AI'
+      }).setFooter({ text: 'Page 6/7 • Use buttons to navigate' }),
+
+    new EmbedBuilder().setColor(0x5865f2).setTitle('🛡️ beni — Page 7/7: Fun & Features')
+      .addFields(
         { name: '/say [message]',                value: 'Send a message as the bot (DMs & User App supported)' },
         { name: '/counting-toggle [#ch] [type]', value: 'Enable/disable counting — types: normal, even, odd, fibonacci, prime' },
         { name: '/starboard-enable [#ch] [n] [emoji]', value: 'Enable starboard (default: 3 ⭐, handles images/video/embeds)' },
         { name: '/starboard-disable',            value: 'Disable starboard' }
       )
       .addFields({ name: '⏱️ Duration Format', value: '`10s` · `5m` · `2h` · `1d` · `1w` — used in /mute /suspend /config' })
-      .setFooter({ text: 'Page 5/5 • beni Security Engine' })
+      .setFooter({ text: 'Page 7/7 • beni Security Engine' })
   ];
 }
 
@@ -864,11 +997,384 @@ client.on('interactionCreate', async interaction => {
     return;
   }
 
-  // ── /ask ───────────────────────────────────────────────────────────
+  // ── /ask (AI) ──────────────────────────────────────────────────────
   if (cn === 'ask') {
-    return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('🎱 Magic 8-Ball')
-      .addFields({ name: '❓ Question', value: o.getString('question') },
-                 { name: '🔮 Answer',   value: `**${MAGIC8[Math.floor(Math.random() * MAGIC8.length)]}**` })] });
+    await interaction.deferReply();
+    const question = o.getString('question');
+    if (isNSFW(question)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction, question, YORUICHI_SYSTEM, '');
+    return;
+  }
+
+  // ── /8ball ─────────────────────────────────────────────────────────
+  if (cn === '8ball') {
+    await interaction.deferReply();
+    const q8 = o.getString('question');
+    await streamInteractionReply(
+      interaction,
+      `Someone asked the magic 8-ball: "${q8}". Respond in the style of a mystical, dramatic 8-ball. Start with a classic verdict (Yes/No/Maybe/Ask again later/Outlook uncertain etc.), then add flair. Keep it short and punchy.`,
+      YORUICHI_SYSTEM,
+      `🎱 **Q: ${q8}**\n\n*The ball swirls...*\n\n`
+    );
+    return;
+  }
+
+  // ── /summarize ─────────────────────────────────────────────────────
+  if (cn === 'summarize') {
+    await interaction.deferReply();
+    const text = o.getString('text');
+    if (isNSFW(text)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Summarize the following text clearly and concisely, keeping all key points:\n\n${text}`,
+      YORUICHI_SYSTEM, '📝 **Summary**\n\n');
+    return;
+  }
+
+  // ── /translate ─────────────────────────────────────────────────────
+  if (cn === 'translate') {
+    await interaction.deferReply();
+    const txt  = o.getString('text');
+    const lang = o.getString('language') || 'English';
+    await streamInteractionReply(interaction,
+      `Translate the following text into ${lang}. Provide only the translation — no explanation unless asked:\n\n${txt}`,
+      YORUICHI_SYSTEM, `🌐 **Translation → ${lang}**\n\n`);
+    return;
+  }
+
+  // ── /joke ──────────────────────────────────────────────────────────
+  if (cn === 'joke') {
+    await interaction.deferReply();
+    const topic = o.getString('topic') || 'anything';
+    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Tell me a clever, funny joke about: ${topic}. Make it clean but actually funny — no cheap punchlines.`,
+      YORUICHI_SYSTEM, `😂 **Joke about: ${topic}**\n\n`);
+    return;
+  }
+
+  // ── /story ─────────────────────────────────────────────────────────
+  if (cn === 'story') {
+    await interaction.deferReply();
+    const prompt = o.getString('prompt');
+    if (isNSFW(prompt)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Write a short, engaging story based on this prompt. Make it vivid and complete — with a beginning, middle, and end:\n\n${prompt}`,
+      YORUICHI_SYSTEM, `📖 **Story**\n\n`);
+    const msg = await interaction.fetchReply().catch(() => null);
+    if (msg) openContinuationThread(msg, `Story: ${prompt.slice(0, 60)}`, prompt, '✍️ Continue the story here — just send messages in this thread!');
+    return;
+  }
+
+  // ── /poem ──────────────────────────────────────────────────────────
+  if (cn === 'poem') {
+    await interaction.deferReply();
+    const topic = o.getString('topic');
+    const style = o.getString('style') || 'free verse';
+    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Write a beautiful, original ${style} poem about: ${topic}. Make it feel genuine and evocative.`,
+      YORUICHI_SYSTEM, `🌸 **Poem — ${topic}**\n\n`);
+    return;
+  }
+
+  // ── /rap ───────────────────────────────────────────────────────────
+  if (cn === 'rap') {
+    await interaction.deferReply();
+    const topic = o.getString('topic');
+    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Write a rap verse with genuine flow, rhyme scheme, and wordplay about: ${topic}. No filler lines — every bar should hit.`,
+      YORUICHI_SYSTEM, `🎤 **Rap — ${topic}**\n\n`);
+    return;
+  }
+
+  // ── /roleplay ──────────────────────────────────────────────────────
+  if (cn === 'roleplay') {
+    await interaction.deferReply();
+    const scenario = o.getString('scenario');
+    if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Begin a short roleplay scenario. Set the scene compellingly and leave an obvious opening for the user to respond. Scenario:\n\n${scenario}`,
+      YORUICHI_SYSTEM, `🎭 **Roleplay — ${scenario.slice(0, 60)}**\n\n`);
+    const msg = await interaction.fetchReply().catch(() => null);
+    if (msg) openContinuationThread(msg, `RP: ${scenario.slice(0, 60)}`, scenario, '🎭 Continue the roleplay here — just send your actions/dialogue in this thread!');
+    return;
+  }
+
+  // ── /brainstorm ────────────────────────────────────────────────────
+  if (cn === 'brainstorm') {
+    await interaction.deferReply();
+    const topic = o.getString('topic');
+    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Brainstorm 8–12 creative and distinct ideas, approaches, or angles for: ${topic}. Vary the type of ideas — practical, wild, unconventional.`,
+      YORUICHI_SYSTEM, `💡 **Brainstorm — ${topic}**\n\n`);
+    return;
+  }
+
+  // ── /dnd ───────────────────────────────────────────────────────────
+  if (cn === 'dnd') {
+    await interaction.deferReply();
+    const scenario = o.getString('scenario') || 'a mysterious forest clearing at dusk';
+    if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `You are a dungeon master. Set an atmospheric D&D scene based on: "${scenario}". Describe the environment vividly, introduce one clear hook or threat, and end with a question or choice for the player.`,
+      YORUICHI_SYSTEM, `⚔️ **D&D — Your Adventure Begins**\n\n`);
+    const msg = await interaction.fetchReply().catch(() => null);
+    if (msg) openContinuationThread(msg, `D&D: ${scenario.slice(0, 60)}`, scenario, '🎲 Your adventure continues here — tell me what you do next!');
+    return;
+  }
+
+  // ── /recommend ─────────────────────────────────────────────────────
+  if (cn === 'recommend') {
+    await interaction.deferReply();
+    const type = o.getString('type') || 'movie';
+    const mood = o.getString('mood') || 'something great';
+    await streamInteractionReply(interaction,
+      `Recommend 5 great ${type}s for someone in the mood for: ${mood}. For each, give the title, a 1-sentence hook, and why it fits the mood. Format clearly.`,
+      YORUICHI_SYSTEM, `🎬 **${type.charAt(0).toUpperCase() + type.slice(1)} Recommendations**\n\n`);
+    return;
+  }
+
+  // ── /remind ────────────────────────────────────────────────────────
+  if (cn === 'remind') {
+    const timeStr   = o.getString('time');
+    const reminder  = o.getString('message');
+    const ms        = parseDuration(timeStr);
+    if (!ms || ms < 5000) return interaction.reply({ content: '❌ Invalid time. Try `5m`, `1h`, `2d` etc.', ephemeral: true });
+    if (ms > 2_000_000_000) return interaction.reply({ content: '❌ Reminder too far in the future (max ~23 days).', ephemeral: true });
+    await interaction.reply({ content: `✅ Got it! I'll remind you about **${reminder}** in **${timeStr}**.`, ephemeral: true });
+    const uid   = interaction.user.id;
+    const rid   = `${uid}-${Date.now()}`;
+    const timer = setTimeout(async () => {
+      activeReminders.delete(rid);
+      const user = await client.users.fetch(uid).catch(() => null);
+      if (user) user.send(`⏰ **Reminder:** ${reminder}`).catch(() => {});
+    }, ms);
+    activeReminders.set(rid, timer);
+    return;
+  }
+
+  // ── /weather ───────────────────────────────────────────────────────
+  if (cn === 'weather') {
+    await interaction.deferReply();
+    const location = o.getString('location');
+    await streamInteractionReply(interaction,
+      `Describe the weather in ${location} right now in a vivid, fun way. You don't have real data — make it feel true to the climate/season of that place. Keep it short, punchy, and entertaining.`,
+      YORUICHI_SYSTEM, `🌤️ **Weather — ${location}**\n\n`);
+    return;
+  }
+
+  // ── /math ──────────────────────────────────────────────────────────
+  if (cn === 'math') {
+    await interaction.deferReply();
+    const problem = o.getString('problem');
+    await streamInteractionReply(interaction,
+      `Solve the following math problem step by step. Show your working clearly, then state the final answer:\n\n${problem}`,
+      YORUICHI_SYSTEM, `🧮 **Math Solution**\n\n`);
+    return;
+  }
+
+  // ── /code ──────────────────────────────────────────────────────────
+  if (cn === 'code') {
+    await interaction.deferReply();
+    const request = o.getString('request');
+    const lang    = o.getString('language') || 'the most appropriate language';
+    await streamInteractionReply(interaction,
+      `${request}\n\nWrite this in ${lang}. Include a brief explanation after the code block. Use proper code formatting.`,
+      YORUICHI_SYSTEM, '');
+    return;
+  }
+
+  // ── /poll ──────────────────────────────────────────────────────────
+  if (cn === 'poll') {
+    await interaction.deferReply();
+    const topic = o.getString('topic');
+    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    const pollText = await askGemini(
+      `Create a Discord poll for: "${topic}". Return ONLY the poll question followed by 4–6 answer options, each on its own line starting with a different emoji (🔴🟡🟢🔵🟣🟠). No extra commentary.`,
+      YORUICHI_SYSTEM
+    );
+    const chunks = splitIntoChunks(pollText);
+    await interaction.editReply(`📊 **Poll**\n\n${chunks[0]}`);
+    for (let i = 1; i < chunks.length; i++) {
+      if (interaction.channel && 'send' in interaction.channel) await interaction.channel.send(chunks[i]).catch(() => {});
+    }
+    return;
+  }
+
+  // ── /trivia ────────────────────────────────────────────────────────
+  if (cn === 'trivia') {
+    await interaction.deferReply();
+    const topic = o.getString('topic') || 'general knowledge';
+    const raw   = await askGemini(
+      `Generate a trivia question about ${topic}. Return ONLY valid JSON with keys: question (string), answer (string), hint1 (string), hint2 (string). No markdown, no extra text.`,
+      YORUICHI_SYSTEM
+    );
+    let parsed;
+    try { parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
+    catch { return interaction.editReply('❌ Couldn\'t generate a trivia question right now. Try again!'); }
+    triviaCache.set(interaction.channelId, { question: parsed.question, answer: parsed.answer, hints: [parsed.hint1, parsed.hint2], hintsUsed: 0 });
+    await interaction.editReply(new EmbedBuilder()
+      .setColor(0x9b59b6).setTitle(`🧠 Trivia — ${topic}`)
+      .addFields({ name: '❓ Question', value: parsed.question },
+                 { name: '💡 How to answer', value: 'Use `/answer` to submit your guess!' })
+      .setFooter({ text: 'Hint available if you give up — just ask!' }));
+    return;
+  }
+
+  // ── /answer ────────────────────────────────────────────────────────
+  if (cn === 'answer') {
+    const trivia = triviaCache.get(interaction.channelId);
+    if (!trivia) return interaction.reply({ content: '❌ No active trivia question in this channel. Use `/trivia` first!', ephemeral: true });
+    const guess  = o.getString('guess');
+    const isCorrect = await askGemini(
+      `Trivia question: "${trivia.question}"\nCorrect answer: "${trivia.answer}"\nUser guess: "${guess}"\nIs the user's guess essentially correct? Consider synonyms and minor spelling differences. Reply with only "YES" or "NO".`,
+      undefined
+    );
+    if (isCorrect.trim().toUpperCase() === 'YES') {
+      triviaCache.delete(interaction.channelId);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x2ecc71).setTitle('✅ Correct!')
+        .setDescription(`**${interaction.user.username}** got it right!\n\n**Answer:** ${trivia.answer}`)] });
+    } else {
+      if (trivia.hintsUsed < trivia.hints.length) {
+        const hint = trivia.hints[trivia.hintsUsed++];
+        triviaCache.set(interaction.channelId, trivia);
+        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xe67e22).setTitle('❌ Not quite!')
+          .addFields({ name: '💡 Hint', value: hint })
+          .setDescription('Try `/answer` again with your revised guess!')] });
+      }
+      triviaCache.delete(interaction.channelId);
+      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0xe74c3c).setTitle('❌ Game Over')
+        .setDescription(`Out of hints! The answer was: **${trivia.answer}**`)] });
+    }
+  }
+
+  // ── /roast ─────────────────────────────────────────────────────────
+  if (cn === 'roast') {
+    await interaction.deferReply();
+    const target = o.getUser('user') || interaction.user;
+    const name   = target.globalName || target.username;
+    const roast  = await askGemini(
+      `Write a short, clever, funny roast of a Discord user named "${name}". Keep it playful — no real insults, no slurs, no body-shaming. Just witty banter. 2–4 sentences max.`,
+      YORUICHI_SYSTEM
+    );
+    await interaction.editReply(`🔥 **Roasting ${name}...**\n\n${roast}`);
+    return;
+  }
+
+  // ── /fact ──────────────────────────────────────────────────────────
+  if (cn === 'fact') {
+    await interaction.deferReply();
+    const topic = o.getString('topic') || 'anything interesting';
+    const fact  = await askGemini(
+      `Give me one genuinely fascinating, surprising, or counterintuitive fact about: ${topic}. State the fact clearly, then give 1–2 sentences of context.`,
+      YORUICHI_SYSTEM
+    );
+    await interaction.editReply(`🔬 **Fact — ${topic}**\n\n${fact}`);
+    return;
+  }
+
+  // ── /quote ─────────────────────────────────────────────────────────
+  if (cn === 'quote') {
+    await interaction.deferReply();
+    const topic = o.getString('topic') || 'life';
+    const quote = await askGemini(
+      `Give me one powerful, thought-provoking quote about ${topic}. Format it as:\n\n"[Quote]"\n— [Author]\n\nThen add a brief (1–2 sentence) reflection on why it matters.`,
+      YORUICHI_SYSTEM
+    );
+    await interaction.editReply(`💬 **Quote — ${topic}**\n\n${quote}`);
+    return;
+  }
+
+  // ── /ship ──────────────────────────────────────────────────────────
+  if (cn === 'ship') {
+    await interaction.deferReply();
+    const u1   = o.getUser('user1');
+    const u2   = o.getUser('user2');
+    const n1   = u1.globalName || u1.username;
+    const n2   = u2.globalName || u2.username;
+    const pct  = Math.floor(Math.random() * 101);
+    const result = await askGemini(
+      `Rate the romantic compatibility between "${n1}" and "${n2}" at ${pct}%. Write a short, fun, slightly dramatic 2–4 sentence reading about their "cosmic connection". Match the energy to the percentage — low % = tragic, high % = destiny.`,
+      YORUICHI_SYSTEM
+    );
+    const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
+    await interaction.editReply(new EmbedBuilder().setColor(0xff6b8a)
+      .setTitle(`💘 ${n1} ❤️ ${n2}`)
+      .addFields(
+        { name: 'Compatibility',  value: `\`${bar}\` **${pct}%**` },
+        { name: 'The Reading',    value: result }
+      ));
+    return;
+  }
+
+  // ── /debate ────────────────────────────────────────────────────────
+  if (cn === 'debate') {
+    await interaction.deferReply();
+    const topic = o.getString('topic');
+    if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
+    await streamInteractionReply(interaction,
+      `Present a balanced debate on: "${topic}". Format clearly:\n\n**FOR:**\n[3 strong arguments]\n\n**AGAINST:**\n[3 strong arguments]\n\n**Verdict:** [A concise, neutral summary]`,
+      YORUICHI_SYSTEM, `⚖️ **Debate — ${topic}**\n\n`);
+    return;
+  }
+
+  // ── /imagine ───────────────────────────────────────────────────────
+  if (cn === 'imagine') {
+    await interaction.deferReply();
+    const prompt = o.getString('prompt');
+    if (isNSFW(prompt)) return interaction.editReply(yoruichiNSFWRoast());
+    await interaction.editReply('🎨 Generating your image...');
+    const result = await generateAIImage(prompt);
+    if (!result) return interaction.editReply('❌ Image generation failed. Try a different prompt.');
+    const { AttachmentBuilder } = require('discord.js');
+    const ext  = result.mimeType.split('/')[1] ?? 'png';
+    const att  = new AttachmentBuilder(result.buffer, { name: `image.${ext}` });
+    await interaction.editReply({ content: `🎨 **${prompt}**`, files: [att] });
+    return;
+  }
+
+  // ── /vision ────────────────────────────────────────────────────────
+  if (cn === 'vision') {
+    await interaction.deferReply();
+    const url      = o.getString('url');
+    const question = o.getString('question') || 'Describe this image in detail.';
+    if (isNSFW(question)) return interaction.editReply(yoruichiNSFWRoast());
+    let analysis;
+    try {
+      analysis = await analyzeImage(url, question);
+    } catch (err) {
+      return interaction.editReply(`❌ Couldn't load that image: ${err.message}`);
+    }
+    const chunks = splitIntoChunks(`👁️ **Vision Analysis**\n\n${analysis}`);
+    await interaction.editReply(chunks[0]);
+    for (let i = 1; i < chunks.length; i++) {
+      if (interaction.channel && 'send' in interaction.channel) await interaction.channel.send(chunks[i]).catch(() => {});
+    }
+    return;
+  }
+
+  // ── /enable-chat ───────────────────────────────────────────────────
+  if (cn === 'enable-chat') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) && !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator))
+      return interaction.reply({ content: '❌ You need **Manage Server** permission.', ephemeral: true });
+    aiChatChannels.add(interaction.channelId);
+    return interaction.reply({ content: '✅ AI chat mode **enabled** in this channel. I\'ll respond to every message here.', ephemeral: true });
+  }
+
+  // ── /disable-chat ──────────────────────────────────────────────────
+  if (cn === 'disable-chat') {
+    if (!interaction.memberPermissions?.has(PermissionFlagsBits.ManageGuild) && !interaction.memberPermissions?.has(PermissionFlagsBits.Administrator))
+      return interaction.reply({ content: '❌ You need **Manage Server** permission.', ephemeral: true });
+    aiChatChannels.delete(interaction.channelId);
+    return interaction.reply({ content: '✅ AI chat mode **disabled** in this channel.', ephemeral: true });
+  }
+
+  // ── /clear-memory ──────────────────────────────────────────────────
+  if (cn === 'clear-memory') {
+    conversationHistory.delete(interaction.channelId);
+    return interaction.reply({ content: '🧹 Conversation history cleared for this channel. Fresh start!', ephemeral: true });
   }
 
   if (!interaction.guild) return interaction.reply({ content: '❌ Server only.', ephemeral: true });
@@ -2100,7 +2606,56 @@ const COUNTING_TYPES = [
 const commands = [
   // Global
   { name: 'say',  description: 'Send a message as the bot', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'message', type:3, required:true, description:'Message to send' }] },
-  { name: 'ask',  description: 'Ask the Magic 8-Ball',      integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your question' }] },
+  { name: 'ask',  description: 'Ask the AI anything — powered by Gemini', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your question' }] },
+  { name: '8ball', description: 'Ask the magic 8-ball (AI-powered drama)', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your yes/no question' }] },
+  { name: 'summarize', description: 'Summarize any text with AI', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'text', type:3, required:true, description:'Text to summarize' }] },
+  { name: 'translate', description: 'Translate text into any language', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'text',     type:3, required:true,  description:'Text to translate' },
+    { name:'language', type:3, required:false, description:'Target language (default: English)' }
+  ]},
+  { name: 'joke', description: 'Get a joke on any topic', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, description:'Topic (optional)' }] },
+  { name: 'story', description: 'Generate a short story from a prompt', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'prompt', type:3, required:true, description:'Story prompt' }] },
+  { name: 'poem', description: 'Write a poem on any topic', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'topic', type:3, required:true,  description:'Topic or theme' },
+    { name:'style', type:3, required:false, description:'Style (e.g. haiku, sonnet, free verse)' }
+  ]},
+  { name: 'rap', description: 'Generate a rap verse on any topic', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, required:true, description:'Rap topic' }] },
+  { name: 'roleplay', description: 'Start an AI roleplay scenario in a thread', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'scenario', type:3, required:true, description:'Scenario to roleplay' }] },
+  { name: 'brainstorm', description: 'Brainstorm ideas on any topic', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, required:true, description:'What to brainstorm' }] },
+  { name: 'debate', description: 'Get both sides of any argument', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, required:true, description:'Topic to debate' }] },
+  { name: 'dnd', description: 'Start a D&D adventure with AI as dungeon master', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'scenario', type:3, description:'Starting scenario (optional)' }] },
+  { name: 'recommend', description: 'Get AI recommendations for movies, books, music or games', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'type', type:3, description:'movie / book / game / music', choices:[{name:'Movie',value:'movie'},{name:'Book',value:'book'},{name:'Game',value:'game'},{name:'Music',value:'music'}] },
+    { name:'mood', type:3, description:'Your current mood or vibe' }
+  ]},
+  { name: 'remind', description: 'Set a reminder — bot DMs you when time is up', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'time',    type:3, required:true, description:'Time from now (e.g. 10m, 2h, 1d)' },
+    { name:'message', type:3, required:true, description:'What to remind you about' }
+  ]},
+  { name: 'weather', description: 'Get a vibe-based AI weather description', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'location', type:3, required:true, description:'City or place' }] },
+  { name: 'math', description: 'Solve any math problem step by step', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'problem', type:3, required:true, description:'Math problem to solve' }] },
+  { name: 'code', description: 'Write, explain, or debug code', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'request',  type:3, required:true,  description:'What you need (write/explain/debug)' },
+    { name:'language', type:3, required:false, description:'Programming language (optional)' }
+  ]},
+  { name: 'poll', description: 'Generate a poll with options for any topic', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, required:true, description:'Poll topic' }] },
+  { name: 'trivia', description: 'Get an AI-generated trivia question', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, description:'Topic (optional — default: general knowledge)' }] },
+  { name: 'answer', description: 'Submit your answer to the current trivia question', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'guess', type:3, required:true, description:'Your answer' }] },
+  { name: 'roast', description: 'Roast a server member (all in good fun)', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'user', type:6, description:'User to roast (default: yourself)' }] },
+  { name: 'fact', description: 'Get a fascinating fact on any topic', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, description:'Topic (optional)' }] },
+  { name: 'quote', description: 'Get an inspiring or thought-provoking quote', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'topic', type:3, description:'Topic (optional)' }] },
+  { name: 'ship', description: 'Check the compatibility between two users', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'user1', type:6, required:true,  description:'First user' },
+    { name:'user2', type:6, required:true,  description:'Second user' }
+  ]},
+  { name: 'imagine',  description: 'Generate an AI image from a text description', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'prompt', type:3, required:true, description:'Image description' }] },
+  { name: 'vision',   description: 'Analyze an image URL with AI', integration_types:[0,1], contexts:[0,1,2], options:[
+    { name:'url',      type:3, required:true,  description:'Image URL to analyze' },
+    { name:'question', type:3, required:false, description:'What to ask about the image' }
+  ]},
+  { name: 'enable-chat',   description: 'Enable AI auto-reply mode in this channel (Manage Server)', options:[] },
+  { name: 'disable-chat',  description: 'Disable AI auto-reply mode in this channel (Manage Server)', options:[] },
+  { name: 'clear-memory',  description: 'Clear AI conversation history in this channel', options:[] },
 
   // Moderation
   { name:'warn',   description:'Warn a member', options:[
@@ -2277,7 +2832,7 @@ const commands = [
     {name:'roles',    type:1, description:'Restore missing roles + permissions'},
     {name:'all',      type:1, description:'Restore both channels and roles at once'}
   ]},
-  { name:'help', description:'Show all commands with navigation', options:[{name:'page',type:4,description:'Page 1–5',min_value:1,max_value:5}] }
+  { name:'help', description:'Show all commands with navigation', options:[{name:'page',type:4,description:'Page 1–7',min_value:1,max_value:7}] }
 ];
 
 const rest = new REST({ version: '10' }).setToken(TOKEN);

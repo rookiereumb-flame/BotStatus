@@ -5,8 +5,9 @@ A Discord security/moderation bot with no web dashboard. All logic via slash com
 
 ## Current Status
 - **Bot Tag**: Kisuke Urahara#2234 (display name: beni)
-- **Commands**: 37 slash commands registered globally
+- **Commands**: 63 slash commands registered globally (35 security/mod + 28 AI)
 - **DB**: Two SQLite DBs — `security.db` (antinuke/monitors) via `src/database/db.js`; `bot.db` (cases/notes/config) via `src/database.js`
+- **AI**: Gemini AI integration (Replit credits, no API key needed) — `gemini-3-flash-preview` for chat, `gemini-2.5-flash-image` for image gen
 
 ## Recent Fixes (April 2026)
 - **Quarantine → Suspend** — renamed everywhere: modlog labels, DM labels, case view labels, help text
