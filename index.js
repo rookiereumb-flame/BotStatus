@@ -1677,17 +1677,6 @@ client.on('interactionCreate', async interaction => {
         .setTimestamp()] });
     }
 
-    // ── /setup (legacy alias for /setlogs security) ───────────────────
-    if (cn === 'setup') {
-      if (!m.permissions.has(PermissionFlagsBits.Administrator))
-        return interaction.reply({ content: '❌ Administrator only.', ephemeral: true });
-      const ch = o.getChannel('channel');
-      db.setLogChannel(g.id, ch.id);
-      botDb.setLogChannel(g.id, ch.id);
-      return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2).setTitle('📋 Security Log Channel Set')
-        .setDescription(`Security & bot logs → ${ch}\n\n💡 Use \`/setlogs\` for full dual-channel control.`).setTimestamp()] });
-    }
-
     // ── /setup-suspend ────────────────────────────────────────────────
     if (cn === 'setup-suspend') {
       if (!m.permissions.has(PermissionFlagsBits.Administrator))
@@ -2802,7 +2791,6 @@ const commands = [
     {name:'limit',   type:4,              description:'Action limit (required when setting threshold)',min_value:1},
     {name:'time',    type:3,              description:'Time window — e.g. 10s 5m 1h (required when setting threshold)'}
   ]},
-  { name:'setup', description:'Set log channel (Admin)', options:[{name:'channel',type:7,required:true,description:'Log channel',channel_types:[0]}] },
   { name:'setup-suspend', description:'Configure the suspend system — role, jail channel, and channel overwrites (Admin)', options:[
     {name:'role',    type:8, description:'Use an existing role as the Suspended role (leave blank to auto-create "Suspended")'},
     {name:'channel', type:7, description:'Jail channel where suspended users can see+send but not read history', channel_types:[0]}
