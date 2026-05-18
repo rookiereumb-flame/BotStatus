@@ -14,7 +14,7 @@ const {
   askGemini, streamInteractionReply, askGeminiWithHistory,
   analyzeImage, generateAIImage, splitIntoChunks,
   isNSFW, yoruichiNSFWRoast, openContinuationThread,
-  YORUICHI_SYSTEM, DISCORD_LIMIT, STREAM_THROTTLE_MS,
+  KISUKE_SYSTEM, DISCORD_LIMIT, STREAM_THROTTLE_MS,
 } = require('./src/services/ai');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
@@ -1002,7 +1002,7 @@ client.on('interactionCreate', async interaction => {
     await interaction.deferReply();
     const question = o.getString('question');
     if (isNSFW(question)) return interaction.editReply(yoruichiNSFWRoast());
-    await streamInteractionReply(interaction, question, YORUICHI_SYSTEM, '');
+    await streamInteractionReply(interaction, question, KISUKE_SYSTEM, '');
     return;
   }
 
@@ -1013,7 +1013,7 @@ client.on('interactionCreate', async interaction => {
     await streamInteractionReply(
       interaction,
       `Someone asked the magic 8-ball: "${q8}". Respond in the style of a mystical, dramatic 8-ball. Start with a classic verdict (Yes/No/Maybe/Ask again later/Outlook uncertain etc.), then add flair. Keep it short and punchy.`,
-      YORUICHI_SYSTEM,
+      KISUKE_SYSTEM,
       `🎱 **Q: ${q8}**\n\n*The ball swirls...*\n\n`
     );
     return;
@@ -1026,7 +1026,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(text)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Summarize the following text clearly and concisely, keeping all key points:\n\n${text}`,
-      YORUICHI_SYSTEM, '📝 **Summary**\n\n');
+      KISUKE_SYSTEM, '📝 **Summary**\n\n');
     return;
   }
 
@@ -1037,7 +1037,7 @@ client.on('interactionCreate', async interaction => {
     const lang = o.getString('language') || 'English';
     await streamInteractionReply(interaction,
       `Translate the following text into ${lang}. Provide only the translation — no explanation unless asked:\n\n${txt}`,
-      YORUICHI_SYSTEM, `🌐 **Translation → ${lang}**\n\n`);
+      KISUKE_SYSTEM, `🌐 **Translation → ${lang}**\n\n`);
     return;
   }
 
@@ -1048,7 +1048,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Tell me a clever, funny joke about: ${topic}. Make it clean but actually funny — no cheap punchlines.`,
-      YORUICHI_SYSTEM, `😂 **Joke about: ${topic}**\n\n`);
+      KISUKE_SYSTEM, `😂 **Joke about: ${topic}**\n\n`);
     return;
   }
 
@@ -1059,7 +1059,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(prompt)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Write a short, engaging story based on this prompt. Make it vivid and complete — with a beginning, middle, and end:\n\n${prompt}`,
-      YORUICHI_SYSTEM, `📖 **Story**\n\n`);
+      KISUKE_SYSTEM, `📖 **Story**\n\n`);
     const msg = await interaction.fetchReply().catch(() => null);
     if (msg) openContinuationThread(msg, `Story: ${prompt.slice(0, 60)}`, prompt, '✍️ Continue the story here — just send messages in this thread!');
     return;
@@ -1073,7 +1073,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Write a beautiful, original ${style} poem about: ${topic}. Make it feel genuine and evocative.`,
-      YORUICHI_SYSTEM, `🌸 **Poem — ${topic}**\n\n`);
+      KISUKE_SYSTEM, `🌸 **Poem — ${topic}**\n\n`);
     return;
   }
 
@@ -1084,7 +1084,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Write a rap verse with genuine flow, rhyme scheme, and wordplay about: ${topic}. No filler lines — every bar should hit.`,
-      YORUICHI_SYSTEM, `🎤 **Rap — ${topic}**\n\n`);
+      KISUKE_SYSTEM, `🎤 **Rap — ${topic}**\n\n`);
     return;
   }
 
@@ -1095,7 +1095,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Begin a short roleplay scenario. Set the scene compellingly and leave an obvious opening for the user to respond. Scenario:\n\n${scenario}`,
-      YORUICHI_SYSTEM, `🎭 **Roleplay — ${scenario.slice(0, 60)}**\n\n`);
+      KISUKE_SYSTEM, `🎭 **Roleplay — ${scenario.slice(0, 60)}**\n\n`);
     const msg = await interaction.fetchReply().catch(() => null);
     if (msg) openContinuationThread(msg, `RP: ${scenario.slice(0, 60)}`, scenario, '🎭 Continue the roleplay here — just send your actions/dialogue in this thread!');
     return;
@@ -1108,7 +1108,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Brainstorm 8–12 creative and distinct ideas, approaches, or angles for: ${topic}. Vary the type of ideas — practical, wild, unconventional.`,
-      YORUICHI_SYSTEM, `💡 **Brainstorm — ${topic}**\n\n`);
+      KISUKE_SYSTEM, `💡 **Brainstorm — ${topic}**\n\n`);
     return;
   }
 
@@ -1119,7 +1119,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(scenario)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `You are a dungeon master. Set an atmospheric D&D scene based on: "${scenario}". Describe the environment vividly, introduce one clear hook or threat, and end with a question or choice for the player.`,
-      YORUICHI_SYSTEM, `⚔️ **D&D — Your Adventure Begins**\n\n`);
+      KISUKE_SYSTEM, `⚔️ **D&D — Your Adventure Begins**\n\n`);
     const msg = await interaction.fetchReply().catch(() => null);
     if (msg) openContinuationThread(msg, `D&D: ${scenario.slice(0, 60)}`, scenario, '🎲 Your adventure continues here — tell me what you do next!');
     return;
@@ -1132,7 +1132,7 @@ client.on('interactionCreate', async interaction => {
     const mood = o.getString('mood') || 'something great';
     await streamInteractionReply(interaction,
       `Recommend 5 great ${type}s for someone in the mood for: ${mood}. For each, give the title, a 1-sentence hook, and why it fits the mood. Format clearly.`,
-      YORUICHI_SYSTEM, `🎬 **${type.charAt(0).toUpperCase() + type.slice(1)} Recommendations**\n\n`);
+      KISUKE_SYSTEM, `🎬 **${type.charAt(0).toUpperCase() + type.slice(1)} Recommendations**\n\n`);
     return;
   }
 
@@ -1161,7 +1161,7 @@ client.on('interactionCreate', async interaction => {
     const location = o.getString('location');
     await streamInteractionReply(interaction,
       `Describe the weather in ${location} right now in a vivid, fun way. You don't have real data — make it feel true to the climate/season of that place. Keep it short, punchy, and entertaining.`,
-      YORUICHI_SYSTEM, `🌤️ **Weather — ${location}**\n\n`);
+      KISUKE_SYSTEM, `🌤️ **Weather — ${location}**\n\n`);
     return;
   }
 
@@ -1171,7 +1171,7 @@ client.on('interactionCreate', async interaction => {
     const problem = o.getString('problem');
     await streamInteractionReply(interaction,
       `Solve the following math problem step by step. Show your working clearly, then state the final answer:\n\n${problem}`,
-      YORUICHI_SYSTEM, `🧮 **Math Solution**\n\n`);
+      KISUKE_SYSTEM, `🧮 **Math Solution**\n\n`);
     return;
   }
 
@@ -1182,7 +1182,7 @@ client.on('interactionCreate', async interaction => {
     const lang    = o.getString('language') || 'the most appropriate language';
     await streamInteractionReply(interaction,
       `${request}\n\nWrite this in ${lang}. Include a brief explanation after the code block. Use proper code formatting.`,
-      YORUICHI_SYSTEM, '');
+      KISUKE_SYSTEM, '');
     return;
   }
 
@@ -1193,7 +1193,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     const pollText = await askGemini(
       `Create a Discord poll for: "${topic}". Return ONLY the poll question followed by 4–6 answer options, each on its own line starting with a different emoji (🔴🟡🟢🔵🟣🟠). No extra commentary.`,
-      YORUICHI_SYSTEM
+      KISUKE_SYSTEM
     );
     const chunks = splitIntoChunks(pollText);
     await interaction.editReply(`📊 **Poll**\n\n${chunks[0]}`);
@@ -1209,7 +1209,7 @@ client.on('interactionCreate', async interaction => {
     const topic = o.getString('topic') || 'general knowledge';
     const raw   = await askGemini(
       `Generate a trivia question about ${topic}. Return ONLY valid JSON with keys: question (string), answer (string), hint1 (string), hint2 (string). No markdown, no extra text.`,
-      YORUICHI_SYSTEM
+      KISUKE_SYSTEM
     );
     let parsed;
     try { parsed = JSON.parse(raw.replace(/```json\n?|\n?```/g, '').trim()); }
@@ -1257,7 +1257,7 @@ client.on('interactionCreate', async interaction => {
     const name   = target.globalName || target.username;
     const roast  = await askGemini(
       `Write a short, clever, funny roast of a Discord user named "${name}". Keep it playful — no real insults, no slurs, no body-shaming. Just witty banter. 2–4 sentences max.`,
-      YORUICHI_SYSTEM
+      KISUKE_SYSTEM
     );
     await interaction.editReply(`🔥 **Roasting ${name}...**\n\n${roast}`);
     return;
@@ -1269,7 +1269,7 @@ client.on('interactionCreate', async interaction => {
     const topic = o.getString('topic') || 'anything interesting';
     const fact  = await askGemini(
       `Give me one genuinely fascinating, surprising, or counterintuitive fact about: ${topic}. State the fact clearly, then give 1–2 sentences of context.`,
-      YORUICHI_SYSTEM
+      KISUKE_SYSTEM
     );
     await interaction.editReply(`🔬 **Fact — ${topic}**\n\n${fact}`);
     return;
@@ -1281,7 +1281,7 @@ client.on('interactionCreate', async interaction => {
     const topic = o.getString('topic') || 'life';
     const quote = await askGemini(
       `Give me one powerful, thought-provoking quote about ${topic}. Format it as:\n\n"[Quote]"\n— [Author]\n\nThen add a brief (1–2 sentence) reflection on why it matters.`,
-      YORUICHI_SYSTEM
+      KISUKE_SYSTEM
     );
     await interaction.editReply(`💬 **Quote — ${topic}**\n\n${quote}`);
     return;
@@ -1297,7 +1297,7 @@ client.on('interactionCreate', async interaction => {
     const pct  = Math.floor(Math.random() * 101);
     const result = await askGemini(
       `Rate the romantic compatibility between "${n1}" and "${n2}" at ${pct}%. Write a short, fun, slightly dramatic 2–4 sentence reading about their "cosmic connection". Match the energy to the percentage — low % = tragic, high % = destiny.`,
-      YORUICHI_SYSTEM
+      KISUKE_SYSTEM
     );
     const bar = '█'.repeat(Math.floor(pct / 10)) + '░'.repeat(10 - Math.floor(pct / 10));
     await interaction.editReply(new EmbedBuilder().setColor(0xff6b8a)
@@ -1316,7 +1316,7 @@ client.on('interactionCreate', async interaction => {
     if (isNSFW(topic)) return interaction.editReply(yoruichiNSFWRoast());
     await streamInteractionReply(interaction,
       `Present a balanced debate on: "${topic}". Format clearly:\n\n**FOR:**\n[3 strong arguments]\n\n**AGAINST:**\n[3 strong arguments]\n\n**Verdict:** [A concise, neutral summary]`,
-      YORUICHI_SYSTEM, `⚖️ **Debate — ${topic}**\n\n`);
+      KISUKE_SYSTEM, `⚖️ **Debate — ${topic}**\n\n`);
     return;
   }
 
@@ -2084,6 +2084,30 @@ client.on('interactionCreate', async interaction => {
           { name: '💡 Tips',              value: '`/antinuke status` — monitors\n`/trust list` — trusted users', inline: true }
         );
 
+      // ── AI Security Assessment ─────────────────────────────────────
+      try {
+        const scanContext = [
+          `Server: ${g.name} (${g.memberCount} members)`,
+          `Risk Level: ${riskLabel}`,
+          flags.length ? `Flags: ${flags.join(', ')}` : 'No flags',
+          `Admin bots: ${adminBots.size}, Elevated bots: ${elevBots.size}, Safe bots: ${safeBots}`,
+          `Dangerous roles: ${dangerRoles.length}`,
+          `Non-owner admins: ${humanAdmins.size}`,
+          `Risky channel overrides: ${riskyChannels.length}`,
+          `2FA for mods: ${g.mfaLevel === 1 ? 'On' : 'Off'}`,
+          `Verification level: ${['None','Low','Medium','High','Highest'][g.verificationLevel] || '?'}`,
+          `AutoMod: ${autoMod ? 'Enabled' : 'Disabled'}`,
+          `Webhooks: ${wbCount}`,
+          `Trusted users configured: ${trustCnt}`,
+        ].join('\n');
+
+        const aiAssessment = await askGemini(
+          `You are a Discord security analyst. Based on the following server scan, write a brief (4-6 bullet points) security assessment covering: the biggest risks, what's well-configured, and 2-3 specific action items the server owner should take. Be direct and practical.\n\n${scanContext}`,
+          KISUKE_SYSTEM
+        );
+        embed2.addFields({ name: '🤖 AI Security Assessment', value: aiAssessment.slice(0, 1020) });
+      } catch (_) {}
+
       return interaction.editReply({ embeds: [embed1, embed2] });
     }
 
@@ -2388,6 +2412,7 @@ client.on('interactionCreate', async interaction => {
 
         // Filtered list (user / mod / type — any combination)
         const ACTION_LABELS = { warn:'WARN', ban:'BAN', kick:'KICK', mute:'TIMEOUT', suspend:'SUSPEND', shadowban:'SHADOW-BAN' };
+        const summarize     = o.getBoolean('summarize');
         if (user || mod || type) {
           const cases = botDb.getCases(g.id, user?.id || null, { modId: mod?.id || null, action: type || null, limit: 25 });
           if (!cases.length) {
@@ -2395,7 +2420,6 @@ client.on('interactionCreate', async interaction => {
             return interaction.reply({ content: `No cases found${filters ? ` for (${filters})` : ''}.`, ephemeral: true });
           }
 
-          // Build filter description for embed title
           const titleParts = [];
           if (user) titleParts.push(`User: ${user.username}`);
           if (mod)  titleParts.push(`Mod: ${mod.username}`);
@@ -2406,11 +2430,28 @@ client.on('interactionCreate', async interaction => {
             return `✅ **#${c.case_id}** \`[${label}]\` — <@${c.user_id}> • <t:${Math.floor(c.timestamp/1000)}:R>`;
           });
 
-          return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x5865f2)
+          const caseEmbed = new EmbedBuilder().setColor(0x5865f2)
             .setTitle(`📋 Cases — ${titleParts.join(' • ')} (${cases.length})`)
             .setDescription(lines.join('\n'))
             .setFooter({ text: `Showing up to 25 most recent • Use case_id for full detail` })
-            .setTimestamp()] });
+            .setTimestamp();
+
+          if (summarize && cases.length >= 2) {
+            await interaction.deferReply({ ephemeral: true });
+            try {
+              const caseList = cases.map(c =>
+                `[${(c.action || '').toUpperCase()}] ${c.reason || 'No reason'} (${new Date(c.timestamp).toLocaleDateString()})`
+              ).join('\n');
+              const summary = await askGemini(
+                `Analyze this Discord moderation case history and write a concise behavioral assessment (3-5 sentences). Identify any patterns, escalation, or concerning trends. End with a recommended moderation approach. Case history:\n${caseList}`,
+                KISUKE_SYSTEM
+              );
+              caseEmbed.addFields({ name: '🤖 AI Behavioral Assessment', value: summary.slice(0, 1020) });
+            } catch (_) {}
+            return interaction.editReply({ embeds: [caseEmbed] });
+          }
+
+          return interaction.reply({ embeds: [caseEmbed] });
         }
 
         return interaction.reply({ content: '❌ Provide at least one filter: `case_id`, `user`, `mod`, or `type`.', ephemeral: true });
@@ -2454,16 +2495,32 @@ client.on('interactionCreate', async interaction => {
       const sub = o.getSubcommand();
 
       if (sub === 'add') {
-        const user    = o.getUser('user');
-        const content = o.getString('text');
-        const noteId  = botDb.addNote(g.id, user.id, m.id, content);
-        return interaction.reply({ embeds: [new EmbedBuilder().setColor(0x3498DB)
-          .setTitle('📝 Note Added')
+        const user   = o.getUser('user');
+        const rawText = o.getString('text');
+        const useAI  = o.getBoolean('ai');
+
+        let content = rawText;
+        if (useAI) {
+          await interaction.deferReply({ ephemeral: true });
+          try {
+            content = await askGemini(
+              `A server moderator has described a user's behavior and needs it turned into a formal, professional staff note. Transform this into a clear, factual, 2-4 sentence staff note. Objective tone only — no opinions, no assumptions beyond what's stated. Description: "${rawText}"`,
+              KISUKE_SYSTEM
+            );
+            content = content.trim().slice(0, 1000);
+          } catch (_) { content = rawText; }
+        }
+
+        const noteId = botDb.addNote(g.id, user.id, m.id, content);
+        const embed  = new EmbedBuilder().setColor(0x3498DB)
+          .setTitle(useAI ? '📝 Note Added (AI-drafted)' : '📝 Note Added')
           .addFields(
             { name: 'User',    value: `${user.tag} \`[${user.id}]\``, inline: false },
             { name: 'Note ID', value: `${noteId}`,                     inline: true  },
             { name: 'Content', value: content,                         inline: false }
-          ).setTimestamp()], ephemeral: true });
+          ).setTimestamp();
+        if (interaction.deferred) return interaction.editReply({ embeds: [embed] });
+        return interaction.reply({ embeds: [embed], ephemeral: true });
       }
 
       if (sub === 'remove') {
@@ -2691,17 +2748,18 @@ const commands = [
   ]},
   { name:'cases', description:'View or modify moderation cases', options:[
     {name:'view', type:1, description:'View a case or all cases, with optional filters', options:[
-      {name:'case_id', type:4, description:'Look up a specific case by ID'},
-      {name:'user',    type:6, description:'Filter cases by target user'},
-      {name:'mod',     type:6, description:'Filter cases by moderator'},
-      {name:'type',    type:3, description:'Filter by action type', choices:[
+      {name:'case_id',   type:4, description:'Look up a specific case by ID'},
+      {name:'user',      type:6, description:'Filter cases by target user'},
+      {name:'mod',       type:6, description:'Filter cases by moderator'},
+      {name:'type',      type:3, description:'Filter by action type', choices:[
         {name:'Ban',       value:'ban'},
         {name:'Kick',      value:'kick'},
         {name:'Timeout',   value:'mute'},
         {name:'Suspend',   value:'suspend'},
         {name:'Warn',      value:'warn'},
         {name:'Shadow-Ban',value:'shadowban'}
-      ]}
+      ]},
+      {name:'summarize', type:5, description:'Add an AI behavioral assessment of this user\'s case history'}
     ]},
     {name:'modify', type:1, description:'Modify a case field (Admin)', options:[
       {name:'case_id',type:4,required:true,description:'Case ID'},
@@ -2710,7 +2768,7 @@ const commands = [
     ]}
   ]},
   { name:'notes', description:'Manage user notes', options:[
-    {name:'add',    type:1, description:'Add a note to a user',              options:[{name:'user',type:6,required:true,description:'User'},{name:'text',type:3,required:true,description:'Note content'}]},
+    {name:'add',    type:1, description:'Add a note to a user',              options:[{name:'user',type:6,required:true,description:'User'},{name:'text',type:3,required:true,description:'Note content or brief description (use ai=true to expand)'},{name:'ai',type:5,description:'Let AI draft a professional note from your brief description'}]},
     {name:'remove', type:1, description:'Remove a specific note',            options:[{name:'user',type:6,required:true,description:'User'},{name:'note_id',type:4,required:true,description:'Note ID'}]},
     {name:'view',   type:1, description:'View all notes for a user',         options:[{name:'user',type:6,required:true,description:'User'}]},
     {name:'modify', type:1, description:'Edit a note\'s content (Admin)',    options:[{name:'user',type:6,required:true,description:'User'},{name:'note_id',type:4,required:true,description:'Note ID'},{name:'text',type:3,required:true,description:'New note content'}]},
