@@ -167,10 +167,16 @@ for (const feat of AUTO_FEATURES) {
 
 const setAutoFeature = (guildId, feature, value) => {
   if (!AUTO_FEATURES.includes(feature)) throw new Error(`Unknown feature: ${feature}`);
-  db.prepare(`INSERT INTO guild_config (guild_id, feat_${feature}) VALUES (?, ?) ON CONFLICT(guild_id) DO UPDATE SET feat_${feature} = ?`).run(guildId, value, value);
+  ensureGuildInit(guildId);
+  db.prepare(`UPDATE guild_config SET feat_${feature} = ? WHERE guild_id = ?`).run(value, guildId);
 };
-module.exports.AUTO_FEATURES   = AUTO_FEATURES;
-module.exports.setAutoFeature  = setAutoFeature;
+
+const ensureGuildInit = (guildId) => {
+  // INSERT OR IGNORE — never overwrites existing rows, just guarantees one exists
+  // All feat_ columns will get their DEFAULT 1 value for newly created rows
+  db.prepare('INSERT OR IGNORE INTO guild_config (guild_id) VALUES (?)').run(guildId);
+};
+
 
 const getGuildConfig = (guildId) => {
   const stmt = db.prepare('SELECT * FROM guild_config WHERE guild_id = ?');
@@ -861,6 +867,9 @@ module.exports = {
   getAFKUser,
   getAllAFKUsers,
   setAutomodConfig,
+  AUTO_FEATURES,
+  setAutoFeature,
+  ensureGuildInit,
   setPrisonRole: (guildId, roleId) => {
     const stmt = db.prepare('UPDATE guild_config SET prison_role_id = ? WHERE guild_id = ?');
     stmt.run(roleId, guildId);

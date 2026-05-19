@@ -139,6 +139,8 @@ const upsert = (table, keyCol, keyVal, updates) => {
 
 module.exports = {
   // Guild config
+  ensureGuildInit: gid =>
+    db.prepare('INSERT OR IGNORE INTO guild_config (guild_id) VALUES (?)').run(gid),
   getGuildConfig: gid =>
     db.prepare('SELECT * FROM guild_config WHERE guild_id = ?').get(gid) || {},
   setLogChannel: (gid, cid) =>

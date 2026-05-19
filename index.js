@@ -2715,8 +2715,24 @@ client.on('interactionCreate', async interaction => {
 // ═══════════════════════════════════════════════════════════════════
 //  READY
 // ═══════════════════════════════════════════════════════════════════
+client.on('guildCreate', guild => {
+  db.ensureGuildInit(guild.id);
+  botDb.ensureGuildInit(guild.id);
+  console.log(`📥 Joined guild: ${guild.name} (${guild.id}) — config initialized.`);
+});
+
+client.on('guildDelete', guild => {
+  console.log(`📤 Left guild: ${guild.name || guild.id}`);
+});
+
 client.once('ready', async () => {
   console.log(`🚀 beni Online: ${client.user.tag}`);
+  // Ensure every known guild has a config row in both DBs
+  for (const guild of client.guilds.cache.values()) {
+    db.ensureGuildInit(guild.id);
+    botDb.ensureGuildInit(guild.id);
+  }
+  console.log(`🗄️ Guild configs verified for ${client.guilds.cache.size} guild(s).`);
   await takeSnapshots();
   console.log(`📸 Snapshot saved for ${client.guilds.cache.size} guild(s).`);
   const pending = db.getAllSuspensionTimers();
