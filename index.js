@@ -15,6 +15,7 @@ const {
   analyzeImage, generateAIImage, splitIntoChunks,
   isNSFW, nsfwRoast, openContinuationThread,
   KISUKE_SYSTEM, DISCORD_LIMIT, STREAM_THROTTLE_MS,
+  logServerMessage, buildServerContext,
 } = require('./src/services/ai');
 
 const TOKEN     = process.env.DISCORD_BOT_TOKEN;
@@ -551,7 +552,8 @@ async function handleAIChatMessage(message, isMentioned, isAiChannel, isDM) {
           lastEdit = now;
           await sentMsg.edit(display).catch(() => {});
         }
-      }
+      },
+      message.guild ?? null
     );
 
     clearInterval(typingInterval);
@@ -576,6 +578,16 @@ client.on('messageCreate', async message => {
       handleAIChatMessage(message, false, false, true).catch(() => {});
     }
     return;
+  }
+
+  // ── Passive server learning — log all non-bot guild messages ───────────────
+  if (message.content) {
+    logServerMessage(
+      message.guild.id,
+      message.author.globalName || message.author.username,
+      message.channel.name ?? message.channelId,
+      message.content
+    );
   }
 
   // ── Shadow Ban — silently delete messages ──────────────────────────────────
@@ -1021,7 +1033,63 @@ client.on('interactionCreate', async interaction => {
   // ── /summarize ─────────────────────────────────────────────────────
   if (cn === 'summarize') {
     await interaction.deferReply();
-    const text = o.getString('text');
+    const mode   = o.getString('mode') || 'text';
+    const text   = o.getString('text');
+    const count  = o.getInteger('count') || 50;
+
+    // ── Chat history summary ─────────────────────────────────────────
+    if (mode === 'chat') {
+      if (!interaction.channel || !('messages' in interaction.channel))
+        return interaction.editReply('❌ Can\'t read messages in this channel type.');
+      const fetched = await interaction.channel.messages.fetch({ limit: Math.min(count, 100) }).catch(() => null);
+      if (!fetched?.size) return interaction.editReply('❌ No messages to summarize.');
+      const msgs = [...fetched.values()].reverse()
+        .filter(m => !m.author.bot && m.content)
+        .map(m => `${m.author.globalName || m.author.username}: ${m.content.slice(0,300)}`).join('\n');
+      await streamInteractionReply(interaction,
+        `Summarize this Discord conversation clearly. List key topics, decisions made, and anything important:\n\n${msgs}`,
+        KISUKE_SYSTEM, '', undefined,
+        (t) => new EmbedBuilder().setColor(0x3498db).setTitle(`📝 Chat Summary — last ${fetched.size} messages`).setDescription(t.slice(0,4096)).setFooter({text:'beni AI'}));
+      return;
+    }
+
+    // ── YouTube link summary ─────────────────────────────────────────
+    const ytMatch = text?.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([A-Za-z0-9_-]{11})/);
+    if (mode === 'video' && ytMatch) {
+      await interaction.editReply('🔍 Fetching video info...');
+      const videoId = ytMatch[1];
+      let pageText  = '';
+      try {
+        const res  = await fetch(`https://www.youtube.com/watch?v=${videoId}`, { headers: { 'User-Agent': 'Mozilla/5.0' } });
+        const html = await res.text();
+        const titleMatch = html.match(/<title>([^<]+)<\/title>/);
+        const descMatch  = html.match(/"shortDescription":"((?:[^"\\]|\\.)*)"/);
+        pageText = `Title: ${titleMatch?.[1] || 'Unknown'}\nDescription: ${descMatch?.[1]?.replace(/\\n/g,'\n')?.slice(0,1500) || 'No description found.'}`;
+      } catch { pageText = `YouTube video ID: ${videoId}`; }
+      await streamInteractionReply(interaction,
+        `Summarize this YouTube video based on its title and description. Be concise and informative:\n\n${pageText}`,
+        KISUKE_SYSTEM, '', undefined,
+        (t) => new EmbedBuilder().setColor(0xff0000).setTitle('📺 YouTube Summary').setDescription(t.slice(0,4096)).setFooter({text:'beni AI • Based on title/description'}));
+      return;
+    }
+
+    // ── Discord video attachment summary ─────────────────────────────
+    if (mode === 'video' && !ytMatch) {
+      const videoAtt = interaction.options.getAttachment('attachment');
+      if (!videoAtt) return interaction.editReply('❌ Attach a video file or provide a YouTube link in the `text` field.');
+      if (!videoAtt.contentType?.startsWith('video/'))
+        return interaction.editReply('❌ That file doesn\'t look like a video.');
+      await interaction.editReply('🎬 Analyzing video...');
+      const summary = await askGemini(
+        `This is a Discord video attachment (${videoAtt.name}, ${Math.round((videoAtt.size||0)/1024)}KB). Based only on its filename and size, give a brief informative note. Acknowledge you can't play video directly.`,
+        KISUKE_SYSTEM
+      );
+      await interaction.editReply({ embeds: [new EmbedBuilder().setColor(0x9b59b6).setTitle(`🎬 Video — ${videoAtt.name}`).setDescription(summary).setFooter({text:'beni AI • Filename analysis only'})] });
+      return;
+    }
+
+    // ── Plain text summary (default) ─────────────────────────────────
+    if (!text) return interaction.editReply('❌ Provide some text to summarize.');
     if (isNSFW(text)) return interaction.editReply(nsfwRoast());
     await streamInteractionReply(interaction,
       `Summarize the following text clearly and concisely, keeping all key points:\n\n${text}`,
@@ -2688,7 +2756,16 @@ const commands = [
   { name: 'say',  description: 'Send a message as the bot', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'message', type:3, required:true, description:'Message to send' }] },
   { name: 'ask',  description: 'Ask the AI anything — powered by Gemini', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your question' }] },
   { name: '8ball', description: 'Ask the magic 8-ball (AI-powered drama)', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'question', type:3, required:true, description:'Your yes/no question' }] },
-  { name: 'summarize', description: 'Summarize any text with AI', integration_types:[0,1], contexts:[0,1,2], options:[{ name:'text', type:3, required:true, description:'Text to summarize' }] },
+  { name: 'summarize', description: 'Summarize text, chat history, or a YouTube/video link', integration_types:[0,1], contexts:[0,1,2], options:[
+    {name:'mode', type:3, description:'What to summarize', choices:[
+      {name:'Text — paste any text',              value:'text'},
+      {name:'Chat — last N messages here',        value:'chat'},
+      {name:'Video — YouTube link or attachment', value:'video'},
+    ]},
+    {name:'text',       type:3,  description:'Text to summarize, or YouTube URL (for video mode)'},
+    {name:'count',      type:4,  description:'How many chat messages to summarize (default 50, max 100)', min_value:5, max_value:100},
+    {name:'attachment', type:11, description:'Discord video file to summarize (video mode)'},
+  ]},
   { name: 'translate', description: 'Translate text into any language', integration_types:[0,1], contexts:[0,1,2], options:[
     { name:'text',     type:3, required:true,  description:'Text to translate' },
     { name:'language', type:3, required:false, description:'Target language (default: English)' }

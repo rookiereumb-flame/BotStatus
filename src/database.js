@@ -174,7 +174,14 @@ module.exports.setAutoFeature  = setAutoFeature;
 
 const getGuildConfig = (guildId) => {
   const stmt = db.prepare('SELECT * FROM guild_config WHERE guild_id = ?');
-  return stmt.get(guildId);
+  const row  = stmt.get(guildId);
+  if (!row) return null;
+  // Ensure all feat_ columns default to 1 (enabled) when null
+  for (const feat of AUTO_FEATURES) {
+    const key = `feat_${feat}`;
+    if (row[key] === null || row[key] === undefined) row[key] = 1;
+  }
+  return row;
 };
 
 const setLogChannel = (guildId, channelId) => {

@@ -158,11 +158,53 @@ DURATION FORMAT: 10s · 5m · 2h · 1d · 1w (used in /mute, /suspend, /config, 
 • Keep conversational replies concise unless depth is genuinely needed.
 • Use Discord markdown (bold, code blocks, bullet points) where it helps clarity.`;
 
-// ── Per-channel state ─────────────────────────────────────────────────────────
+// ── Per-channel / per-guild state ─────────────────────────────────────────────
 const aiChatChannels      = new Set();
-const conversationHistory = new Map();
+const conversationHistory = new Map(); // channelId → [{role,content}]
 const triviaCache         = new Map();
 const activeReminders     = new Map();
+
+// ── Server context memory (passive learning) ──────────────────────────────────
+// guildId → [ { author, channel, content, ts } ]  — rolling 200-msg window
+const serverMessageLog = new Map();
+const SERVER_LOG_MAX   = 200;
+
+function logServerMessage(guildId, author, channel, content) {
+  if (!serverMessageLog.has(guildId)) serverMessageLog.set(guildId, []);
+  const log = serverMessageLog.get(guildId);
+  log.push({ author, channel, content: content.slice(0, 300), ts: Date.now() });
+  if (log.length > SERVER_LOG_MAX) log.splice(0, log.length - SERVER_LOG_MAX);
+}
+
+function buildServerContext(guildId, guild) {
+  const log = serverMessageLog.get(guildId) ?? [];
+  const lines = [];
+
+  if (guild) {
+    lines.push(`== SERVER CONTEXT: ${guild.name} ==`);
+    lines.push(`Members: ${guild.memberCount} | Channels: ${guild.channels.cache.size} | Roles: ${guild.roles.cache.size}`);
+    const chList = guild.channels.cache
+      .filter(c => c.type === 0) // text channels
+      .map(c => `#${c.name}`)
+      .slice(0, 20).join(', ');
+    if (chList) lines.push(`Text channels: ${chList}`);
+    const roleList = guild.roles.cache
+      .filter(r => r.name !== '@everyone')
+      .sort((a,b) => b.position - a.position)
+      .map(r => r.name)
+      .slice(0, 15).join(', ');
+    if (roleList) lines.push(`Top roles: ${roleList}`);
+  }
+
+  if (log.length) {
+    lines.push(`\n== RECENT SERVER MESSAGES (last ${log.length}) ==`);
+    log.slice(-50).forEach(m => {
+      lines.push(`[#${m.channel}] ${m.author}: ${m.content}`);
+    });
+  }
+
+  return lines.join('\n');
+}
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function isNSFW(text) {
@@ -268,14 +310,15 @@ async function streamInteractionReply(interaction, prompt, systemPrompt, prefix 
   }
 }
 
-async function askGeminiWithHistory(channelId, userMessage, username, onChunk) {
+async function askGeminiWithHistory(channelId, userMessage, username, onChunk, guild = null) {
   const { ai } = await getAI();
   const history = conversationHistory.get(channelId) ?? [];
   history.push({ role: 'user', content: `${username}: ${userMessage}` });
-  if (history.length > 100) history.splice(0, history.length - 100);
+  if (history.length > 5000) history.splice(0, history.length - 5000);
 
   const fullPrompt = history.map(m => `${m.role === 'user' ? '' : 'beni: '}${m.content}`).join('\n');
-  const systemText = `${KISUKE_SYSTEM}\n\nConversation so far:\n${fullPrompt}\n\nRespond as beni:`;
+  const serverCtx  = guild ? buildServerContext(guild.id, guild) : '';
+  const systemText = `${KISUKE_SYSTEM}${serverCtx ? `\n\n${serverCtx}` : ''}\n\nConversation so far:\n${fullPrompt}\n\nRespond as beni:`;
 
   let reply;
   let truncated = false;
@@ -384,4 +427,7 @@ module.exports = {
   analyzeImage,
   generateAIImage,
   openContinuationThread,
+  logServerMessage,
+  buildServerContext,
+  serverMessageLog,
 };
