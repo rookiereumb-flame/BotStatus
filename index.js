@@ -2350,10 +2350,10 @@ client.on('interactionCreate', async interaction => {
       if (aiFlag) {
         await interaction.deferReply({ ephemeral: true });
         const drafted = await askGemini(
-          `Draft a formal, professional staff warning note for a Discord server. The moderator's brief description: "${reason}". Output ONLY the polished 1–3 sentence warning text. Be factual and concise — no fluff.`,
-          KISUKE_SYSTEM
+          `Convert the following into a formal staff warning reason. Rules: output ONLY the warning text — no preamble, no "Here's", no intro sentence, no commentary, nothing before or after. 1–3 sentences, factual, objective.\n\nDescription: "${reason}"`,
+          undefined
         );
-        reason = drafted.trim();
+        reason = drafted.trim().replace(/^(here'?s?.*?warning[:\.]?\s*|warning[:\s]+)/i, '').trim();
       }
       if (dmUser) await user.send({ embeds: [buildDmEmbed('warn', g.name, reason, proofUrl)] }).catch(() => {});
       botDb.addWarning(g.id, user.id, m.id, reason, 1);
@@ -2527,10 +2527,10 @@ client.on('interactionCreate', async interaction => {
           await interaction.deferReply({ ephemeral: true });
           try {
             content = await askGemini(
-              `A server moderator has described a user's behavior and needs it turned into a formal, professional staff note. Transform this into a clear, factual, 2-4 sentence staff note. Objective tone only — no opinions, no assumptions beyond what's stated. Description: "${rawText}"`,
-              KISUKE_SYSTEM
+              `Convert the following moderator's description into a formal staff note. Rules: output ONLY the note text — no preamble, no "Here's", no "Staff Note:" label, no commentary, nothing before or after the note itself. 2–4 sentences, factual, objective tone.\n\nDescription: "${rawText}"`,
+              undefined
             );
-            content = content.trim().slice(0, 1000);
+            content = content.trim().replace(/^(here'?s?.*?note[:\.]?\s*|staff note[:\s]+)/i, '').trim().slice(0, 1000);
           } catch (_) { content = rawText; }
         }
 
